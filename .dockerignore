@@ -1,0 +1,11 @@
+.git
+_build
+deps
+node_modules
+data
+tmp
+.env*
+env
+*.tar
+test
+screenshots

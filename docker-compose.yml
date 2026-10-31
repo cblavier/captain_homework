@@ -1,0 +1,28 @@
+services:
+  captain_homework:
+    image: captain_homework:local
+    platform: ${DOCKER_PLATFORM:-linux/amd64}
+    user: "${APP_UID:-65534}:${APP_GID:-65534}"
+    restart: unless-stopped
+    init: true
+    env_file:
+      - env
+    environment:
+      PHX_SERVER: "true"
+      PORT: "4125"
+      TZ: ${TZ:-Europe/Paris}
+      DATABASE_PATH: /app/data/captain_homework.db
+      UPLOADS_PATH: /app/data/uploads
+    volumes:
+      - type: bind
+        source: ${DATA_DIR:-.}
+        target: /app/data
+        bind:
+          create_host_path: false
+    ports:
+      - "127.0.0.1:4125:4125"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

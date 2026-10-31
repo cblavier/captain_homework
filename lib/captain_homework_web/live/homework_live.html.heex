@@ -1,0 +1,1022 @@
+<Layouts.app flash={@flash} child_theme={if @profile, do: @profile.theme, else: "blue"}>
+  <main class={["app", @live_action == :exam && "exam-app"]}>
+    <div class="identity-row">
+      <details
+        :if={@profile}
+        id="child-picker"
+        phx-click-away={JS.remove_attribute("open", to: "#child-picker")}
+        phx-window-keydown={JS.remove_attribute("open", to: "#child-picker")}
+        phx-key="Escape"
+      >
+        <summary id="child-picker-toggle" aria-label="Compte et paramètres">
+          <span class="child-picker-avatar">
+            <img
+              :if={@profile.avatar}
+              id="profile-avatar"
+              src={@profile.avatar}
+              decoding="sync"
+              alt=""
+            />
+            <span :if={!@profile.avatar} id="profile-initial">{String.first(@profile.name)}</span>
+          </span>
+          <span class="child-picker-name-row">
+            <h1 id="child-name">{@profile.name}</h1>
+            <.icon name="chevron-down" class="child-picker-chevron" />
+          </span>
+        </summary>
+        <div id="child-picker-panel">
+          <.form for={@form} action={~p"/profil"} method="post" id="profile-switch">
+            <ul aria-label="Enfants">
+              <li :for={p <- @profiles} :if={p.id != @profile.id}>
+                <button
+                  id={"switch-profile-#{p.id}"}
+                  type="submit"
+                  name="profile_id"
+                  value={p.id}
+                  class="child-picker-option"
+                >
+                  <span class="child-option-avatar" data-child-theme={p.theme}>
+                    <img :if={p.avatar} src={p.avatar} alt="" />
+                    <span :if={!p.avatar}>{String.first(p.name)}</span>
+                  </span>
+                  <span>{p.name}</span>
+                  <.icon name="arrows-right-left" />
+                </button>
+              </li>
+            </ul>
+            <p :if={length(@profiles) == 1} id="no-other-profiles" class="muted">
+              Aucun autre espace disponible.
+            </p>
+          </.form>
+          <hr class="child-picker-separator" />
+          <.link
+            navigate={child_path(@profile, ~p"/parametres")}
+            id="settings-link"
+            class="child-picker-option"
+            aria-current={if @live_action == :settings, do: "page"}
+            phx-click={JS.remove_attribute("open", to: "#child-picker")}
+          >
+            <.icon name="hero-cog-6-tooth" />
+            <span>Paramètres</span>
+          </.link>
+          <div class="child-picker-logout">
+            <button id="logout" type="button" class="child-picker-option" disabled>
+              <.icon name="hero-arrow-right-on-rectangle" />
+              <span>Se déconnecter</span>
+            </button>
+          </div>
+        </div>
+      </details>
+      <.link :if={!@profile} navigate={child_path(@profile, ~p"/parametres")} id="settings-link">
+        Paramètres
+      </.link>
+    </div>
+    <p :if={@error && !@modal} class="notice error" role="alert">{@error}</p>
+
+    <section
+      :if={!@profile && @live_action != :settings}
+      id="no-profiles"
+      class="onboarding panel"
+    >
+      <div class="icon-tile purple"><.icon name="book" /></div>
+      <.page_title id="no-profiles-title">Aucun espace disponible</.page_title>
+      <p>Les espaces de la famille n’ont pas encore été configurés.</p>
+    </section>
+
+    <section :if={@live_action == :settings} id="settings-page" class="setup-section">
+      <div class="page-heading">
+        <.page_breadcrumb
+          id="settings-title"
+          ancestors={[{"Matières", child_path(@profile, ~p"/")}]}
+        >
+          Paramètres
+        </.page_breadcrumb>
+      </div>
+      <.form
+        :if={@profile}
+        for={@subjects_form}
+        id="subjects-settings-form"
+        phx-submit="save_subjects"
+        class="panel subjects-settings"
+      >
+        <fieldset aria-describedby="subjects-settings-help">
+          <legend>Matières de {@profile.name}</legend>
+          <p id="subjects-settings-help" class="muted">
+            Choisis les matières à afficher. Les leçons et les contrôles des matières décochées sont conservés.
+          </p>
+          <input type="hidden" name="subjects[enabled_ids][]" value="" />
+          <div class="subject-checkbox-grid">
+            <label
+              :for={subject <- Study.subjects()}
+              for={"enable-subject-#{subject.id}"}
+              class="subject-checkbox"
+            >
+              <input
+                type="checkbox"
+                id={"enable-subject-#{subject.id}"}
+                name="subjects[enabled_ids][]"
+                value={subject.id}
+                checked={subject.id in @subjects_form[:enabled_ids].value}
+              />
+              <span>{subject.name}</span>
+            </label>
+          </div>
+        </fieldset>
+        <div class="form-actions">
+          <button id="save-subjects" class="button primary" phx-disable-with="Enregistrement…">
+            Enregistrer les matières
+          </button>
+        </div>
+      </.form>
+      <.form for={@settings_form} id="settings-form" phx-submit="save_settings" class="panel">
+        <label for="default-instructions">Instructions par défaut</label>
+        <p id="settings-help" class="muted">
+          Ces instructions sont communes à tous les enfants et à toutes les matières. Elles s’appliquent aux prochains contrôles.
+        </p>
+        <textarea
+          id="default-instructions"
+          name={@settings_form[:instructions].name}
+          rows="22"
+          maxlength="16000"
+          required
+          aria-describedby="settings-help"
+        >{@settings_form[:instructions].value}</textarea>
+        <p :for={{message, _} <- @settings_form[:instructions].errors} class="error" role="alert">
+          {message}
+        </p>
+        <div class="form-actions">
+          <button id="save-settings" class="button primary" phx-disable-with="Enregistrement…">
+            Enregistrer
+          </button>
+        </div>
+      </.form>
+    </section>
+
+    <div :if={@profile}>
+      <section :if={@live_action == :home}>
+        <div class="page-heading">
+          <.page_title id="subjects-title">Mes matières</.page_title>
+        </div>
+        <div :if={@subjects == []} id="no-enabled-subjects" class="empty-state">
+          <p>Aucune matière activée.</p>
+          <.link navigate={child_path(@profile, ~p"/parametres")} class="button secondary">
+            Choisir les matières
+          </.link>
+        </div>
+        <div class="subject-grid">
+          <.link
+            :for={s <- @subjects}
+            navigate={child_path(@profile, ~p"/matieres/#{s.id}")}
+            class={["subject-card", s.color]}
+            id={"subject-#{s.id}"}
+          >
+            <div class="icon-tile"><.icon name={s.icon} /></div>
+            <div class="subject-copy">
+              <h2>{s.name}</h2>
+              <span>
+                {Map.get(@counts, s.id, 0)} {if Map.get(@counts, s.id, 0) == 1,
+                  do: "leçon",
+                  else: "leçons"}
+              </span>
+            </div>
+            <.icon name="arrow" class="card-arrow" />
+          </.link>
+        </div>
+      </section>
+
+      <section :if={@live_action == :subject}>
+        <div class="page-heading">
+          <div class="heading-with-icon">
+            <div class={["icon-tile small", @subject.color]}><.icon name={@subject.icon} /></div>
+            <.page_breadcrumb
+              id="subject-title"
+              ancestors={[{"Matières", child_path(@profile, ~p"/")}]}
+            >
+              {@subject.name}
+            </.page_breadcrumb>
+          </div>
+          <button
+            class="button primary"
+            phx-click="open_modal"
+            phx-value-modal="lesson"
+            id="new-lesson"
+          >
+            <.icon name="plus" /> Nouvelle leçon
+          </button>
+        </div>
+        <div :if={@lessons_empty?} class="empty-state">
+          <.icon name="book" />
+          <p>Aucune leçon</p>
+        </div>
+        <div class="lesson-list" id="lessons" phx-update="stream">
+          <.link
+            :for={{dom_id, lesson} <- @streams.lessons}
+            id={dom_id}
+            navigate={child_path(@profile, ~p"/lecons/#{lesson.id}")}
+            class="lesson-row"
+          >
+            <div class="document-icon"><.icon name="paper" /></div>
+            <div class="row-copy">
+              <h2>{lesson.title}</h2>
+              <p>
+                {date(lesson.date)}
+                <span>·</span> {Enum.count(lesson.pages, &(&1.kind == "lesson"))} pages
+              </p>
+            </div>
+            <span class="muted lesson-exam-count">
+              {Enum.count(lesson.exams, &(&1.status == "completed"))} contrôles
+            </span>
+            <.icon name="arrow" />
+          </.link>
+        </div>
+      </section>
+
+      <section :if={@live_action == :lesson}>
+        <div class="page-heading">
+          <.page_breadcrumb
+            id="lesson-title"
+            ancestors={[
+              {"Matières", child_path(@profile, ~p"/")},
+              {@subject.name, child_path(@profile, ~p"/matieres/#{@subject.id}")}
+            ]}
+          >
+            {@lesson.title}
+          </.page_breadcrumb>
+          <button
+            id="delete-lesson"
+            type="button"
+            class="button text-button"
+            phx-click="delete_lesson"
+            data-confirm="Supprimer cette leçon, ses pages et tous ses contrôles ? Cette action est définitive."
+          >
+            <.icon name="close" /> Supprimer la leçon
+          </button>
+        </div>
+        <nav id="lesson-navigation" class="lesson-navigation" aria-label="Sections de la leçon">
+          <.link
+            :for={
+              {tab, label, icon} <- [
+                {"controles", "Contrôles", "paper"},
+                {"cours", "Cours", "book"},
+                {"ressources", "Ressources", "book"}
+              ]
+            }
+            id={"lesson-tab-#{tab}"}
+            patch={child_path(@profile, ~p"/lecons/#{@lesson.id}") <> "?onglet=#{tab}"}
+            class="navigation-tab"
+            aria-current={if @lesson_tab == tab, do: "page"}
+          >
+            <.icon name={icon} /> {label}
+          </.link>
+        </nav>
+        <div :if={@lesson_tab == "controles"} id="lesson-controls">
+          <div class="section-heading">
+            <div>
+              <h2>Les contrôles</h2>
+              <span class="muted">
+                {Enum.count(@lesson.exams, &(&1.status == "completed"))} terminés
+              </span>
+            </div>
+            <.link
+              navigate={child_path(@profile, ~p"/lecons/#{@lesson.id}/controle")}
+              class="button primary"
+              id="new-exam"
+            >
+              <.icon name="plus" /> Nouveau contrôle
+            </.link>
+          </div>
+          <div :if={@lesson.exams == []} class="empty-state compact">
+            <p>Aucun contrôle</p>
+          </div>
+          <div class="exam-history">
+            <.link
+              :for={{exam, index} <- Enum.with_index(@lesson.exams)}
+              navigate={child_path(@profile, ~p"/controles/#{exam.id}")}
+              class="lesson-row"
+            >
+              <div class="document-icon"><.icon name="paper" /></div>
+              <div class="row-copy">
+                <h3>Contrôle {length(@lesson.exams) - index}</h3>
+                <p>
+                  {date(exam.submitted_at || exam.inserted_at)}
+                  <span>·</span> {length(exam.questions)} questions
+                </p>
+              </div>
+              <span :if={exam.status == "completed"} class="score-badge">
+                {number(exam.score)}<small>/20</small>
+              </span>
+              <span :if={exam.status != "completed"} class="status-badge">
+                {case exam.status do
+                  "grading" -> "Correction…"
+                  "generating" -> "Préparation…"
+                  "generation_partial" -> "À compléter"
+                  _ -> "Reprendre"
+                end}
+              </span>
+              <.icon name="arrow" />
+            </.link>
+          </div>
+          <section id="lesson-examples">
+            <div class="section-heading history-heading">
+              <h2>Contrôles d’exemple</h2>
+            </div>
+            <div class="pages-grid">
+              <article
+                :for={
+                  {page, index} <-
+                    @lesson.pages |> Enum.filter(&(&1.kind == "example")) |> Enum.with_index(1)
+                }
+                id={"example-#{page.id}"}
+                class="page-card"
+              >
+                <a
+                  href={child_path(@profile, ~p"/pages/#{page.id}")}
+                  target="_blank"
+                  rel="noopener"
+                  class="page-preview"
+                >
+                  <img src={child_path(@profile, ~p"/pages/#{page.id}")} alt={page.filename} />
+                </a>
+                <div class="page-order-actions">
+                  <button
+                    id={"example-previous-#{page.id}"}
+                    type="button"
+                    class="icon-button"
+                    phx-click="move_page"
+                    phx-value-id={page.id}
+                    phx-value-direction="previous"
+                    disabled={index == 1}
+                    aria-label={"Déplacer la page d’exemple #{index} avant la précédente"}
+                    title="Déplacer avant"
+                  >
+                    <.icon name="back" />
+                  </button>
+                  <button
+                    id={"example-next-#{page.id}"}
+                    type="button"
+                    class="icon-button"
+                    phx-click="move_page"
+                    phx-value-id={page.id}
+                    phx-value-direction="next"
+                    disabled={index == Enum.count(@lesson.pages, &(&1.kind == "example"))}
+                    aria-label={"Déplacer la page d’exemple #{index} après la suivante"}
+                    title="Déplacer après"
+                  >
+                    <.icon name="arrow" />
+                  </button>
+                </div>
+                <div class="page-caption">
+                  <strong title={page.filename}>Page {index}</strong>
+                  <button
+                    id={"delete-example-#{page.id}"}
+                    class="icon-button"
+                    phx-click="delete_page"
+                    phx-value-id={page.id}
+                    data-confirm="Supprimer ce contrôle d’exemple ?"
+                    aria-label={"Supprimer #{page.filename}"}
+                  >
+                    <.icon name="close" />
+                  </button>
+                </div>
+              </article>
+            </div>
+            <.form
+              for={@form}
+              id="upload-examples"
+              phx-change="validate"
+              phx-submit="upload_examples"
+            >
+              <.upload_field
+                upload={@uploads.examples}
+                name="examples"
+                label="Ajouter des photos de contrôles"
+              />
+              <p class="muted upload-help">
+                Ajoute des contrôles pour guider la création des prochains exercices.
+              </p>
+              <div :if={@uploads.examples.entries != []} class="form-actions">
+                <button
+                  id="save-examples"
+                  class="button primary"
+                  disabled={Enum.any?(@uploads.examples.entries, &(!&1.done?))}
+                >
+                  Enregistrer les exemples
+                </button>
+              </div>
+            </.form>
+          </section>
+        </div>
+        <div :if={@lesson_tab == "cours"} id="lesson-course">
+          <div class="section-heading">
+            <h2>La leçon</h2>
+            <button class="button text-button" phx-click="open_modal" phx-value-modal="pages">
+              <.icon name="plus" /> Ajouter des pages
+            </button>
+          </div>
+          <div :if={Enum.all?(@lesson.pages, &(&1.kind != "lesson"))} class="empty-state compact">
+            <.icon name="paper" />
+            <p>Aucune page</p>
+          </div>
+          <div class="pages-grid">
+            <article
+              :for={
+                {page, index} <-
+                  @lesson.pages |> Enum.filter(&(&1.kind == "lesson")) |> Enum.with_index(1)
+              }
+              id={"lesson-page-#{page.id}"}
+              class="page-card"
+            >
+              <button
+                type="button"
+                class="page-preview"
+                phx-click="edit_page"
+                phx-value-id={page.id}
+                aria-label={"Vérifier la page #{index}"}
+              >
+                <img
+                  src={child_path(@profile, ~p"/pages/#{page.id}")}
+                  alt={"Page #{index} de la leçon"}
+                />
+              </button>
+              <div class="page-order-actions">
+                <button
+                  id={"page-previous-#{page.id}"}
+                  type="button"
+                  class="icon-button"
+                  phx-click="move_page"
+                  phx-value-id={page.id}
+                  phx-value-direction="previous"
+                  disabled={index == 1}
+                  aria-label={"Déplacer la page #{index} avant la précédente"}
+                  title="Déplacer avant"
+                >
+                  <.icon name="back" />
+                </button>
+                <button
+                  id={"page-next-#{page.id}"}
+                  type="button"
+                  class="icon-button"
+                  phx-click="move_page"
+                  phx-value-id={page.id}
+                  phx-value-direction="next"
+                  disabled={index == Enum.count(@lesson.pages, &(&1.kind == "lesson"))}
+                  aria-label={"Déplacer la page #{index} après la suivante"}
+                  title="Déplacer après"
+                >
+                  <.icon name="arrow" />
+                </button>
+              </div>
+              <div class="page-caption">
+                <div>
+                  <strong>Page {index}</strong><span class={
+                    if page.status == "error", do: "warning-text", else: "muted"
+                  }>{page_status(page)}</span>
+                </div>
+                <button
+                  class="icon-button"
+                  phx-click="delete_page"
+                  phx-value-id={page.id}
+                  data-confirm="Supprimer cette page ?"
+                  aria-label={"Supprimer la page #{index}"}
+                >
+                  <.icon name="close" />
+                </button>
+              </div>
+            </article>
+          </div>
+        </div>
+        <div :if={@lesson_tab == "ressources"} id="lesson-resources">
+          <p class="muted resource-intro">
+            Ajoute des documents ou des liens pour enrichir les contrôles. Les exercices des évaluations et fiches d’activité sont utilisés en priorité, avec leurs illustrations d’origine.
+          </p>
+          <div class="resource-imports">
+            <.form
+              for={@form}
+              id="upload-resources"
+              phx-change="validate"
+              phx-submit="upload_resources"
+            >
+              <.upload_field
+                upload={@uploads.resources}
+                name="resources"
+                label="Ajouter des documents"
+              />
+              <p class="muted upload-help">PDF, JPEG, PNG ou WebP · 20 Mo maximum par fichier.</p>
+              <div :if={@uploads.resources.entries != []} class="form-actions">
+                <button
+                  id="save-resources"
+                  class="button primary"
+                  disabled={Enum.any?(@uploads.resources.entries, &(!&1.done?))}
+                >
+                  Importer les documents
+                </button>
+              </div>
+            </.form>
+            <.form for={@resource_form} id="resource-url-form" phx-submit="add_resource_url">
+              <label for="resource-url">Adresse d’une page web ou d’un PDF</label>
+              <input
+                id="resource-url"
+                name="resource[url]"
+                type="url"
+                value={@resource_form[:url].value}
+                placeholder="https://exemple.fr/document.pdf"
+                required
+                maxlength="2048"
+              />
+              <div class="form-actions">
+                <button id="add-resource-url" class="button secondary" phx-disable-with="Ajout…">
+                  Ajouter le lien
+                </button>
+              </div>
+            </.form>
+          </div>
+          <div :if={@lesson.resources == []} class="empty-state compact">
+            <p>Aucune ressource pour cette leçon.</p>
+          </div>
+          <div id="resource-list" class="resource-list" phx-update="stream">
+            <article
+              :for={{dom_id, resource} <- @streams.resources}
+              id={dom_id}
+              class="panel resource-card"
+            >
+              <div class="section-heading">
+                <div>
+                  <h2>{resource.filename}</h2>
+                  <p class="muted" role="status">{resource_status(resource)}</p>
+                  <span :if={resource_priority?(@lesson, resource.id)} class="status-badge">
+                    Exercices prioritaires
+                  </span>
+                </div>
+                <button
+                  id={"delete-resource-#{resource.id}"}
+                  class="icon-button"
+                  phx-click="delete_resource"
+                  phx-value-id={resource.id}
+                  data-confirm="Supprimer cette ressource et ses pages importées ? Les illustrations des contrôles déjà créés sont conservées."
+                  aria-label={"Supprimer #{resource.filename}"}
+                >
+                  <.icon name="close" />
+                </button>
+              </div>
+              <p :if={resource.source_url} class="resource-source">
+                <a href={resource.source_url} target="_blank" rel="noopener noreferrer">
+                  {resource.source_url}
+                </a>
+              </p>
+              <.link
+                :if={resource.storage_key}
+                href={child_path(@profile, "/ressources/#{resource.id}")}
+                class="resource-original"
+              >
+                Télécharger le document original
+              </.link>
+              <p :if={resource.error} class="error" role="alert">{resource.error}</p>
+              <button
+                :if={resource.status == "error"}
+                id={"retry-resource-#{resource.id}"}
+                class="button secondary"
+                phx-click="retry_resource"
+                phx-value-id={resource.id}
+              >
+                Réessayer l’import
+              </button>
+              <details :if={resource_pages(@lesson, resource.id) != []} class="resource-content">
+                <summary>
+                  Texte reconnu · {length(resource_pages(@lesson, resource.id))} pages
+                </summary>
+                <div
+                  :for={{page, index} <- Enum.with_index(resource_pages(@lesson, resource.id), 1)}
+                  class="resource-page"
+                >
+                  <div class="section-heading">
+                    <strong>Page {index}</strong>
+                    <button
+                      class="button text-button"
+                      phx-click="edit_page"
+                      phx-value-id={page.id}
+                    >
+                      Vérifier le texte
+                    </button>
+                  </div>
+                  <p class="resource-text">{page.text}</p>
+                </div>
+              </details>
+              <details :if={resource_images(@lesson, resource.id) != []} class="resource-content">
+                <summary>
+                  {length(resource_images(@lesson, resource.id))} illustrations conservées
+                </summary>
+                <div class="pages-grid">
+                  <a
+                    :for={page <- resource_images(@lesson, resource.id)}
+                    href={child_path(@profile, ~p"/pages/#{page.id}")}
+                    target="_blank"
+                    rel="noopener"
+                  >
+                    <img
+                      src={child_path(@profile, ~p"/pages/#{page.id}")}
+                      alt={page.filename}
+                      loading="lazy"
+                    />
+                  </a>
+                </div>
+              </details>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section :if={@live_action == :new_exam} class="setup-section">
+        <div class="page-heading">
+          <.page_breadcrumb
+            id="new-exam-title"
+            ancestors={[
+              {"Matières", child_path(@profile, ~p"/")},
+              {@subject.name, child_path(@profile, ~p"/matieres/#{@subject.id}")},
+              {@lesson.title, child_path(@profile, ~p"/lecons/#{@lesson.id}")}
+            ]}
+          >
+            Nouveau contrôle
+          </.page_breadcrumb>
+        </div>
+        <.form
+          for={@form}
+          id="exam-setup"
+          phx-change="configure_exam"
+          phx-submit="generate_exam"
+          class="panel setup-panel"
+        >
+          <fieldset disabled={@busy}>
+            <div class="count-row">
+              <label>Nombre de questions</label>
+              <div class="stepper">
+                <button
+                  type="button"
+                  phx-click="change_count"
+                  phx-value-delta="-1"
+                  disabled={@question_count <= 1}
+                  aria-label="Moins de questions"
+                >
+                  <.icon name="minus" />
+                </button>
+                <output id="question-count" aria-live="polite">{@question_count}</output><button
+                  type="button"
+                  phx-click="change_count"
+                  phx-value-delta="1"
+                  disabled={@question_count >= 30}
+                  aria-label="Plus de questions"
+                ><.icon name="plus" /></button>
+              </div>
+            </div>
+            <label for="instructions">Instructions supplémentaires (facultatif)</label>
+            <p class="muted">
+              Elles seront ajoutées aux <.link navigate={child_path(@profile, ~p"/parametres")}>instructions par défaut</.link>.
+            </p>
+            <textarea
+              id="instructions"
+              name="instructions"
+              rows="4"
+              maxlength="8000"
+              placeholder="Ex. : Insister sur les dates et prévoir deux questions de vocabulaire."
+              phx-debounce="300"
+            >{@instructions}</textarea>
+            <label>Contrôle d’exemple</label>
+            <div :if={Enum.any?(@lesson.pages, &(&1.kind == "example"))} class="example-list">
+              <label
+                :for={page <- Enum.filter(@lesson.pages, &(&1.kind == "example"))}
+                class="example-choice"
+              >
+                <input
+                  type="checkbox"
+                  name="example_ids[]"
+                  value={page.id}
+                  checked={page.id in @example_ids}
+                /><img
+                  src={child_path(@profile, ~p"/pages/#{page.id}")}
+                  alt="Contrôle d’exemple"
+                />
+                <span>
+                  {page.filename}
+                </span>
+              </label>
+            </div>
+            <p class="muted">
+              <.link navigate={child_path(@profile, ~p"/lecons/#{@lesson.id}") <> "#lesson-examples"}>
+                Gérer les contrôles d’exemple
+              </.link>
+            </p>
+            <div class="form-actions">
+              <.link
+                navigate={child_path(@profile, ~p"/lecons/#{@lesson.id}")}
+                class="button secondary"
+              >
+                Annuler
+              </.link>
+              <button
+                class="button primary"
+                id="generate-exam"
+                disabled={@busy}
+                aria-busy={to_string(@busy)}
+              >
+                Créer le contrôle <.icon name="arrow" />
+              </button>
+            </div>
+          </fieldset>
+        </.form>
+      </section>
+
+      <section :if={@live_action == :exam}>
+        <div class="page-heading exam-title">
+          <div>
+            <.page_breadcrumb
+              id="exam-title"
+              ancestors={[
+                {"Matières", child_path(@profile, ~p"/")},
+                {@subject.name, child_path(@profile, ~p"/matieres/#{@subject.id}")},
+                {@lesson.title, child_path(@profile, ~p"/lecons/#{@lesson.id}")}
+              ]}
+            >
+              Contrôle
+            </.page_breadcrumb>
+          </div>
+          <button
+            :if={Study.exam_deletable?(@exam)}
+            id="delete-exam"
+            type="button"
+            class="button text-button"
+            phx-click="delete_exam"
+            data-confirm="Supprimer ce contrôle non rendu ? Cette action est définitive."
+          >
+            <.icon name="close" /> Supprimer le contrôle
+          </button>
+          <div :if={@exam.status == "completed"} class="total-score">
+            {number(@exam.score)}<span>/20</span>
+          </div>
+        </div>
+        <section
+          :if={@exam.status in ["generation_partial", "generating"]}
+          id="generation-status"
+          class="panel"
+        >
+          <h2>{length(@exam.questions)} questions prêtes sur {@exam.generation_target}</h2>
+          <p class="muted">
+            Les questions prêtes sont sauvegardées. Le contrôle sera accessible une fois complet.
+          </p>
+          <p :if={@exam.status == "generating"} role="status">Préparation en cours…</p>
+          <ul :if={@exam.generation_errors != []} id="generation-errors">
+            <li :for={reason <- @exam.generation_errors}>{reason}</li>
+          </ul>
+          <button
+            :if={@exam.status == "generation_partial"}
+            id="resume-generation"
+            class="button primary"
+            phx-click="resume_generation"
+            disabled={@busy}
+          >
+            Réessayer les questions manquantes
+          </button>
+        </section>
+        <div :if={@exam.status in ["in_progress", "grading"]} class="exam-progress">
+          <span>{completed_count(@exam, @answers)} / {length(@exam.questions)} réponses</span><span
+            id="saved"
+            phx-hook="Saved"
+            data-saved={@saved}
+            class="saved"
+          ><.icon name="check" /> Enregistré</span>
+          <progress
+            max={length(@exam.questions)}
+            value={completed_count(@exam, @answers)}
+            aria-label="Réponses complétées"
+          />
+        </div>
+        <p :if={@exam.status == "grading"} class="notice" role="status">
+          <span class="spinner" /> Correction en cours…
+        </p>
+        <.form
+          :if={@exam.status not in ["generation_partial", "generating"]}
+          for={@form}
+          phx-change="save_answers"
+          phx-submit="confirm_submit"
+          id="exam-answers"
+        >
+          <fieldset disabled={@exam.status != "in_progress"}>
+            <article
+              :for={{q, index} <- Enum.with_index(@exam.questions, 1)}
+              class="question"
+              id={"question-#{q["id"]}"}
+            >
+              <div class="question-meta">
+                <span class="question-number">{index}</span><span>{type_name(q["type"])}</span><span class="points">{q["points"]} {if q["points"] == 1, do: "point", else: "points"}</span>
+              </div>
+              <h2>{q["prompt"]}</h2>
+              <.question_images question={q} exam={@exam} profile={@profile} />
+              <div :if={q["text"] != ""} class="reading-text">{readable_text(q["text"])}</div>
+              <.diagram :if={q["type"] == "diagram"} question={q} />
+              <div :if={@exam.status != "completed"}>
+                <div :if={q["type"] == "mcq"} class="options">
+                  <label
+                    :for={{option, i} <- Enum.with_index(q["options"])}
+                    class={["option", @answers[q["id"]] == option && "selected"]}
+                  >
+                    <input
+                      type="radio"
+                      name={"answers[#{q["id"]}]"}
+                      value={option}
+                      checked={@answers[q["id"]] == option}
+                    /><span class="option-letter">{<<65 + i>>}</span><span>{option}</span>
+                  </label>
+                </div>
+                <div :if={q["type"] in ["cloze", "diagram"]} class="slot-inputs">
+                  <div :for={slot <- q["slots"]}>
+                    <label for={"answer-#{q["id"]}-#{slot}"}>{slot}</label>
+                    <input
+                      id={"answer-#{q["id"]}-#{slot}"}
+                      name={"answers[#{q["id"]}][#{slot}]"}
+                      value={slots_value(@answers, q["id"], slot)}
+                      phx-debounce="500"
+                      maxlength="2000"
+                      autocomplete="off"
+                    />
+                  </div>
+                </div>
+                <div :if={q["type"] == "definition"}>
+                  <label class="sr-only" for={"answer-#{q["id"]}"}>Ta réponse</label>
+                  <input
+                    id={"answer-#{q["id"]}"}
+                    name={"answers[#{q["id"]}]"}
+                    value={@answers[q["id"]] || ""}
+                    phx-debounce="500"
+                    maxlength="12000"
+                    autocomplete="off"
+                  />
+                </div>
+                <div :if={q["type"] in ["long", "reading"]}>
+                  <label class="sr-only" for={"answer-#{q["id"]}"}>Ta réponse</label><textarea
+                    id={"answer-#{q["id"]}"}
+                    name={"answers[#{q["id"]}]"}
+                    rows="5"
+                    phx-debounce="500"
+                    maxlength="12000"
+                  >{@answers[q["id"]] || ""}</textarea>
+                  <button
+                    type="button"
+                    class="button text-button photo-answer"
+                    phx-click="open_ocr"
+                    phx-value-id={q["id"]}
+                  >
+                    <.icon name="camera" /> Répondre avec une photo
+                  </button>
+                </div>
+              </div>
+              <div :if={@exam.status == "completed"} class="graded-answer">
+                <div class="student-answer">{answer_text(@exam.answers[q["id"]])}</div>
+                <div class="correction">
+                  <div class="correction-heading">
+                    <strong>Correction</strong><strong>{number(@exam.corrections[q["id"]]["points"])} / {q["points"]}</strong>
+                  </div>
+                  <p>{@exam.corrections[q["id"]]["feedback"]}</p>
+                  <p class="expected">
+                    <strong>Réponse attendue</strong>
+                    <span class="expected-answer">{@exam.corrections[q["id"]]["expected"]}</span>
+                  </p>
+                </div>
+              </div>
+            </article>
+          </fieldset>
+          <div :if={@exam.status == "in_progress"} class="submit-row">
+            <button type="submit" class="button primary" id="finish-exam">
+              Rendre ma copie <.icon name="check" />
+            </button>
+          </div>
+        </.form>
+      </section>
+    </div>
+
+    <.modal :if={@modal == "lesson"} title="Nouvelle leçon">
+      <.form for={@form} phx-change="validate" phx-submit="create_lesson" id="lesson-form">
+        <label for="lesson-title">Nom de la leçon</label>
+        <input id="lesson-title" name="title" required maxlength="120" />
+        <p class="muted date-line">{date(Study.today())}</p>
+        <label>Pages de la leçon</label>
+        <.upload_field upload={@uploads.pages} name="pages" label="Ajouter des pages" />
+        <p :if={@error} class="error" role="alert">{@error}</p>
+        <div class="form-actions">
+          <button class="button primary" phx-disable-with="Enregistrement…">
+            Créer la leçon
+          </button>
+        </div>
+      </.form>
+    </.modal>
+    <.modal :if={@modal == "pages"} title="Ajouter des pages">
+      <.form for={@form} phx-change="validate" phx-submit="upload_pages" id="upload-pages">
+        <.upload_field upload={@uploads.pages} name="pages" label="Choisir des photos" />
+        <p :if={@error} class="error" role="alert">{@error}</p>
+        <div class="form-actions">
+          <button
+            class="button primary"
+            disabled={@uploads.pages.entries == []}
+            phx-disable-with="Enregistrement…"
+          >
+            Ajouter
+          </button>
+        </div>
+      </.form>
+    </.modal>
+    <.modal :if={@modal == "edit_page"} id="page-modal" title="Vérifier la page">
+      <div class="page-editor">
+        <a
+          href={child_path(@profile, ~p"/pages/#{@edit_page.id}")}
+          target="_blank"
+          rel="noreferrer"
+        >
+          <img
+            :if={String.starts_with?(@edit_page.content_type, "image/")}
+            src={child_path(@profile, ~p"/pages/#{@edit_page.id}")}
+            alt="Page originale"
+          />
+          <span :if={!String.starts_with?(@edit_page.content_type, "image/")}>
+            Voir le texte original
+          </span>
+        </a>
+        <.form for={@form} phx-change="validate_page" phx-submit="save_page" id="page-text-form">
+          <label for="page-text">Texte reconnu</label><textarea
+            id="page-text"
+            name="text"
+            rows="14"
+            maxlength="60000"
+          >{@page_text}</textarea>
+          <p :if={@edit_page.error} class="error">{@edit_page.error}</p>
+          <button
+            :if={String.starts_with?(@edit_page.content_type, "image/")}
+            type="button"
+            class="button text-button"
+            phx-click="transcribe_page"
+            phx-value-id={@edit_page.id}
+            disabled={@edit_page.status == "pending"}
+          >
+            {if @edit_page.status == "pending", do: "Lecture en cours…", else: "Relire la photo"}
+          </button>
+          <div class="form-actions"><button class="button primary">Enregistrer</button></div>
+        </.form>
+      </div>
+    </.modal>
+    <.modal :if={@modal == "answer_photo"} title="Ta réponse en photo">
+      <.form
+        :if={!@ocr_text}
+        for={@form}
+        phx-change="validate"
+        phx-submit="transcribe_answer"
+        id="answer-photo-form"
+      >
+        <.upload_field
+          upload={@uploads.answer_photo}
+          name="answer_photo"
+          label="Choisir une photo"
+        />
+        <p :if={@error} class="error" role="alert">{@error}</p>
+        <div class="form-actions">
+          <button class="button primary" disabled={@busy || @uploads.answer_photo.entries == []}>
+            Lire la photo
+          </button>
+        </div>
+      </.form>
+      <.form :if={@ocr_text} for={@form} phx-submit="use_transcription" id="transcription-form">
+        <label for="transcription">Vérifie ta réponse</label><textarea
+          name="text"
+          id="transcription"
+          rows="9"
+        >{@ocr_text}</textarea>
+        <div class="form-actions">
+          <button class="button primary">Utiliser cette réponse</button>
+        </div>
+      </.form>
+    </.modal>
+    <div
+      :if={@confirming}
+      class="modal-shade"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="submit-title"
+      id="submit-confirm"
+      phx-hook="Dialog"
+    >
+      <.focus_wrap id="submit-focus" class="modal-panel">
+        <h2 id="submit-title">Rendre ta copie ?</h2>
+        <p>{completed_count(@exam, @answers)} réponses sur {length(@exam.questions)}.</p>
+        <p>Tu ne pourras plus modifier tes réponses après la correction.</p>
+        <div class="form-actions">
+          <button class="button secondary" phx-click="cancel_submit">Continuer</button><button
+            class="button primary"
+            phx-click="submit_exam"
+            id="confirm-finish"
+          >Rendre ma copie</button>
+        </div>
+      </.focus_wrap>
+    </div>
+    <div :if={@busy} class="busy-overlay" role="status" aria-live="polite">
+      <div>
+        <span class="spinner" />
+        <p>{@busy_text}</p>
+      </div>
+    </div>
+  </main>
+</Layouts.app>

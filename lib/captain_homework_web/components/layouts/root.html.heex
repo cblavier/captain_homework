@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="csrf-token" content={get_csrf_token()} />
+    <meta name="theme-color" content="#2c4569" />
+    <meta name="apple-mobile-web-app-title" content="Captain Homework" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="robots" content="noindex,nofollow" />
+    <.live_title default="Captain Homework">
+      {assigns[:page_title]}
+    </.live_title>
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      sizes="any"
+      href={~p"/images/brand/captain_homework-favicon.svg?v=4"}
+    />
+    <link
+      rel="apple-touch-icon"
+      sizes="180x180"
+      href={~p"/images/brand/captain_homework-icon-180.png?v=3"}
+    />
+    <.startup_images />
+    <script id="select-startup-image" src={~p"/assets/js/startup.js"}>
+    </script>
+    <link rel="manifest" href={~p"/manifest.webmanifest"} />
+    <link phx-track-static rel="stylesheet" href={~p"/assets/css/app.css"} />
+    <script defer phx-track-static type="text/javascript" src={~p"/assets/js/app.js"}>
+    </script>
+  </head>
+  <body>{@inner_content}</body>
+</html>
