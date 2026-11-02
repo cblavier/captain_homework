@@ -2,7 +2,7 @@ defmodule CaptainHomework.Exams.Generation do
   import Ecto.Query
   alias CaptainHomework.{AI, Repo}
   alias CaptainHomework.Study.Exam
-  alias CaptainHomework.Exams.{Illustrations, Plan}
+  alias CaptainHomework.Exams.{Illustrations, Instructions, Plan}
   alias CaptainHomework.AI.Trace
 
   def identify(q) do
@@ -42,9 +42,11 @@ defmodule CaptainHomework.Exams.Generation do
 
   defp prepare_plan(exam, lesson, pages, examples, opts) do
     needs_plan? =
-      Plan.supported?() and
+      exam.format != "flashcard" and Plan.supported?() and
         (is_nil(exam.generation_plan) or
-           not Plan.current?(exam.generation_plan, lesson, pages, examples))
+           not Plan.current?(exam.generation_plan, lesson, pages, examples) or
+           (String.trim(exam.instructions) != "" and
+              exam.generation_plan["instruction_priority_version"] != 1))
 
     if needs_plan? do
       progress(exam, opts, "Préparation du contrôle…")
@@ -178,10 +180,8 @@ defmodule CaptainHomework.Exams.Generation do
             exam.question_types
           end
 
-        instructions =
-          exam.instructions <>
-            "\n\n" <>
-            feedback <>
+        guidance =
+          feedback <>
             if(round == 3,
               do:
                 "\nREPLI OBLIGATOIRE : simplifie les questions tout en respectant les types autorisés et les supports nécessaires.",
@@ -191,8 +191,23 @@ defmodule CaptainHomework.Exams.Generation do
             "Cette sélection prévaut sur la répartition des exemples et les autres consignes de variété. " <>
             "Aucun type décoché ne doit apparaître ; tous les types cochés ne sont pas obligatoires."
 
+        instructions = Instructions.compose(exam.instructions, guidance)
+
         result =
           cond do
+            exam.format == "flashcard" ->
+              Trace.with_stage("draft", fn ->
+                AI.provider().generate_flashcards(
+                  lesson,
+                  pages,
+                  missing,
+                  instructions,
+                  exam.questions,
+                  allowed
+                )
+              end)
+              |> with_plan(nil)
+
             audit_pending?(exam) ->
               {:ok, exam.generation_plan["pending_drafts"], exam.generation_plan}
 
@@ -229,6 +244,13 @@ defmodule CaptainHomework.Exams.Generation do
 
             {audit_kept, candidates} = merge_drafts(exam.questions, candidates)
             {valid, errors} = AI.inspect_questions(candidates)
+
+            {valid, flashcard_errors} =
+              if exam.format == "flashcard",
+                do: CaptainHomework.Exams.Flashcards.validate_candidates(valid, pages),
+                else: {valid, []}
+
+            errors = errors ++ flashcard_errors
             {valid, image_errors} = Illustrations.validate(valid, lesson)
             {valid, errors} = accept_unique(valid, audit_kept, errors, allowed)
             progress(exam, opts, "Vérification de l’équilibre du contrôle …")
@@ -365,6 +387,8 @@ defmodule CaptainHomework.Exams.Generation do
       source_ids = Enum.uniq(Enum.flat_map(questions, &Map.get(&1, "source_page_ids", [])))
 
       context = %{
+        custom_instructions: exam.instructions,
+        permitted_content: plan["context"],
         supports: supports,
         images: Enum.filter(Illustrations.sources(lesson), &(&1.id in visible_ids)),
         source_pages: Enum.filter(Illustrations.content_pages(lesson), &(&1.id in source_ids))

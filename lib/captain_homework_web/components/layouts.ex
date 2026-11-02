@@ -3,14 +3,15 @@ defmodule CaptainHomeworkWeb.Layouts do
   embed_templates "layouts/*"
   attr :flash, :map, required: true
   attr :child_theme, :string, default: "blue"
+  attr :immersive, :boolean, default: false
   slot :inner_block, required: true
 
   def app(assigns) do
     ~H"""
     <.flash_group flash={@flash} />
-    <div class="page-shell" data-child-theme={@child_theme}>
+    <div class={["page-shell", @immersive && "page-shell-immersive"]} data-child-theme={@child_theme}>
       {render_slot(@inner_block)}
-      <footer class="app-brand-footer">
+      <footer :if={!@immersive} class="app-brand-footer">
         <span
           id="footer-logo"
           class="app-brand-logo"

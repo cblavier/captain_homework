@@ -273,9 +273,25 @@ defmodule CaptainHomework.Study do
 
   def save_answers(profile_id, exam_id, answers) when is_map(answers) do
     exam = get_exam!(profile_id, exam_id)
+
+    answers =
+      if exam.format == "flashcard" do
+        question = CaptainHomework.Exams.Flashcards.current(exam)
+
+        if question && not Map.has_key?(exam.corrections, question["id"]),
+          do: Map.merge(exam.answers, Map.take(answers, [question["id"]])),
+          else: exam.answers
+      else
+        answers
+      end
+
     answers = sanitize_answers(exam, answers)
 
-    case Repo.update_all(from(e in Exam, where: e.id == ^exam.id and e.status == "in_progress"),
+    case Repo.update_all(
+           from(e in Exam,
+             where:
+               e.id == ^exam.id and e.status == "in_progress" and e.updated_at == ^exam.updated_at
+           ),
            set: [answers: answers, updated_at: DateTime.utc_now()]
          ) do
       {1, _} -> {:ok, %{exam | answers: answers}}

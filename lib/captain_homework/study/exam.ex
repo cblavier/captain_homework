@@ -4,6 +4,8 @@ defmodule CaptainHomework.Study.Exam do
   @foreign_key_type :binary_id
   schema "exams" do
     belongs_to :lesson, CaptainHomework.Study.Lesson
+    field :format, :string, default: "classic"
+    field :card_index, :integer, default: 0
 
     field :question_types, CaptainHomework.Study.JSONList,
       default: CaptainHomework.QuestionTypes.ids()

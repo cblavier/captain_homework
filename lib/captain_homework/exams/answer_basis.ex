@@ -4,7 +4,7 @@ defmodule CaptainHomework.Exams.AnswerBasis do
 
   def valid?(questions, pages, types), do: validation_errors(questions, pages, types) == []
 
-  def validation_errors(questions, pages, types) do
+  def validation_errors(questions, pages, types, opts \\ []) do
     if Enum.any?(questions, &Map.has_key?(&1, "answer_basis")) do
       course_ids = pages |> Enum.filter(&(Map.get(&1, :kind) == "lesson")) |> MapSet.new(& &1.id)
       counts = Enum.frequencies_by(questions, & &1["answer_basis"])
@@ -29,7 +29,8 @@ defmodule CaptainHomework.Exams.AnswerBasis do
 
       []
       |> issue(
-        not Enum.all?(expected, fn {kind, count} -> Map.get(counts, kind, 0) == count end),
+        Keyword.get(opts, :enforce_balance, true) and
+          not Enum.all?(expected, fn {kind, count} -> Map.get(counts, kind, 0) == count end),
         "Répartition connaissances/documents incorrecte. Effectifs réels : #{Jason.encode!(counts)} ; attendus : #{Jason.encode!(expected)}."
       )
       |> issue(

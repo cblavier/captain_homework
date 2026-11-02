@@ -3,6 +3,8 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
   require Logger
   alias CaptainHomework.{Study, Exams, AI, Uploads, Repo, Resources, SubjectQuestionTypes}
   alias CaptainHomework.Study.Page
+  alias CaptainHomework.Exams.Flashcards
+  import CaptainHomeworkWeb.FlashcardComponents
   import Ecto.Query
   alias CaptainHomeworkWeb.ProfilePath
   import CaptainHomeworkWeb.ProfilePath, only: [child_path: 2]
@@ -41,6 +43,7 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
         busy_text: nil,
         upload_log_progress: %{},
         question_count: 10,
+        exam_format: "classic",
         question_types: CaptainHomework.QuestionTypes.ids(),
         instructions: "",
         answers: %{},
@@ -210,6 +213,7 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
                 )
             ),
           instructions: "",
+          exam_format: "classic",
           question_count: 10,
           available_question_types: SubjectQuestionTypes.list(profile.id, lesson.subject),
           question_types:
@@ -556,6 +560,7 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
     {:noreply,
      assign(socket,
        instructions: params["instructions"] || socket.assigns.instructions,
+       exam_format: selected_exam_format(params, socket),
        question_types: selected_question_types(params, socket)
      )}
   end
@@ -575,6 +580,7 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
            socket.assigns.question_count,
            params["instructions"] || socket.assigns.instructions,
            question_types: selected_question_types(params, socket),
+           format: selected_exam_format(params, socket),
            background: true
          ) do
       {:ok, exam} ->
@@ -614,6 +620,25 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
 
   def handle_event("save_answers", _, socket), do: {:noreply, socket}
 
+  def handle_event("validate_card", params, socket) do
+    id = params["question_id"]
+    answer = get_in(params, ["answers", id]) || ""
+
+    case Flashcards.submit(socket.assigns.profile.id, socket.assigns.exam.id, id, answer) do
+      {:ok, _} ->
+        Process.send_after(self(), :refresh_exam, 2000)
+        {:noreply, refresh_exam(socket)}
+
+      {:error, _} ->
+        {:noreply, refresh_exam(socket)}
+    end
+  end
+
+  def handle_event("next_card", %{"id" => id}, socket) do
+    Flashcards.advance(socket.assigns.profile.id, socket.assigns.exam.id, id)
+    {:noreply, refresh_exam(socket)}
+  end
+
   def handle_event("confirm_submit", params, socket) do
     answers = params["answers"] || socket.assigns.answers
     Study.save_answers(socket.assigns.profile.id, socket.assigns.exam.id, answers)
@@ -626,7 +651,12 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
     case Exams.submit(socket.assigns.profile.id, socket.assigns.exam.id, socket.assigns.answers) do
       {:ok, _} ->
         Process.send_after(self(), :refresh_exam, 2000)
-        {:noreply, socket |> assign(confirming: false, error: nil) |> refresh_exam()}
+
+        {:noreply,
+         socket
+         |> assign(confirming: false, error: nil)
+         |> refresh_exam()
+         |> push_event("exam-submitted", %{})}
 
       _ ->
         {:noreply, refresh_exam(socket)}
@@ -857,15 +887,28 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
   end
 
   defp selected_question_types(params, socket) do
+    allowed =
+      socket.assigns.available_question_types
+      |> Enum.filter(
+        &(selected_exam_format(params, socket) != "flashcard" or &1["work_duration"] == "quick")
+      )
+      |> Enum.map(& &1["id"])
+
     if Map.has_key?(params, "question_types") do
       params["question_types"]
       |> List.wrap()
-      |> Enum.filter(
-        &(&1 in Enum.map(socket.assigns.available_question_types, fn type -> type["id"] end))
-      )
+      |> Enum.filter(&(&1 in allowed))
       |> Enum.uniq()
     else
-      socket.assigns.question_types
+      Enum.filter(socket.assigns.question_types, &(&1 in allowed))
+    end
+  end
+
+  defp selected_exam_format(params, socket) do
+    case params["format"] do
+      "flashcard" -> "flashcard"
+      "classic" -> "classic"
+      _ -> socket.assigns.exam_format
     end
   end
 

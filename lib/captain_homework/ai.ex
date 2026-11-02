@@ -33,6 +33,12 @@ defmodule CaptainHomework.AI do
   @callback generate(map(), list(), list(), integer(), String.t(), list()) ::
               {:ok, list()} | {:error, term()}
   @callback grade(map()) :: {:ok, list() | map()} | {:error, term()}
+  @callback generate_flashcards(map(), list(), integer(), String.t(), list(), list()) ::
+              {:ok, list()} | {:error, term()}
+  @optional_callbacks generate_flashcards: 6
+  @callback select_exam_content(list(), list(), String.t()) ::
+              {:ok, list(), boolean()} | {:error, term()}
+  @optional_callbacks select_exam_content: 3
   def provider, do: Application.fetch_env!(:captain_homework, :ai_provider)
   def transcribe(data, type), do: provider().transcribe(data, type)
 

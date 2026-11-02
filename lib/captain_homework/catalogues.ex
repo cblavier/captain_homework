@@ -146,13 +146,27 @@ defmodule CaptainHomework.Catalogues do
   end
 
   def context(lesson, pages, examples, count, instructions, retries) do
+    instructions = CaptainHomework.Exams.Instructions.custom(instructions)
+
     sources =
       pages
       |> Enum.map(&if(&1.resource_id, do: {Resource, &1.resource_id}, else: {Page, &1.id}))
       |> Enum.uniq()
 
-    with {:ok, entries} <- collect(sources) do
-      select(entries, lesson, examples, count, instructions, retries)
+    with {:ok, entries} <- collect(sources),
+         {:ok, entries, use_examples?} <- select_requested_content(entries, pages, instructions) do
+      select(entries, lesson, examples, count, instructions, retries, use_examples?)
+    end
+  end
+
+  defp select_requested_content(entries, pages, instructions) do
+    provider = AI.provider()
+
+    if String.trim(instructions) != "" and
+         function_exported?(provider, :select_exam_content, 3) do
+      provider.select_exam_content(entries, pages, instructions)
+    else
+      {:ok, entries, true}
     end
   end
 
@@ -165,7 +179,8 @@ defmodule CaptainHomework.Catalogues do
     end)
   end
 
-  defp select(entries, lesson, examples, count, instructions, retries) do
+  defp select(entries, lesson, examples, count, instructions, retries, use_examples?) do
+    examples = if use_examples?, do: examples, else: []
     images = Illustrations.sources(lesson)
     visual_ids = MapSet.new(images, & &1.id)
     image_metadata = ResourceImages.metadata(images ++ examples)
@@ -270,8 +285,12 @@ defmodule CaptainHomework.Catalogues do
             {id, if(MapSet.member?(lesson_ids, id), do: "lesson", else: "resource")}
           end)
 
-        {:ok, Jason.encode!(%{"catalogue" => selected, "source_kinds" => source_kinds}), images,
-         examples}
+        {:ok,
+         Jason.encode!(%{
+           "catalogue" => selected,
+           "source_kinds" => source_kinds,
+           "use_examples" => use_examples?
+         }), images, examples}
       end
     end
   end

@@ -20,7 +20,9 @@ defmodule CaptainHomework.Exams do
 
   def generate(profile_id, lesson_id, count, instructions, opts)
       when count in 1..30 do
-    lesson = Study.get_lesson!(profile_id, lesson_id)
+    format = Keyword.get(opts, :format, "classic")
+    instructions = instructions |> String.trim() |> String.slice(0, 8000)
+    lesson = Study.get_lesson!(profile_id, lesson_id) |> generation_lesson(format)
     available = CaptainHomework.SubjectQuestionTypes.list(profile_id, lesson.subject)
     requested_types = Keyword.get(opts, :question_types, Enum.map(available, & &1["id"]))
 
@@ -33,6 +35,11 @@ defmodule CaptainHomework.Exams do
         {:ok, selected} -> selected
         {:error, _} -> []
       end
+
+    selected =
+      if format == "flashcard",
+        do: Enum.filter(selected, &(&1["work_duration"] == "quick")),
+        else: selected
 
     types = CaptainHomework.SubjectQuestionTypes.formats(selected)
     custom_types? = Enum.any?(selected, &(&1["id"] not in CaptainHomework.QuestionTypes.ids()))
@@ -49,14 +56,13 @@ defmodule CaptainHomework.Exams do
       )
 
     retries =
-      if custom_types? or Illustrations.priority_exercises?(lesson) do
+      if instructions != "" or format == "flashcard" or custom_types? or
+           Illustrations.priority_exercises?(lesson) do
         []
       else
         retry_questions(previous_exams, count)
         |> Enum.filter(&(AI.question_errors(&1) == [] and &1["type"] in types))
       end
-
-    instructions = instructions |> String.trim() |> String.slice(0, 8000)
 
     instructions =
       if custom_types?,
@@ -64,6 +70,9 @@ defmodule CaptainHomework.Exams do
         else: instructions
 
     cond do
+      format not in ["classic", "flashcard"] ->
+        {:error, "Choisis un format de contrôle valide."}
+
       types == [] ->
         {:error, "Choisis au moins un type de question valide."}
 
@@ -81,6 +90,7 @@ defmodule CaptainHomework.Exams do
         with {:ok, draft} <-
                Repo.insert(%Exam{
                  lesson_id: lesson.id,
+                 format: format,
                  instructions: instructions,
                  question_types: types,
                  questions:
@@ -100,6 +110,16 @@ defmodule CaptainHomework.Exams do
 
   def generate(_, _, _, _, _), do: {:error, "Choisis entre 1 et 30 questions."}
 
+  def generation_lesson(lesson, "flashcard"),
+    do: %{
+      lesson
+      | pages: Enum.filter(lesson.pages, &(&1.kind == "lesson")),
+        resources: [],
+        exams: []
+    }
+
+  def generation_lesson(lesson, _), do: lesson
+
   defp prepare_retry(question) do
     question
     |> Illustrations.copy_retry()
@@ -117,7 +137,7 @@ defmodule CaptainHomework.Exams do
            set: [status: "generating", generation_started_at: now, updated_at: now]
          ) do
       {1, _} ->
-        lesson = Study.get_lesson!(profile_id, exam.lesson_id)
+        lesson = Study.get_lesson!(profile_id, exam.lesson_id) |> generation_lesson(exam.format)
         pages = Illustrations.content_pages(lesson)
 
         examples =
@@ -154,7 +174,10 @@ defmodule CaptainHomework.Exams do
     answers = Study.sanitize_answers(exam, answers)
     now = DateTime.utc_now()
 
-    case Repo.update_all(from(e in Exam, where: e.id == ^exam.id and e.status == "in_progress"),
+    case Repo.update_all(
+           from(e in Exam,
+             where: e.id == ^exam.id and e.status == "in_progress" and e.format == "classic"
+           ),
            set: [
              status: "grading",
              answers: answers,

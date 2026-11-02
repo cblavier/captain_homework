@@ -1,5 +1,20 @@
-<Layouts.app flash={@flash} child_theme={if @profile, do: @profile.theme, else: "blue"}>
-  <main class={["app", @live_action == :exam && "exam-app"]}>
+<Layouts.app
+  flash={@flash}
+  child_theme={if @profile, do: @profile.theme, else: "blue"}
+  immersive={@live_action == :exam and flashcard_active?(@exam)}
+>
+  <main :if={@live_action == :exam and flashcard_active?(@exam)} id="flashcard-player">
+    <.flashcard
+      exam={@exam}
+      answers={@answers}
+      error={@error}
+      close_path={child_path(@profile, ~p"/lecons/#{@lesson.id}")}
+    />
+  </main>
+  <main
+    :if={@live_action != :exam or not flashcard_active?(@exam)}
+    class={["app", @live_action == :exam && "exam-app"]}
+  >
     <div class="identity-row">
       <details
         :if={@profile}
@@ -450,7 +465,15 @@
             >
               <div class="document-icon"><.icon name="paper" /></div>
               <div class="row-copy">
-                <h3>Contrôle {length(@lesson.exams) - index}</h3>
+                <div class="exam-history-title">
+                  <h3>Contrôle {length(@lesson.exams) - index}</h3>
+                  <span
+                    id={"exam-format-#{exam.id}"}
+                    class={["exam-format-badge", exam.format == "flashcard" && "flashcard-badge"]}
+                  >
+                    {if exam.format == "flashcard", do: "Flashcard", else: "Classique"}
+                  </span>
+                </div>
                 <p>
                   {date(exam.submitted_at || exam.inserted_at)}
                   <span>·</span> {length(exam.questions)} questions
@@ -889,6 +912,32 @@
           class="panel setup-panel"
         >
           <fieldset disabled={@busy}>
+            <fieldset id="exam-format" class="exam-format-choice">
+              <legend class="exam-field-label">Format du contrôle</legend>
+              <div class="exam-format-options">
+                <label for="exam-format-classic">
+                  <input
+                    id="exam-format-classic"
+                    type="radio"
+                    name="format"
+                    value="classic"
+                    checked={@exam_format == "classic"}
+                  /> Classique
+                </label>
+                <label for="exam-format-flashcard">
+                  <input
+                    id="exam-format-flashcard"
+                    type="radio"
+                    name="format"
+                    value="flashcard"
+                    checked={@exam_format == "flashcard"}
+                  /> Flashcard
+                </label>
+              </div>
+              <p :if={@exam_format == "flashcard"} id="flashcard-help" class="muted">
+                Révise toutes les pages de ta leçon avec des cartes rapides et ludiques, corrigées une par une. Les contrôles d’exemple et les ressources externes ne sont pas utilisés. Chaque carte vaut 1 point.
+              </p>
+            </fieldset>
             <div class="count-row">
               <label class="exam-field-label" for="question-count">Nombre de questions</label>
               <div class="stepper">
@@ -917,7 +966,11 @@
             >
               <legend class="exam-field-label">Types de questions</legend>
               <p id="question-types-help" class="muted">
-                Les exemples guident la répartition parmi les types cochés, selon le cours et les supports disponibles.
+                <%= if @exam_format == "flashcard" do %>
+                  Seuls les types de questions de durée rapide sont disponibles en mode Flashcard.
+                <% else %>
+                  Les exemples guident la répartition parmi les types cochés, selon le cours et les supports disponibles.
+                <% end %>
               </p>
               <p :if={@available_question_types == []} class="notice">
                 Aucun type disponible. Ajoute un type dans les paramètres de cette matière.
@@ -942,6 +995,7 @@
                     name="question_types[]"
                     value={type["id"]}
                     checked={type["id"] in @question_types}
+                    disabled={@exam_format == "flashcard" and type["work_duration"] != "quick"}
                   />
                   <span>{type["label"]}</span>
                 </label>
@@ -951,17 +1005,17 @@
               </p>
             </fieldset>
             <label class="exam-field-label" for="instructions">
-              Instructions supplémentaires (facultatif)
+              Consignes personnalisées (facultatif)
             </label>
             <p class="muted">
-              Précise tes attentes pour ce contrôle : notions à approfondir, difficulté ou consignes particulières.
+              Ces consignes sont prioritaires sur les règles par défaut : notions à réviser, contenus à ignorer, difficulté ou forme des questions.
             </p>
             <textarea
               id="instructions"
               name="instructions"
               rows="4"
               maxlength="8000"
-              placeholder="Ex. : Insister sur les dates et prévoir deux questions de vocabulaire."
+              placeholder="Ex. : Ignorer les activités et interroger uniquement sur les connaissances du cours."
               phx-debounce="300"
             >{@instructions}</textarea>
             <div class="form-actions">
@@ -1062,7 +1116,10 @@
             Réessayer les questions manquantes
           </button>
         </section>
-        <div :if={@exam.status in ["in_progress", "grading"]} class="exam-progress">
+        <div
+          :if={@exam.format == "classic" and @exam.status in ["in_progress", "grading"]}
+          class="exam-progress"
+        >
           <span>{completed_count(@exam, @answers)} / {length(@exam.questions)} réponses</span><span
             id="saved"
             phx-hook="Saved"
@@ -1075,11 +1132,18 @@
             aria-label="Réponses complétées"
           />
         </div>
-        <p :if={@exam.status == "grading"} class="notice" role="status">
+        <p
+          :if={@exam.format == "classic" and @exam.status == "grading"}
+          class="notice"
+          role="status"
+        >
           <span class="spinner" /> Correction en cours…
         </p>
         <.form
-          :if={@exam.status not in ["generation_partial", "generating"]}
+          :if={
+            @exam.status == "completed" or
+              (@exam.format == "classic" and @exam.status in ["in_progress", "grading"])
+          }
           for={@form}
           phx-change="save_answers"
           phx-submit="confirm_submit"
@@ -1252,7 +1316,7 @@
               -
             </span>
             <button
-              :if={Study.exam_deletable?(@exam)}
+              :if={@exam.status != "generating" and Study.exam_deletable?(@exam)}
               id="delete-exam"
               type="button"
               class="button text-button"
@@ -1263,7 +1327,7 @@
             </button>
           </div>
           <button
-            :if={@exam.status == "in_progress"}
+            :if={@exam.status == "in_progress" and @exam.format == "classic"}
             type="submit"
             form="exam-answers"
             class="button primary"

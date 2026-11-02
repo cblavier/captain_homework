@@ -9,7 +9,16 @@ defmodule CaptainHomework.Exams.Plan do
       function_exported?(provider, :generate_planned, 5)
   end
 
-  def validate(%{"questions" => questions, "supports" => supports}, count, types, pages, images)
+  def validate(plan, count, types, pages, images, opts \\ [])
+
+  def validate(
+        %{"questions" => questions, "supports" => supports},
+        count,
+        types,
+        pages,
+        images,
+        opts
+      )
       when is_list(questions) and is_list(supports) do
     sources = MapSet.new(pages, & &1.id)
     image_ids = MapSet.new(images, & &1.id)
@@ -41,9 +50,10 @@ defmodule CaptainHomework.Exams.Plan do
 
     if valid_supports and valid_questions do
       issues =
-        CaptainHomework.Exams.AnswerBasis.validation_errors(questions, pages, types)
+        CaptainHomework.Exams.AnswerBasis.validation_errors(questions, pages, types, opts)
         |> issue(
-          not CaptainHomework.Exams.ResponseEffort.balanced?(questions, types, pages),
+          Keyword.get(opts, :enforce_balance, true) and
+            not CaptainHomework.Exams.ResponseEffort.balanced?(questions, types, pages),
           "Respecte les effectifs d'effort de réponse : #{Jason.encode!(CaptainHomework.Exams.Constraints.targets(count, types, pages).effort)}."
         )
         |> issue(
@@ -78,7 +88,7 @@ defmodule CaptainHomework.Exams.Plan do
     _ -> {:error, "Le plan contient une structure de question ou de support invalide."}
   end
 
-  def validate(_, _, _, _, _), do: {:error, "Le plan du contrôle est incomplet."}
+  def validate(_, _, _, _, _, _), do: {:error, "Le plan du contrôle est incomplet."}
 
   @version 2
   def version, do: @version
@@ -112,8 +122,8 @@ defmodule CaptainHomework.Exams.Plan do
   def ready_questions(%{"version" => @version} = plan), do: {:ok, plan["questions"]}
   def ready_questions(_), do: :legacy
 
-  def validate_complete(plan, count, types, pages, images, slots \\ nil) do
-    with :ok <- validate(plan, count, types, pages, images),
+  def validate_complete(plan, count, types, pages, images, slots \\ nil, opts \\ []) do
+    with :ok <- validate(plan, count, types, pages, images, opts),
          :ok <- CaptainHomework.Exams.Constraints.validate_slots(plan["questions"], slots) do
       available_images = MapSet.new(images, & &1.id)
 
