@@ -23,7 +23,7 @@ L’interface reprend les conventions de [Captain Notes](https://github.com/cbla
 
 - Elixir, Phoenix LiveView et SQLite.
 - OpenAI pour la reconnaissance des documents, la génération des contrôles et leur correction.
-- Poppler pour lire les PDF et extraire leurs illustrations.
+- Poppler : une suite d’outils pour extraire le texte et les images des PDF.
 - Code massivement généré par intelligence artificielle avec OpenAI Codex.
 - Prévu pour tourner avec Docker en production.
 
@@ -88,47 +88,23 @@ Les profils enfants sont des espaces de travail, pas des comptes avec authentifi
 
 ### Ressources pédagogiques
 
-L’onglet **Ressources** accepte :
+L’onglet **Ressources** accepte les PDF, JPEG, PNG et WebP, les URL publiques et les fichiers Google Drive accessibles par lien. Les imports n’ont pas de plafond de taille, mais le traitement est limité à 100 pages et 300 images par PDF (160 mégapixels et 256 Mo extraits), et 40 images par page web. Les documents nécessitant une connexion ou JavaScript, Word et présentations doivent être exportés en PDF.
 
-- Les fichiers PDF, JPEG, PNG et WebP, sans plafond de taille à l’import.
-- Les URL publiques de pages HTML, de PDF ou d’images, y compris les liens de partage de fichiers Google Drive (accès « Tous les utilisateurs disposant du lien », téléchargement autorisé).
-- Jusqu’à 100 pages et 300 images par PDF (160 mégapixels et 256 Mo extraits maximum), et 40 images par page web.
+Le texte reconnu peut être corrigé ; un import interrompu peut reprendre sans refaire les pages déjà traitées. Les imports incomplets doivent être terminés ou retirés avant génération. Un catalogue pédagogique est réutilisé tant que le contenu et les paramètres d’analyse restent inchangés.
 
-Le lien sous la zone d’upload ouvre une fenêtre pour importer une URL. Les téléchargements par URL n’ont pas de plafond de taille ; les limites de traitement des PDF et des images restent applicables.
+Les illustrations retenues restent accessibles dans le contrôle après suppression de la ressource. Les vidéos et liens cités ne sont pas consultés automatiquement.
 
-Les pages nécessitant une connexion ou JavaScript, les documents Word et les présentations doivent être exportés en PDF avant import. Les images intégrées aux pages web doivent être en JPEG, PNG ou WebP ; si une image est inaccessible ou non prise en charge, l’import affiche une erreur.
-
-Les originaux, les pages rendues et les illustrations extraites sont conservés sur le serveur. Le texte reconnu peut être vérifié et corrigé. Un import incomplet ou en erreur peut être relancé sans refaire l’OCR des pages déjà reconnues ; la génération demande de terminer ou retirer ces imports avant de continuer.
-
-Après l’OCR, un catalogue pédagogique est préparé et enregistré en base pour chaque ressource et chaque page de cours : notions, exercices, mots-clés, pages d’appui et supports visuels nécessaires. Une empreinte du contenu, du modèle et de la version d’analyse permet de réutiliser ce catalogue entre les contrôles et après redémarrage. Réordonner les pages de cours ne relance pas leur analyse individuelle. Une modification du document entraîne une nouvelle préparation de son catalogue. Les documents plus anciens sans catalogue sont préparés une seule fois lors de leur première utilisation.
-
-Pour chaque contrôle, l’application sélectionne localement les entrées du catalogue selon les notions demandées, en donnant la priorité aux exercices existants et en conservant leurs connaissances d’appui. La rédaction reçoit cet extrait (40 Ko maximum) et ses supports utiles ; l’audit reçoit aussi le texte OCR des pages citées pour vérifier les réponses. Aucun appel supplémentaire de sélection des pages n’est nécessaire. Les images envoyées sont limitées à 24 fichiers et 24 Mio par appel, uniquement pour les supports pédagogiques. Les vidéos et les liens cités dans un document ne sont pas automatiquement consultés.
-
-Pour les dessins vectoriels et les documents scannés, la page rendue reste disponible comme support visuel. Les illustrations retenues dans les questions sont copiées avec le contrôle pour rester accessibles après suppression de la ressource source.
-
-Les documents et réponses nécessaires à l’OCR, à la génération ou à la correction sont transmis à l’API OpenAI. La base SQLite et les fichiers importés restent dans le stockage de l’application.
+Les documents et réponses nécessaires sont transmis à OpenAI ; la base et les fichiers restent stockés dans l’application.
 
 ### Génération et correction des contrôles
 
-Le nombre de réponses directes, courtes et développées est calculé conjointement avec le nombre de questions de connaissances et de questions sur documents. La cible est 40 % / 40 % / 20 %, avec environ moitié connaissances et moitié documents lorsque les sources et les formats le permettent. Une réponse courte demande une seule explication en une ou deux phrases ; une réponse développée demande au moins deux aspects expliqués en trois à cinq phrases. Les formats personnalisés sont déduits une seule fois de leur nom et de leur consigne, puis enregistrés.
+La création permet de choisir les types de questions et d’ajouter des consignes personnalisées prioritaires. Par défaut, les contrôles classiques visent 40 % de réponses directes, 40 % courtes et 20 % développées, avec un équilibre entre connaissances et documents lorsque les sources le permettent. Les contrôles d’exemple guident uniquement la forme ; les cours et ressources fournissent le contenu pédagogique.
 
-Un premier appel produit le contrôle complet : notions, compétences, consignes, réponses, barèmes et supports partagés. Cette version est sauvegardée avant un audit indépendant de l’effort, du mode de résolution, des sources citées et des réponses involontairement révélées. L’audit voit les supports réellement affichés, y compris les schémas, et distingue les sources OCR cachées à l’élève. Un contrôle valide nécessite donc deux appels principaux, hors préparation de documents encore non analysés. Les questions sur un même document sont regroupées à l’affichage.
+Le mode **Flashcard** utilise toutes les pages de cours, sans exemples ni ressources externes, avec uniquement des questions rapides. Chaque carte vaut un point, avec des points partiels par quarts, et révèle sa correction après validation. Le résultat final est ramené sur 20.
 
-La création permet de cocher les types autorisés (définition, QCM, texte à trous, compréhension de texte, réponse rédigée, schéma). Tous sont cochés par défaut, au moins un doit rester sélectionné. Ce choix est enregistré avec le contrôle et respecté lors des réparations, reprises et révisions d’erreurs précédentes.
+La génération sauvegarde une première version, puis un audit indépendant vérifie les questions, leurs sources et leurs supports. Seules les questions rejetées sont réécrites. Un contrôle incomplet reste **À compléter** : la reprise conserve le travail prêt et les instructions. La génération continue après fermeture de la page ; une tâche interrompue peut être reprise et une tâche bloquée expire après dix minutes.
 
-À l’import, chaque page de contrôle d’exemple est analysée une fois pour enregistrer un profil de forme composé uniquement de catégories et de nombres : types et quantités de questions, barème observé, regroupement, style des consignes et longueur des réponses. Aucune transcription pédagogique n’est enregistrée dans ce profil. Les générations réutilisent ces profils sans renvoyer les images d’exemple à l’IA. Une modification du fichier ou du modèle invalide le profil ; les anciens exemples sont préparés à leur première utilisation.
-
-Tous les contrôles d’exemple de la leçon sont automatiquement pris en compte pour la forme, le style des consignes et la répartition des types de questions et du barème. Leur contenu pédagogique est exclu : seuls les cours et les ressources alimentent les connaissances et les exercices du contrôle.
-
-Seules les questions rejetées sont réécrites ; un support partagé peut être corrigé avec elles, puis l’ensemble est vérifié à nouveau. Le nombre total, les types et les quotas restent ceux du plan global, y compris pour les questions reprises d’un contrôle précédent de la même leçon. Les illustrations identiques ne sont transmises qu’une fois par appel.
-
-Un contrôle incomplet reste dans l’historique avec le statut **À compléter**. Le bouton de reprise conserve les questions prêtes, les brouillons en attente d’audit et les instructions initiales. Une modification des sources ou de la version des règles entraîne une nouvelle préparation. Une erreur de service ou de quota interrompt les appels ; fermer ou recharger la page laisse la génération continuer en arrière-plan. Après un redémarrage serveur, les tâches orphelines deviennent récupérables à l’ouverture du contrôle. Un délai maximal de dix minutes interrompt une tâche bloquée en conservant le dernier état sauvegardé.
-
-La table `ai_calls` enregistre pour chaque appel l’étape, le contrôle concerné, la durée, le modèle, le statut, l’identifiant de requête et les tokens utilisés (entrée, sortie, cache et raisonnement). Elle ne contient ni clé API, ni prompt, ni contenu des réponses. Ces mesures permettent de comparer les temps et les consommations réels, sans les confondre avec une estimation.
-
-Les contrôles non rendus peuvent être supprimés. Supprimer une leçon retire également ses pages, ses ressources et ses contrôles, après confirmation.
-
-La reconnaissance et la correction restent des propositions de l’IA : la validation du format ne garantit pas la justesse du contenu pédagogique.
+La table `ai_calls` conserve les durées, statuts et consommations de tokens, sans prompts ni réponses. Les contrôles non rendus peuvent être supprimés ; supprimer une leçon retire aussi ses documents et contrôles après confirmation. L’OCR et la correction restent des propositions de l’IA, à vérifier.
 
 ## Construire et lancer en production avec Docker
 
