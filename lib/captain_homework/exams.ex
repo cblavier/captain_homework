@@ -16,40 +16,57 @@ defmodule CaptainHomework.Exams do
     |> Enum.map(&elem(&1, 0))
   end
 
-  def generate(profile_id, lesson_id, count, instructions, example_ids, opts \\ [])
+  def generate(profile_id, lesson_id, count, instructions, opts \\ [])
 
-  def generate(profile_id, lesson_id, count, instructions, example_ids, opts)
+  def generate(profile_id, lesson_id, count, instructions, opts)
       when count in 1..30 do
     lesson = Study.get_lesson!(profile_id, lesson_id)
+    available = CaptainHomework.SubjectQuestionTypes.list(profile_id, lesson.subject)
+    requested_types = Keyword.get(opts, :question_types, Enum.map(available, & &1["id"]))
+
+    selected =
+      case CaptainHomework.SubjectQuestionTypes.resolve(
+             profile_id,
+             lesson.subject,
+             requested_types
+           ) do
+        {:ok, selected} -> selected
+        {:error, _} -> []
+      end
+
+    types = CaptainHomework.SubjectQuestionTypes.formats(selected)
+    custom_types? = Enum.any?(selected, &(&1["id"] not in CaptainHomework.QuestionTypes.ids()))
     pages = Illustrations.content_pages(lesson)
-    examples = Enum.filter(lesson.pages, &(&1.kind == "example" and &1.id in example_ids))
+    examples = Enum.filter(lesson.pages, &(&1.kind == "example"))
 
     previous_exams =
       Repo.all(
         from e in Exam,
           join: l in assoc(e, :lesson),
           where:
-            l.profile_id == ^profile_id and l.subject == ^lesson.subject and
+            l.profile_id == ^profile_id and l.id == ^lesson.id and
               e.status == "completed"
       )
 
     retries =
-      if Illustrations.priority_exercises?(lesson) do
+      if custom_types? or Illustrations.priority_exercises?(lesson) do
         []
       else
-        retry_questions(previous_exams, count) |> Enum.filter(&(AI.question_errors(&1) == []))
+        retry_questions(previous_exams, count)
+        |> Enum.filter(&(AI.question_errors(&1) == [] and &1["type"] in types))
       end
 
-    additional = instructions |> String.trim() |> String.slice(0, 8000)
-    instructions = Study.default_instructions()
+    instructions = instructions |> String.trim() |> String.slice(0, 8000)
 
     instructions =
-      if additional == "",
-        do: instructions,
-        else:
-          instructions <> "\n\nInstructions supplémentaires pour ce contrôle :\n" <> additional
+      if custom_types?,
+        do: instructions <> "\n\n" <> CaptainHomework.SubjectQuestionTypes.instructions(selected),
+        else: instructions
 
     cond do
+      types == [] ->
+        {:error, "Choisis au moins un type de question valide."}
+
       Illustrations.resources_pending?(lesson) ->
         {:error,
          "Attends la fin de l’analyse des ressources ou corrige les imports en erreur avant de créer le contrôle."}
@@ -65,23 +82,31 @@ defmodule CaptainHomework.Exams do
                Repo.insert(%Exam{
                  lesson_id: lesson.id,
                  instructions: instructions,
+                 question_types: types,
                  questions:
                    Enum.map(
                      retries,
-                     &(Illustrations.copy_retry(&1)
-                       |> CaptainHomework.Exams.Generation.identify())
+                     &prepare_retry/1
                    ),
                  status: "generating",
                  generation_target: count,
                  generation_examples: Enum.map(examples, & &1.id),
                  generation_started_at: DateTime.utc_now()
                }) do
-          CaptainHomework.Exams.Generation.run(draft, lesson, pages, examples, opts)
+          dispatch_generation(draft, lesson, pages, examples, opts)
         end
     end
   end
 
-  def generate(_, _, _, _, _, _), do: {:error, "Choisis entre 1 et 30 questions."}
+  def generate(_, _, _, _, _), do: {:error, "Choisis entre 1 et 30 questions."}
+
+  defp prepare_retry(question) do
+    question
+    |> Illustrations.copy_retry()
+    |> Map.drop(["verified_response_effort", "verified_answer_basis"])
+    |> CaptainHomework.Exams.Generation.identify()
+    |> then(&Map.put(&1, "plan_id", "retry-" <> &1["id"]))
+  end
 
   def resume_generation(profile_id, exam_id, opts \\ []) do
     exam = Study.get_exam!(profile_id, exam_id)
@@ -96,9 +121,14 @@ defmodule CaptainHomework.Exams do
         pages = Illustrations.content_pages(lesson)
 
         examples =
-          Enum.filter(lesson.pages, &(&1.kind == "example" and &1.id in exam.generation_examples))
+          Enum.filter(lesson.pages, &(&1.kind == "example"))
 
-        CaptainHomework.Exams.Generation.run(
+        exam =
+          exam
+          |> Ecto.Changeset.change(generation_examples: Enum.map(examples, & &1.id))
+          |> Repo.update!()
+
+        dispatch_generation(
           %{exam | status: "generating", generation_started_at: now},
           lesson,
           pages,
@@ -108,6 +138,14 @@ defmodule CaptainHomework.Exams do
 
       _ ->
         {:error, "La génération est déjà en cours ou le contrôle est prêt."}
+    end
+  end
+
+  defp dispatch_generation(exam, lesson, pages, examples, opts) do
+    if Keyword.get(opts, :background, false) do
+      CaptainHomework.Exams.GenerationJobs.start(exam, lesson, pages, examples, opts)
+    else
+      CaptainHomework.Exams.Generation.run(exam, lesson, pages, examples, opts)
     end
   end
 
@@ -146,7 +184,7 @@ defmodule CaptainHomework.Exams do
       try do
         with {:ok, grades} <- AI.grade(exam),
              {:ok, corrections, score} <- validate_grades(exam, grades) do
-          {:ok, corrections, score}
+          {:ok, corrections, score, if(is_map(grades), do: grades["appreciation"])}
         end
       rescue
         _ -> {:error, "La correction a été interrompue. Tu peux réessayer."}
@@ -154,11 +192,12 @@ defmodule CaptainHomework.Exams do
 
     attrs =
       case result do
-        {:ok, corrections, score} ->
+        {:ok, corrections, score, appreciation} ->
           [
             status: "completed",
             corrections: corrections,
             score: score,
+            appreciation: appreciation,
             submitted_at: DateTime.utc_now(),
             error: nil
           ]
@@ -177,7 +216,16 @@ defmodule CaptainHomework.Exams do
     )
 
     Phoenix.PubSub.broadcast(CaptainHomework.PubSub, "exam:#{exam.id}", :exam_updated)
-    result
+
+    case result do
+      {:ok, corrections, score, _} -> {:ok, corrections, score}
+      error -> error
+    end
+  end
+
+  def validate_grades(exam, %{"grades" => grades, "appreciation" => appreciation})
+      when is_binary(appreciation) and byte_size(appreciation) > 0 do
+    validate_grades(exam, grades)
   end
 
   def validate_grades(exam, grades) when is_list(grades) do
@@ -215,35 +263,48 @@ defmodule CaptainHomework.Exams do
                    ),
                  else: c["feedback"]
                ),
-             "expected" => q["answer"]
+             "expected" => q["answer"],
+             "language_errors" =>
+               if(q["type"] == "mcq",
+                 do: [],
+                 else:
+                   CaptainHomework.Exams.Language.validate(
+                     exam.answers[q["id"]],
+                     Map.get(c, "language_errors", [])
+                   )
+               )
            }}
         end)
 
       total = Enum.sum(Enum.map(exam.questions, & &1["points"]))
       earned = Enum.sum(Enum.map(corrections, fn {_, c} -> c["points"] end))
-      {:ok, corrections, Float.round(20 * earned / total, 2)}
+      {:ok, corrections, round_score(20 * earned / total)}
     else
       {:error, "La correction reçue est incomplète. Tu peux réessayer sans perdre tes réponses."}
     end
   end
 
   def validate_grades(_, _), do: {:error, "La correction reçue est invalide."}
+  def round_score(score) when is_number(score), do: round(score * 4) / 4
+  def round_score(score), do: score
+
+  def raw_score(exam) do
+    earned = Enum.sum(Enum.map(exam.corrections, fn {_, c} -> c["points"] || 0 end))
+    total = Enum.sum(Enum.map(exam.questions, & &1["points"]))
+    {earned, total}
+  end
+
   def blank?(v) when is_map(v), do: Enum.all?(v, fn {_, value} -> blank?(value) end)
   def blank?(v) when is_binary(v), do: String.trim(v) == ""
   def blank?(_), do: true
 
   def recover_stale(%{status: "generating", generation_started_at: started} = exam)
       when not is_nil(started) do
-    if DateTime.diff(DateTime.utc_now(), started) > 900 do
-      Repo.update_all(
-        from(e in Exam,
-          where:
-            e.id == ^exam.id and e.status == "generating" and e.generation_started_at == ^started
-        ),
-        set: [
-          status: "generation_partial",
-          error: "La génération a été interrompue. Les questions prêtes sont conservées."
-        ]
+    if DateTime.diff(DateTime.utc_now(), started) > 5 and
+         not CaptainHomework.Exams.GenerationJobs.running?(exam) do
+      CaptainHomework.Exams.Generation.interrupt(
+        exam,
+        "La génération a été interrompue. Les questions prêtes sont conservées ; reprends les questions manquantes."
       )
     end
 

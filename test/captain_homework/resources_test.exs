@@ -1,7 +1,7 @@
 defmodule CaptainHomework.ResourcesTest do
   use CaptainHomework.DataCase, async: false
   import CaptainHomework.Fixtures
-  alias CaptainHomework.{Resources, Study, Uploads}
+  alias CaptainHomework.{Repo, Resources, Study, Uploads}
   alias CaptainHomework.Resources.{Download, Documents}
 
   setup do
@@ -58,6 +58,44 @@ defmodule CaptainHomework.ResourcesTest do
     Resources.delete(l.profile_id, resource.id)
   end
 
+  test "file resources above twenty megabytes preserve the complete original" do
+    l = lesson(profile())
+    data = [tiny_pdf(), String.duplicate("\n", 21 * 1024 * 1024), "% end of original\n"]
+    file = temp(data)
+    assert File.stat!(file).size > 20 * 1024 * 1024
+
+    assert {:ok, resource} = Resources.create_upload(l.profile_id, l.id, file, "large.pdf")
+    assert resource.content_type == "application/pdf"
+    assert File.stat!(Uploads.path(resource.storage_key)).size == File.stat!(file).size
+    assert digest(Uploads.path(resource.storage_key)) == digest(file)
+    assert resource.status == "processing"
+    Resources.delete(l.profile_id, resource.id)
+  end
+
+  test "URL resources above twenty megabytes are downloaded without truncation" do
+    old = Req.default_options()
+    on_exit(fn -> Req.default_options(old) end)
+    Req.default_options(Keyword.put(old, :plug, {Req.Test, __MODULE__}))
+    chunks = ["%PDF-1.4\n", String.duplicate("x", 21 * 1024 * 1024), "\n%%EOF\n"]
+
+    Req.Test.stub(__MODULE__, fn conn ->
+      conn =
+        conn
+        |> Plug.Conn.put_resp_content_type("application/pdf")
+        |> Plug.Conn.send_chunked(200)
+
+      Enum.reduce(chunks, conn, fn chunk, conn ->
+        {:ok, conn} = Plug.Conn.chunk(conn, chunk)
+        conn
+      end)
+    end)
+
+    assert {:ok, body, "application/pdf", "https://8.8.8.8/large.pdf"} =
+             Download.fetch("https://8.8.8.8/large.pdf")
+
+    assert body == IO.iodata_to_binary(chunks)
+  end
+
   test "imports are scoped to their child's lesson and reject unsupported formats" do
     l = lesson(profile())
     assert {:error, _} = Resources.create_upload(l.profile_id, l.id, temp("bad data"), "bad.pdf")
@@ -107,6 +145,78 @@ defmodule CaptainHomework.ResourcesTest do
     Resources.delete(l.profile_id, resource.id)
   end
 
+  test "PDFs longer than twenty pages preserve each page and illustration origin" do
+    l = lesson(profile())
+    {:ok, resource} = Resources.create_upload(l.profile_id, l.id, temp(tiny_pdf(21)), "long.pdf")
+    assert {:ok, parts} = Documents.extract(resource)
+    assert length(Enum.filter(parts, &(&1.kind == "resource"))) == 21
+    illustrations = Enum.filter(parts, &(&1.kind == "illustration"))
+    assert length(illustrations) == 21
+    assert Enum.any?(illustrations, &String.starts_with?(&1.name, "page-021-figure-"))
+    Resources.delete(l.profile_id, resource.id)
+  end
+
+  test "PDFs above the bounded page limit fail explicitly" do
+    l = lesson(profile())
+
+    {:ok, resource} =
+      Resources.create_upload(l.profile_id, l.id, temp(tiny_pdf(101)), "too-long.pdf")
+
+    assert {:error, message} = Documents.extract(resource)
+    assert message =~ "100 pages"
+    Resources.delete(l.profile_id, resource.id)
+  end
+
+  test "retry keeps completed OCR pages instead of reading them again" do
+    start_supervised!(%{
+      id: CaptainHomework.ResourceRetryCounter,
+      start: {Agent, :start_link, [fn -> 0 end, [name: CaptainHomework.ResourceRetryCounter]]}
+    })
+
+    Application.put_env(:captain_homework, :ai_provider, CaptainHomework.ResourceRetryAI)
+    l = lesson(profile())
+    {:ok, resource} = Resources.create_upload(l.profile_id, l.id, temp(tiny_pdf(4)), "retry.pdf")
+    {:ok, [part | _]} = Documents.extract(resource)
+    key = Ecto.UUID.generate() <> part.ext
+    File.write!(Uploads.path(key), part.data)
+
+    {:ok, first} =
+      Study.add_page(l, %{
+        resource_id: resource.id,
+        kind: part.kind,
+        filename: part.name,
+        storage_key: key,
+        content_type: part.type,
+        text: "Already recognized",
+        status: "ready"
+      })
+
+    resource |> Ecto.Changeset.change(status: "error") |> Repo.update!()
+    assert {:ok, _} = Resources.retry(l.profile_id, resource.id)
+    assert {:ok, %{status: "ready"}} = Resources.process(resource.id)
+    pages = Study.get_lesson!(l.profile_id, l.id).pages
+    assert length(pages) == 8
+    assert Enum.any?(pages, &(&1.id == first.id and &1.text == "Already recognized"))
+    assert length(Enum.filter(pages, &(&1.filename == first.filename))) == 1
+    assert Agent.get(CaptainHomework.ResourceRetryCounter, & &1) == 3
+    Resources.delete(l.profile_id, resource.id)
+  end
+
+  test "PDF links use document metadata as their readable title" do
+    l = lesson(profile())
+    {:ok, resource} = Resources.create_upload(l.profile_id, l.id, temp(tiny_pdf()), "view")
+
+    resource =
+      resource
+      |> Ecto.Changeset.change(source_url: "https://example.com/view")
+      |> Repo.update!()
+
+    assert Documents.title(resource) == "History exercises"
+    assert {:ok, processed} = Resources.process(resource.id)
+    assert processed.filename == "History exercises.pdf"
+    Resources.delete(l.profile_id, resource.id)
+  end
+
   test "HTML extracts readable text without script content" do
     key = Ecto.UUID.generate() <> ".html"
     File.mkdir_p!(Uploads.directory())
@@ -136,17 +246,36 @@ defmodule CaptainHomework.ResourcesTest do
     path
   end
 
-  defp tiny_pdf do
+  defp digest(path) do
+    path
+    |> File.stream!(64 * 1024)
+    |> Enum.reduce(:crypto.hash_init(:sha256), &:crypto.hash_update(&2, &1))
+    |> :crypto.hash_final()
+  end
+
+  defp tiny_pdf(count \\ 1) do
     compressed = :zlib.compress(<<255, 0, 0>>)
     contents = "q 40 0 0 40 40 40 cm /Im0 Do Q"
+    content_id = count + 3
+    image_id = count + 4
+    info_id = count + 5
 
-    objects = [
-      "<< /Type /Catalog /Pages 2 0 R >>",
-      "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-      "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Resources << /XObject << /Im0 5 0 R >> >> /Contents 4 0 R >>",
-      "<< /Length #{byte_size(contents)} >>\nstream\n#{contents}\nendstream",
-      "<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /Length #{byte_size(compressed)} >>\nstream\n#{compressed}\nendstream"
-    ]
+    pages =
+      Enum.map(1..count, fn _ ->
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Resources << /XObject << /Im0 #{image_id} 0 R >> >> /Contents #{content_id} 0 R >>"
+      end)
+
+    objects =
+      [
+        "<< /Type /Catalog /Pages 2 0 R >>",
+        "<< /Type /Pages /Kids [#{Enum.map_join(3..(count + 2), " ", fn id -> "#{id} 0 R" end)}] /Count #{count} >>"
+      ] ++
+        pages ++
+        [
+          "<< /Length #{byte_size(contents)} >>\nstream\n#{contents}\nendstream",
+          "<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /Length #{byte_size(compressed)} >>\nstream\n#{compressed}\nendstream",
+          "<< /Title (History exercises) >>"
+        ]
 
     {body, offsets} =
       Enum.with_index(objects, 1)
@@ -155,9 +284,11 @@ defmodule CaptainHomework.ResourcesTest do
       end)
 
     xref =
-      "xref\n0 6\n0000000000 65535 f \n" <>
+      "xref\n0 #{length(objects) + 1}\n0000000000 65535 f \n" <>
         Enum.map_join(offsets, "", &(String.pad_leading(to_string(&1), 10, "0") <> " 00000 n \n"))
 
-    body <> xref <> "trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n#{byte_size(body)}\n%%EOF\n"
+    body <>
+      xref <>
+      "trailer\n<< /Size #{length(objects) + 1} /Root 1 0 R /Info #{info_id} 0 R >>\nstartxref\n#{byte_size(body)}\n%%EOF\n"
   end
 end

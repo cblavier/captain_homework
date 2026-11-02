@@ -15,6 +15,7 @@ defmodule CaptainHomework.Application do
       {DNSCluster, query: Application.get_env(:captain_homework, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: CaptainHomework.PubSub},
       {Task.Supervisor, name: CaptainHomework.Tasks},
+      CaptainHomework.Exams.GenerationSupervisor,
       # Start a worker by calling: CaptainHomework.Worker.start_link(arg)
       # {CaptainHomework.Worker, arg},
       # Start to serve requests, typically the last entry

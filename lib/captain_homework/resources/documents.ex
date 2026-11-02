@@ -1,9 +1,10 @@
 defmodule CaptainHomework.Resources.Documents do
   @moduledoc false
   alias CaptainHomework.{Uploads, Resources.Download}
-  @max_pages 20
-  @max_images 40
-  @max_extracted_bytes 80 * 1024 * 1024
+  @max_pages 100
+  @max_images 300
+  @max_web_images 40
+  @max_extracted_bytes 256 * 1024 * 1024
 
   def type(data, hint \\ "")
   def type(<<"%PDF-", _::binary>>, _), do: {:ok, "application/pdf", ".pdf"}
@@ -19,6 +20,18 @@ defmodule CaptainHomework.Resources.Documents do
           else: {:error, "Format non pris en charge : PDF, JPEG, PNG, WebP ou page web attendu."}
     end
   end
+
+  def title(%{content_type: "application/pdf"} = resource) do
+    with {:ok, info} <- command("pdfinfo", [Uploads.path(resource.storage_key)]),
+         [_, title] <- Regex.run(~r/^Title:[\t ]+([^\r\n]+)$/m, info),
+         title when title != "" <- String.trim(title) do
+      String.slice(title, 0, 240)
+    else
+      _ -> nil
+    end
+  end
+
+  def title(_), do: nil
 
   def extract(%{content_type: "application/pdf"} = resource), do: pdf(resource)
   def extract(%{content_type: "text/html"} = resource), do: html(resource)
@@ -42,7 +55,7 @@ defmodule CaptainHomework.Resources.Documents do
       with {:ok, info} <- command("pdfinfo", [input]),
            {:ok, count} <- page_count(info),
            {:ok, image_info} <- command("pdfimages", ["-list", input]),
-           :ok <- check_image_budget(image_info),
+           {:ok, image_rows} <- check_image_budget(image_info),
            {:ok, _} <-
              command("pdftoppm", [
                "-png",
@@ -67,14 +80,20 @@ defmodule CaptainHomework.Resources.Documents do
                Path.join(dir, "figure")
              ]) do
         pages = Path.wildcard(Path.join(dir, "page-*.png")) |> Enum.sort()
-        images = Path.wildcard(Path.join(dir, "figure-*")) |> Enum.sort()
+
+        images =
+          Path.wildcard(Path.join(dir, "figure-*"))
+          |> Enum.sort()
+          |> Enum.filter(&standalone_image?(&1, image_rows))
 
         if length(images) > @max_images do
           {:error,
            "Le PDF contient plus de #{@max_images} images. Importe un document plus court."}
         else
           with {:ok, page_parts} <- read_parts(pages, "resource"),
-               {:ok, illustrations} <- read_parts(images, "illustration") do
+               {:ok, extracted} <- read_parts(images, "illustration") do
+            illustrations = Enum.map(extracted, &name_illustration(&1, image_rows))
+
             illustrations =
               if illustrations == [],
                 do: Enum.map(page_parts, &%{&1 | kind: "illustration"}),
@@ -85,7 +104,7 @@ defmodule CaptainHomework.Resources.Documents do
             if Enum.reduce(all, 0, &(byte_size(&1.data) + &2)) <= @max_extracted_bytes,
               do: {:ok, all},
               else:
-                {:error, "Les images extraites dépassent 80 Mo. Importe un document plus court."}
+                {:error, "Les images extraites dépassent 256 Mo. Importe un document plus court."}
           end
         end
       end
@@ -95,19 +114,43 @@ defmodule CaptainHomework.Resources.Documents do
   end
 
   defp check_image_budget(info) do
-    dimensions =
-      Regex.scan(~r/^\s*\d+\s+\d+\s+\S+\s+(\d+)\s+(\d+)\s/m, info, capture: :all_but_first)
-
-    pixels =
-      Enum.reduce(dimensions, 0, fn [width, height], total ->
-        total + String.to_integer(width) * String.to_integer(height)
+    rows =
+      Regex.scan(~r/^\s*(\d+)\s+(\d+)\s+(\S+)\s+(\d+)\s+(\d+)\s/m, info, capture: :all_but_first)
+      |> Enum.map(fn [page, index, kind, width, height] ->
+        %{
+          page: String.to_integer(page),
+          index: String.to_integer(index),
+          kind: kind,
+          pixels: String.to_integer(width) * String.to_integer(height)
+        }
       end)
 
-    if length(dimensions) <= @max_images and pixels <= 40_000_000,
-      do: :ok,
+    if length(rows) <= @max_images and Enum.sum(Enum.map(rows, & &1.pixels)) <= 160_000_000,
+      do: {:ok, rows},
       else:
         {:error,
-         "Les images du PDF sont trop nombreuses ou trop grandes. Importe un document plus court."}
+         "Les images du PDF sont trop nombreuses ou trop grandes (300 images, 160 mégapixels maximum). Importe un document plus court."}
+  end
+
+  # pdfimages emits alpha masks as separate bitmaps. Neither a mask nor its uncomposed
+  # base is an accurate illustration on its own; the full rendered page preserves it.
+  defp standalone_image?(path, rows) do
+    index = image_index(Path.basename(path))
+    row = Enum.find(rows, &(&1.index == index))
+    following = Enum.find(rows, &(&1.index == index + 1))
+    row && row.kind == "image" && !(following && following.kind in ["smask", "mask"])
+  end
+
+  defp name_illustration(part, rows) do
+    index = image_index(part.name)
+    row = Enum.find(rows, &(&1.index == index))
+    page = row.page |> to_string() |> String.pad_leading(3, "0")
+    %{part | name: "page-#{page}-#{part.name}"}
+  end
+
+  defp image_index(name) do
+    [_, number] = Regex.run(~r/^figure-(\d+)\./, name)
+    String.to_integer(number)
   end
 
   defp page_count(info) do
@@ -157,9 +200,9 @@ defmodule CaptainHomework.Resources.Documents do
 
     image_urls = document |> LazyHTML.query("img") |> LazyHTML.attribute("src") |> Enum.uniq()
 
-    if length(image_urls) > @max_images do
+    if length(image_urls) > @max_web_images do
       {:error,
-       "La page web contient plus de #{@max_images} images. Choisis un document plus court."}
+       "La page web contient plus de #{@max_web_images} images. Choisis un document plus court."}
     else
       base = %{
         data: text,

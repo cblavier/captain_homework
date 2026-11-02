@@ -19,6 +19,34 @@ defmodule CaptainHomework.ResourceGenerationTest do
     :ok
   end
 
+  test "all example controls guide style without becoming pedagogical sources" do
+    p = profile()
+    l = lesson(p)
+    course = page(l)
+
+    examples =
+      for n <- 1..2 do
+        {:ok, example} =
+          Study.add_page(l, %{
+            kind: "example",
+            filename: "example-#{n}.png",
+            storage_key: "example-#{n}.png",
+            content_type: "image/png",
+            text: "Contenu pédagogique étranger au cours",
+            status: "ready"
+          })
+
+        example
+      end
+
+    {:ok, result} = Exams.generate(p.id, l.id, 1, "")
+    assert_receive {:resource_generation, content_pages, []}
+    assert Enum.map(content_pages, & &1.id) == [course.id]
+    assert_receive {:style_examples, supplied}
+    assert Enum.map(supplied, & &1.id) == Enum.map(examples, & &1.id)
+    assert result.generation_examples == Enum.map(examples, & &1.id)
+  end
+
   defp resource(lesson, attrs \\ []) do
     Repo.insert!(
       struct(

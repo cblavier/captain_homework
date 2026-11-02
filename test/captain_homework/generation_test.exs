@@ -24,13 +24,84 @@ defmodule CaptainHomework.GenerationTest do
   defp q(name), do: question(name) |> Map.put("prompt", "Question #{name}")
   defp calls, do: Agent.get(SequenceAI, & &1.calls)
 
+  test "selected types filter generated questions and survive partial recovery", %{
+    profile: p,
+    lesson: l
+  } do
+    mcq = q("allowed") |> Map.merge(%{"type" => "mcq", "options" => ["A", "B"], "answer" => "A"})
+
+    sequence([
+      {:ok, [q("forbidden")]},
+      {:ok, []},
+      {:ok, []},
+      {:ok, [q("forbidden fallback")]},
+      {:ok, [mcq]}
+    ])
+
+    assert {:ok, partial} = Exams.generate(p.id, l.id, 1, "", question_types: ["mcq"])
+    assert partial.status == "generation_partial"
+    assert partial.questions == []
+    assert partial.question_types == ["mcq"]
+    assert Enum.all?(calls(), &(&1.instructions =~ "TYPES AUTORISÉS EXCLUSIVEMENT : mcq."))
+    assert {:ok, complete} = Exams.resume_generation(p.id, partial.id)
+    assert complete.status == "in_progress"
+    assert Enum.map(complete.questions, & &1["type"]) == ["mcq"]
+  end
+
+  test "empty or invalid type selections do not create a control", %{profile: p, lesson: l} do
+    assert {:error, _} = Exams.generate(p.id, l.id, 1, "", question_types: [])
+    assert {:error, _} = Exams.generate(p.id, l.id, 1, "", question_types: ["unknown"])
+    assert Study.get_lesson!(p.id, l.id).exams == []
+  end
+
+  test "previous mistakes cannot reintroduce an excluded type", %{profile: p, lesson: l} do
+    old = exam(l, [q("previous")])
+
+    old
+    |> Ecto.Changeset.change(
+      status: "completed",
+      submitted_at: DateTime.utc_now(),
+      corrections: %{"previous" => %{"fraction" => 0}}
+    )
+    |> Repo.update!()
+
+    mcq = q("new") |> Map.merge(%{"type" => "mcq", "options" => ["A", "B"], "answer" => "A"})
+    sequence([{:ok, [mcq]}])
+    assert {:ok, generated} = Exams.generate(p.id, l.id, 1, "", question_types: ["mcq"])
+    assert Enum.map(generated.questions, & &1["type"]) == ["mcq"]
+    assert [%{kept: []}] = calls()
+  end
+
+  test "generation duration is persisted and adds attempts without counting the pause", %{
+    profile: p,
+    lesson: l
+  } do
+    sequence([{:ok, [q("first")]}, {:error, "Interrupted"}, {:ok, [q("next")]}])
+    {:ok, partial} = Exams.generate(p.id, l.id, 2, "")
+    assert is_integer(partial.generation_duration_ms)
+
+    partial
+    |> Ecto.Changeset.change(
+      generation_duration_ms: 60_000,
+      generation_started_at: DateTime.add(DateTime.utc_now(), -3600)
+    )
+    |> Repo.update!()
+
+    {:ok, complete} = Exams.resume_generation(p.id, partial.id)
+    assert complete.generation_duration_ms >= 60_000
+    assert complete.generation_duration_ms < 120_000
+
+    assert Repo.get!(Study.Exam, complete.id).generation_duration_ms ==
+             complete.generation_duration_ms
+  end
+
   test "repairs only invalid questions and reports their precise error", %{profile: p, lesson: l} do
     bad = q("bad") |> Map.merge(%{"type" => "mcq", "options" => ["A", "B"], "answer" => "C"})
     sequence([{:ok, [q("kept"), bad]}, {:ok, [q("fixed")]}])
     owner = self()
 
     assert {:ok, exam} =
-             Exams.generate(p.id, l.id, 2, "", [], progress: &send(owner, {:progress, &1}))
+             Exams.generate(p.id, l.id, 2, "", progress: &send(owner, {:progress, &1}))
 
     assert exam.status == "in_progress"
     assert Enum.map(exam.questions, & &1["prompt"]) == ["Question kept", "Question fixed"]
@@ -39,7 +110,7 @@ defmodule CaptainHomework.GenerationTest do
     assert feedback =~ "réponse identique"
     assert kept["prompt"] == "Question kept"
     assert_receive {:progress, "0 questions prêtes sur 2 · préparation…"}
-    assert_receive {:progress, "1 questions prêtes sur 2 · correction de 1 questions…"}
+    assert_receive {:progress, "1 questions prêtes sur 2 · ajustement de 1 questions…"}
   end
 
   test "two repairs then a simple fallback, followed by persistent partial recovery", %{
@@ -104,7 +175,7 @@ defmodule CaptainHomework.GenerationTest do
       |> Ecto.Changeset.change(
         status: "generating",
         generation_target: 2,
-        generation_started_at: DateTime.add(DateTime.utc_now(), -901)
+        generation_started_at: DateTime.add(DateTime.utc_now(), -6)
       )
       |> Repo.update!()
 

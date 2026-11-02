@@ -4,6 +4,64 @@ defmodule CaptainHomeworkWeb.HomeworkLiveTest do
   import CaptainHomework.Fixtures
   alias CaptainHomework.{Study, Repo}
 
+  test "settings offer the three device appearance preferences", %{conn: conn} do
+    profile()
+    {:ok, view, _} = live(conn, "/alice/parametres")
+    assert has_element?(view, "#theme-settings[phx-hook='ThemeSettings'][phx-update='ignore']")
+    assert has_element?(view, "#theme-light[value='light']")
+    assert has_element?(view, "#theme-dark[value='dark']")
+    assert has_element?(view, "#theme-system[value='system'][checked]")
+  end
+
+  test "shared reading documents appear once while answers remain separate", %{conn: conn} do
+    text = String.duplicate("Les migrations se font lentement. ", 12)
+    first = question("source", "reading") |> Map.put("text", text <> "Source : livre, 2016.")
+    second = question("speed", "reading") |> Map.put("text", text)
+    e = exam(lesson(profile()), [first, second])
+    {:ok, view, _} = live(conn, "/alice/controles/#{e.id}")
+    assert has_element?(view, ".shared-question-support .reading-text", "Source : livre, 2016.")
+    refute has_element?(view, "#question-source .reading-text")
+    refute has_element?(view, "#question-speed .reading-text")
+    assert has_element?(view, "#answer-source")
+    assert has_element?(view, "#answer-speed")
+  end
+
+  test "exam footer displays its stored generation duration", %{conn: conn} do
+    l = lesson(profile())
+    e = exam(l) |> Ecto.Changeset.change(generation_duration_ms: 83_000) |> Repo.update!()
+    {:ok, view, _} = live(conn, "/alice/controles/#{e.id}")
+
+    assert has_element?(
+             view,
+             "#generation-duration.generation-duration",
+             "Généré en 1mn 23 sec"
+           )
+
+    assert has_element?(view, "#exam-footer #delete-exam", "Supprimer")
+    e |> Ecto.Changeset.change(generation_duration_ms: nil) |> Repo.update!()
+    {:ok, reloaded, _} = live(conn, "/alice/controles/#{e.id}")
+    assert has_element?(reloaded, "#generation-duration", "non enregistré")
+  end
+
+  test "question type checkboxes default to all and require a selection", %{conn: conn} do
+    l = lesson(profile())
+    {:ok, view, _} = live(conn, "/alice/lecons/#{l.id}/controle")
+
+    for type <- CaptainHomework.QuestionTypes.ids() do
+      assert has_element?(view, "#question-type-#{type}[checked]")
+    end
+
+    view |> form("#exam-setup") |> render_change(%{"question_types" => ["", "mcq"]})
+    assert has_element?(view, "#question-type-mcq[checked]")
+    refute has_element?(view, "#question-type-long[checked]")
+    view |> element("button[phx-click=change_count][phx-value-delta='1']") |> render_click()
+    assert has_element?(view, "#question-type-mcq[checked]")
+    refute has_element?(view, "#question-type-long[checked]")
+    view |> form("#exam-setup") |> render_change(%{"question_types" => [""]})
+    assert has_element?(view, "#question-types-error")
+    assert has_element?(view, "#generate-exam[disabled]")
+  end
+
   test "example pages are numbered and reorder independently from course pages", %{conn: conn} do
     l = lesson(profile())
     course = page(l)
@@ -29,6 +87,33 @@ defmodule CaptainHomeworkWeb.HomeworkLiveTest do
     assert has_element?(view, "#example-#{second.id} + #example-#{first.id}")
     view |> element("#example-previous-#{first.id}") |> render_click()
     assert has_element?(view, "#example-#{first.id} + #example-#{second.id}")
+  end
+
+  test "all subject hierarchy pages share the discrete breadcrumb", %{conn: conn} do
+    l = lesson(profile())
+    e = exam(l)
+
+    for {path, id} <- [
+          {"/alice", "subjects-title"},
+          {"/alice/matieres/svt", "subject-title"},
+          {"/alice/matieres/svt/parametres", "subject-settings-title"},
+          {"/alice/lecons/#{l.id}?onglet=controles", "lesson-title"},
+          {"/alice/lecons/#{l.id}?onglet=cours", "lesson-title"},
+          {"/alice/lecons/#{l.id}?onglet=ressources", "lesson-title"},
+          {"/alice/lecons/#{l.id}/controle", "new-exam-title"},
+          {"/alice/controles/#{e.id}", "exam-title"}
+        ] do
+      {:ok, view, _} = live(conn, path)
+      assert has_element?(view, "##{id}-breadcrumb > .breadcrumb-title ##{id}")
+      refute has_element?(view, ".back-link")
+
+      if id == "subjects-title" do
+        refute has_element?(view, "##{id}-breadcrumb nav")
+      else
+        assert has_element?(view, "##{id}-breadcrumb > nav + .breadcrumb-title .icon-tile")
+        assert has_element?(view, "##{id}-breadcrumb nav a[href='/alice']")
+      end
+    end
   end
 
   test "page headings contain breadcrumb links to their ancestors", %{conn: conn} do
@@ -117,24 +202,38 @@ defmodule CaptainHomeworkWeb.HomeworkLiveTest do
     end
   end
 
-  test "deleting a lesson removes its exams and photo files", %{conn: conn} do
+  test "only empty lessons can be deleted", %{conn: conn} do
     l = lesson(profile())
-    e = exam(l)
-    pg = page(l)
-    key = "#{Ecto.UUID.generate()}.png"
-    pg |> Ecto.Changeset.change(storage_key: key) |> Repo.update!()
-    path = CaptainHomework.Uploads.path(key)
-    File.mkdir_p!(Path.dirname(path))
-    File.write!(path, "photo")
-    on_exit(fn -> File.rm(path) end)
     {:ok, view, _} = live(conn, "/alice/lecons/#{l.id}")
-    assert has_element?(view, "#delete-lesson[data-confirm]")
+    assert has_element?(view, "#delete-lesson:not([disabled])")
     view |> element("#delete-lesson") |> render_click()
     assert_redirect(view, "/alice/matieres/svt")
     refute Repo.get(Study.Lesson, l.id)
-    refute Repo.get(Study.Exam, e.id)
-    refute Repo.get(Study.Page, pg.id)
-    refute File.exists?(path)
+  end
+
+  test "each content kind prevents deletion, including from a stale page", %{conn: conn} do
+    child = profile()
+
+    for kind <- [:page, :exam, :resource] do
+      l = lesson(child)
+      {:ok, view, _} = live(conn, "/alice/lecons/#{l.id}")
+
+      content =
+        case kind do
+          :page -> page(l)
+          :exam -> exam(l)
+          :resource -> Repo.insert!(%Study.Resource{lesson_id: l.id, filename: "document.pdf"})
+        end
+
+      view |> element("#delete-lesson") |> render_click()
+      assert {:error, :not_empty} = Study.delete_lesson(child.id, l.id)
+      assert Repo.get(Study.Lesson, l.id)
+      assert Repo.get(content.__struct__, content.id)
+      {:ok, fresh, _} = live(conn, "/alice/lecons/#{l.id}")
+      assert has_element?(fresh, "#delete-lesson[disabled]")
+      refute has_element?(fresh, "#delete-lesson-tooltip[title]")
+      assert has_element?(fresh, "#delete-lesson-help[role=tooltip]")
+    end
   end
 
   test "deletions are scoped to the child" do
@@ -276,21 +375,20 @@ defmodule CaptainHomeworkWeb.HomeworkLiveTest do
     assert has_element?(home, "#subject-svt")
   end
 
-  test "settings save a shared prompt and reject empty instructions", %{conn: conn} do
+  test "settings no longer expose a general prompt and exam additions remain available", %{
+    conn: conn
+  } do
+    l = lesson(profile())
     {:ok, view, _} = live(conn, "/alice/parametres")
-    assert has_element?(view, "#default-instructions", "S’inspirer si possible")
+    refute has_element?(view, "#default-instructions")
+    refute has_element?(view, "#settings-form")
     assert has_element?(view, "#settings-title-breadcrumb a[href='/alice']")
+    assert has_element?(view, "#theme-settings")
+    assert has_element?(view, "#subjects-settings-form")
 
-    view
-    |> form("#settings-form", settings: %{instructions: "Consignes communes"})
-    |> render_submit()
-
-    assert Study.default_instructions() == "Consignes communes"
-    {:ok, reopened, _} = live(conn, "/alice/parametres")
-    assert has_element?(reopened, "#default-instructions", "Consignes communes")
-    reopened |> form("#settings-form", settings: %{instructions: "  "}) |> render_submit()
-    assert has_element?(reopened, "#settings-form [role=alert]")
-    assert Study.default_instructions() == "Consignes communes"
+    {:ok, creation, _} = live(conn, "/alice/lecons/#{l.id}/controle")
+    assert has_element?(creation, "#instructions")
+    refute has_element?(creation, "#exam-setup a[href='/alice/parametres']")
   end
 
   test "partial generation can resume without exposing answers or losing saved questions", %{
@@ -312,12 +410,12 @@ defmodule CaptainHomeworkWeb.HomeworkLiveTest do
       |> Repo.update!()
 
     {:ok, view, _} = live(conn, "/alice/controles/#{e.id}")
-    assert has_element?(view, "#generation-status", "1 questions prêtes sur 2")
+    assert has_element?(view, "#generation-status", "1 question prête sur 2")
     assert has_element?(view, "#generation-errors", "QCM")
     refute has_element?(view, "#exam-answers")
+    Phoenix.PubSub.subscribe(CaptainHomework.PubSub, "exam:#{e.id}")
     view |> element("#resume-generation") |> render_click()
-    assert_redirect(view, "/alice/controles/#{e.id}", 5000)
-    saved = Repo.get!(Study.Exam, e.id)
+    saved = await_generation(e.id)
     assert saved.status == "in_progress"
     assert hd(saved.questions) == hd(e.questions)
     assert length(saved.questions) == 2
@@ -345,8 +443,37 @@ defmodule CaptainHomeworkWeb.HomeworkLiveTest do
     view |> form("#exam-setup", %{instructions: "Varier les questions"}) |> render_submit()
     {path, _flash} = assert_redirect(view, 5000)
     [exam] = Study.get_lesson!(p.id, l.id).exams
+    Phoenix.PubSub.subscribe(CaptainHomework.PubSub, "exam:#{exam.id}")
+    exam = await_generation(exam.id)
     assert length(exam.questions) == 10
     assert path == "/alice/controles/#{exam.id}"
+  end
+
+  test "completed exam shows appreciation and exact raw points", %{conn: conn} do
+    e = exam(lesson(profile()), [question("q")])
+
+    e =
+      e
+      |> Ecto.Changeset.change(
+        status: "completed",
+        score: 16.71,
+        appreciation: "Des connaissances solides ; précise tes justifications.",
+        corrections: %{
+          "q" => %{
+            "points" => 3.25,
+            "fraction" => 0.75,
+            "feedback" => "Bien",
+            "expected" => "Réponse"
+          }
+        }
+      )
+      |> Repo.update!()
+
+    {:ok, view, _} = live(conn, "/alice/controles/#{e.id}")
+    assert has_element?(view, ".total-score.score-good", "16,75")
+    assert has_element?(view, "#exam-score-tooltip[role=tooltip]", "3,25/4")
+    refute has_element?(view, ".total-score[title]")
+    assert has_element?(view, "#exam-appreciation.score-good", e.appreciation)
   end
 
   test "answers autosave and correction remains hidden during the exam", %{conn: conn} do
@@ -384,8 +511,9 @@ defmodule CaptainHomeworkWeb.HomeworkLiveTest do
     |> Repo.update!()
 
     {:ok, view, _} = live(conn, "/alice/controles/#{e.id}")
-    assert has_element?(view, ".total-score", "10")
+    assert has_element?(view, ".total-score.score-average", "10")
     assert has_element?(view, ".correction", "2 / 4")
+    refute has_element?(view, ".correction-correct")
     refute has_element?(view, "#finish-exam")
   end
 
@@ -490,14 +618,18 @@ defmodule CaptainHomeworkWeb.HomeworkLiveTest do
         %{name: "exemple.png", content: image, type: "image/png"}
       ])
 
-    render_upload(upload, "exemple.png")
+    assert has_element?(view, "#upload-examples input[data-phx-auto-upload]")
+    render_upload(upload, "exemple.png", 50)
+    assert has_element?(view, "#save-examples[disabled]")
+    render_upload(upload, "exemple.png", 50)
+    refute has_element?(view, "#save-examples[disabled]")
     view |> form("#upload-examples") |> render_submit()
     [pg] = Study.get_lesson!(p.id, l.id).pages
     on_exit(fn -> File.rm(CaptainHomework.Uploads.path(pg.storage_key)) end)
     assert pg.kind == "example"
     assert has_element?(view, "#example-#{pg.id}")
     {:ok, setup, _} = live(conn, "/alice/lecons/#{l.id}/controle")
-    assert has_element?(setup, "input[name='example_ids[]'][value='#{pg.id}']")
+    refute has_element?(setup, "input[name='example_ids[]']")
     refute has_element?(setup, "input[type=file]")
     view |> element("#delete-example-#{pg.id}") |> render_click()
     assert Study.get_lesson!(p.id, l.id).pages == []
@@ -596,5 +728,24 @@ defmodule CaptainHomeworkWeb.HomeworkLiveTest do
     view |> form("#transcription-form", %{text: "Texte corrigé par l’élève"}) |> render_submit()
     assert Study.get_exam!(p.id, e.id).answers["q1"] == "Texte corrigé par l’élève"
     assert has_element?(view, "#answer-q1", "Texte corrigé par l’élève")
+  end
+
+  defp await_generation(id) do
+    exam = Repo.get!(Study.Exam, id)
+
+    if exam.status == "generating" do
+      assert_receive :exam_updated, 5000
+      await_generation(id)
+    else
+      jobs = :sys.get_state(CaptainHomework.Exams.GenerationJobs)
+
+      if entry = Enum.find(jobs, fn {_, job} -> job.exam.id == id end) do
+        {_, job} = entry
+        ref = Process.monitor(job.task.pid)
+        assert_receive {:DOWN, ^ref, :process, _, _}, 2000
+      end
+
+      exam
+    end
   end
 end

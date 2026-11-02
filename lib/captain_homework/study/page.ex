@@ -7,6 +7,10 @@ defmodule CaptainHomework.Study.Page do
     belongs_to :lesson, CaptainHomework.Study.Lesson
     belongs_to :resource, CaptainHomework.Study.Resource
     field :document_kind, :string, default: "other"
+    field :style_profile, :map
+    field :style_hash, :string
+    field :catalogue, :map
+    field :catalogue_hash, :string
     field :kind, :string, default: "lesson"
     field :position, :integer, default: 0
     field :filename, :string
@@ -14,6 +18,8 @@ defmodule CaptainHomework.Study.Page do
     field :content_type, :string
     field :text, :string, default: ""
     field :status, :string, default: "pending"
+    field :processing_progress, :integer, default: 0
+    field :processing_stage, :string
     field :error, :string
     timestamps(type: :utc_datetime_usec)
   end

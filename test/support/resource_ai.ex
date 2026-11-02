@@ -2,10 +2,15 @@ defmodule CaptainHomework.ResourceAI do
   @behaviour CaptainHomework.AI
   def transcribe(_, _), do: {:ok, "Texte du document"}
 
-  def generate(_lesson, pages, _examples, count, _instructions, retries) do
+  def generate(_lesson, pages, examples, count, _instructions, retries) do
     send(
       Application.fetch_env!(:captain_homework, :resource_test_pid),
       {:resource_generation, pages, retries}
+    )
+
+    send(
+      Application.fetch_env!(:captain_homework, :resource_test_pid),
+      {:style_examples, examples}
     )
 
     ids = Application.get_env(:captain_homework, :resource_test_image_ids, [])

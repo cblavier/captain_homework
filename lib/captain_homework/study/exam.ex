@@ -4,7 +4,14 @@ defmodule CaptainHomework.Study.Exam do
   @foreign_key_type :binary_id
   schema "exams" do
     belongs_to :lesson, CaptainHomework.Study.Lesson
+
+    field :question_types, CaptainHomework.Study.JSONList,
+      default: CaptainHomework.QuestionTypes.ids()
+
     field :instructions, :string
+    field :generation_duration_ms, :integer
+    field :generation_plan, :map
+    field :generation_stage, :string
     field :generation_target, :integer
     field :generation_examples, CaptainHomework.Study.JSONList, default: []
     field :generation_errors, CaptainHomework.Study.JSONList, default: []
@@ -14,6 +21,7 @@ defmodule CaptainHomework.Study.Exam do
     field :corrections, :map, default: %{}
     field :status, :string, default: "in_progress"
     field :score, :float
+    field :appreciation, :string
     field :submitted_at, :utc_datetime_usec
     field :grading_started_at, :utc_datetime_usec
     field :error, :string

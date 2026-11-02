@@ -40,18 +40,21 @@ defmodule CaptainHomeworkWeb.Router do
       live "/", HomeworkLive, :home
       live "/parametres", HomeworkLive, :settings
       live "/matieres/:subject", HomeworkLive, :subject
+      live "/matieres/:subject/parametres", HomeworkLive, :subject_settings
       live "/lecons/:id", HomeworkLive, :lesson
       live "/lecons/:id/controle", HomeworkLive, :new_exam
       live "/controles/:id", HomeworkLive, :exam
       live "/enfants/:child", HomeworkLive, :home
       live "/enfants/:child/parametres", HomeworkLive, :settings
       live "/enfants/:child/matieres/:subject", HomeworkLive, :subject
+      live "/enfants/:child/matieres/:subject/parametres", HomeworkLive, :subject_settings
       live "/enfants/:child/lecons/:id", HomeworkLive, :lesson
       live "/enfants/:child/lecons/:id/controle", HomeworkLive, :new_exam
       live "/enfants/:child/controles/:id", HomeworkLive, :exam
       live "/:child", HomeworkLive, :home
       live "/:child/parametres", HomeworkLive, :settings
       live "/:child/matieres/:subject", HomeworkLive, :subject
+      live "/:child/matieres/:subject/parametres", HomeworkLive, :subject_settings
       live "/:child/lecons/:id", HomeworkLive, :lesson
       live "/:child/lecons/:id/controle", HomeworkLive, :new_exam
       live "/:child/controles/:id", HomeworkLive, :exam

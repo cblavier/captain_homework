@@ -45,3 +45,6 @@ npm-debug.log
 /env
 *.tar
 !.env.example
+
+# macOS metadata
+.DS_Store

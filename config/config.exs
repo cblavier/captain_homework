@@ -26,7 +26,7 @@ config :esbuild,
   version: "0.25.4",
   captain_homework: [
     args:
-      ~w(js/app.js js/startup.js css/app.css --bundle --target=es2022 --outbase=. --outdir=../priv/static/assets --external:/fonts/* --external:/images/*),
+      ~w(js/app.js js/startup.js js/theme.js css/app.css --bundle --target=es2022 --outbase=. --outdir=../priv/static/assets --external:/fonts/* --external:/images/*),
     cd: Path.expand("../assets", __DIR__),
     env: %{"NODE_PATH" => Path.expand("../deps", __DIR__)}
   ]

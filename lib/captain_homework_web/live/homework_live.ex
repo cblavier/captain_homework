@@ -1,10 +1,15 @@
 defmodule CaptainHomeworkWeb.HomeworkLive do
   use CaptainHomeworkWeb, :live_view
-  alias CaptainHomework.{Study, Exams, AI, Uploads, Repo, Resources}
+  require Logger
+  alias CaptainHomework.{Study, Exams, AI, Uploads, Repo, Resources, SubjectQuestionTypes}
   alias CaptainHomework.Study.Page
   import Ecto.Query
   alias CaptainHomeworkWeb.ProfilePath
   import CaptainHomeworkWeb.ProfilePath, only: [child_path: 2]
+
+  # LiveView requires a positive integer; the browser's largest safe integer removes
+  # the application size ceiling without falling back to LiveView's default limit.
+  @resource_upload_size 9_007_199_254_740_991
 
   @impl true
   def mount(_params, session, socket) do
@@ -15,7 +20,8 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
       assign(socket,
         form: to_form(%{}),
         resource_form: to_form(%{"url" => ""}, as: :resource),
-        settings_form: nil,
+        question_type_form: to_form(SubjectQuestionTypes.change_type(), as: :question_type),
+        available_question_types: [],
         subjects_form: nil,
         profiles: profiles,
         profile: profile,
@@ -25,15 +31,18 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
         lesson: nil,
         lesson_tab: "controles",
         exam: nil,
+        exam_sources: %{},
         lessons_empty?: true,
         modal: nil,
+        language_error: nil,
         page_title: "Mes matières",
         error: nil,
         busy: false,
         busy_text: nil,
+        upload_log_progress: %{},
         question_count: 10,
+        question_types: CaptainHomework.QuestionTypes.ids(),
         instructions: "",
-        example_ids: [],
         answers: %{},
         edit_page: nil,
         page_text: "",
@@ -57,14 +66,18 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
        max_file_size: 12_000_000
      )
      |> allow_upload(:examples,
+       auto_upload: true,
+       progress: &log_upload_progress/3,
        accept: ~w(.jpg .jpeg .png .webp),
        max_entries: 5,
        max_file_size: 12_000_000
      )
      |> allow_upload(:resources,
+       auto_upload: true,
+       progress: &log_upload_progress/3,
        accept: ~w(.pdf .jpg .jpeg .png .webp),
        max_entries: 5,
-       max_file_size: 20_000_000
+       max_file_size: @resource_upload_size
      )
      |> allow_upload(:answer_photo,
        accept: ~w(.jpg .jpeg .png .webp),
@@ -111,6 +124,30 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
     end
   end
 
+  defp question_type_field_label(:label), do: "Nom"
+  defp question_type_field_label(:description), do: "Consigne"
+  defp question_type_field_label(:work_duration), do: "Durée de travail"
+
+  defp load_subject_question_types(socket) do
+    types = SubjectQuestionTypes.list(socket.assigns.profile.id, socket.assigns.subject.id)
+
+    rows =
+      Enum.map(types, fn type ->
+        form = to_form(Map.take(type, ["id", "work_duration"]), as: :duration)
+        Map.put(type, "duration_form", form)
+      end)
+
+    socket
+    |> assign(
+      available_question_types: types,
+      question_type_form: to_form(SubjectQuestionTypes.change_type(), as: :question_type)
+    )
+    |> stream(:subject_question_types, rows,
+      reset: true,
+      dom_id: &("configured-type-" <> &1["id"])
+    )
+  end
+
   defp subject_preferences_form(nil), do: nil
 
   defp subject_preferences_form(profile) do
@@ -124,7 +161,6 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
       :settings ->
         assign(socket,
           page_title: "Paramètres",
-          settings_form: to_form(CaptainHomework.Settings.change(), as: :settings),
           subjects_form: subject_preferences_form(profile)
         )
 
@@ -134,6 +170,13 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
           counts: Study.counts(profile.id),
           subjects: Study.enabled_subjects(profile)
         )
+
+      :subject_settings ->
+        subject = Study.subject!(params["subject"])
+
+        socket
+        |> assign(subject: subject, page_title: "Paramètres · #{subject.name}")
+        |> load_subject_question_types()
 
       :subject ->
         subject = Study.subject!(params["subject"])
@@ -168,7 +211,9 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
             ),
           instructions: "",
           question_count: 10,
-          example_ids: []
+          available_question_types: SubjectQuestionTypes.list(profile.id, lesson.subject),
+          question_types:
+            Enum.map(SubjectQuestionTypes.list(profile.id, lesson.subject), & &1["id"])
         )
         |> stream(:resources, lesson.resources, reset: true)
 
@@ -183,6 +228,7 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
 
         assign(socket,
           exam: exam,
+          exam_sources: CaptainHomework.Exams.Sources.for_exam(exam, profile.id),
           lesson: exam.lesson,
           subject: Study.subject!(exam.lesson.subject),
           answers: exam.answers,
@@ -205,6 +251,35 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
   end
 
   @impl true
+  def handle_event("explain_language", %{"question" => id, "index" => index}, socket) do
+    exam = socket.assigns.exam
+
+    errors =
+      if exam && exam.status == "completed",
+        do: get_in(exam.corrections, [id, "language_errors"]) || [],
+        else: []
+
+    case Integer.parse(index) do
+      {index, ""} when index >= 0 ->
+        case Enum.at(errors, index) do
+          nil -> {:noreply, socket}
+          error -> {:noreply, assign(socket, modal: "language_error", language_error: error)}
+        end
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("open_modal", %{"modal" => "resource_url"}, socket) do
+    {:noreply,
+     assign(socket,
+       modal: "resource_url",
+       error: nil,
+       resource_form: to_form(%{"url" => ""}, as: :resource)
+     )}
+  end
+
   def handle_event("open_modal", %{"modal" => modal}, socket),
     do: {:noreply, assign(socket, modal: modal, error: nil)}
 
@@ -245,7 +320,20 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
     {:noreply, socket |> assign(modal: nil) |> refresh_lesson()}
   end
 
+  def handle_event("retry_example", %{"id" => id}, socket) do
+    page = Study.get_page!(socket.assigns.profile.id, id)
+
+    if page.kind == "example" and page.processing_stage == nil,
+      do: CaptainHomework.ExampleStyles.schedule(page)
+
+    {:noreply, refresh_lesson(socket)}
+  end
+
   def handle_event("upload_examples", _, socket) do
+    Logger.info(
+      "document_upload save_requested kind=examples lesson_id=#{socket.assigns.lesson.id} count=#{length(socket.assigns.uploads.examples.entries)}"
+    )
+
     {socket, _} = save_uploads(socket, :examples, socket.assigns.lesson, "example")
     {:noreply, refresh_lesson(socket)}
   end
@@ -275,7 +363,13 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
     {:noreply, refresh_lesson(socket)}
   end
 
+  def handle_event("validate_resource_url", %{"resource" => params}, socket) do
+    {:noreply, assign(socket, resource_form: to_form(params, as: :resource), error: nil)}
+  end
+
   def handle_event("add_resource_url", %{"resource" => %{"url" => url}}, socket) do
+    socket = assign(socket, resource_form: to_form(%{"url" => url}, as: :resource))
+
     case Resources.create_url(
            socket.assigns.profile.id,
            socket.assigns.lesson.id,
@@ -286,11 +380,11 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
 
         {:noreply,
          socket
-         |> assign(resource_form: to_form(%{"url" => ""}, as: :resource))
+         |> assign(resource_form: to_form(%{"url" => ""}, as: :resource), modal: nil, error: nil)
          |> refresh_lesson()}
 
       {:error, reason} ->
-        {:noreply, put_flash(socket, :error, AI.message(reason))}
+        {:noreply, assign(socket, error: AI.message(reason))}
     end
   end
 
@@ -341,12 +435,21 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
   end
 
   def handle_event("delete_lesson", _, socket) do
-    {:ok, lesson} = Study.delete_lesson(socket.assigns.profile.id, socket.assigns.lesson.id)
+    case Study.delete_lesson(socket.assigns.profile.id, socket.assigns.lesson.id) do
+      {:ok, lesson} ->
+        {:noreply,
+         push_navigate(socket,
+           to: child_path(socket.assigns.profile, ~p"/matieres/#{lesson.subject}")
+         )}
 
-    {:noreply,
-     push_navigate(socket,
-       to: child_path(socket.assigns.profile, ~p"/matieres/#{lesson.subject}")
-     )}
+      {:error, :not_empty} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Impossible de supprimer une leçon contenant des cours, des contrôles ou des ressources."
+         )}
+    end
   end
 
   def handle_event("delete_exam", _, socket) do
@@ -407,16 +510,45 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
     end
   end
 
-  def handle_event("save_settings", %{"settings" => params}, socket) do
-    case CaptainHomework.Settings.save(params) do
+  def handle_event("add_question_type", %{"question_type" => params}, socket) do
+    case SubjectQuestionTypes.add(socket.assigns.profile.id, socket.assigns.subject.id, params) do
+      {:ok, _} ->
+        {:noreply, load_subject_question_types(socket)}
+
+      {:error, changeset} ->
+        {:noreply, assign(socket, question_type_form: to_form(changeset, as: :question_type))}
+    end
+  end
+
+  def handle_event("delete_question_type", %{"id" => id}, socket) do
+    {:ok, _} =
+      SubjectQuestionTypes.delete(socket.assigns.profile.id, socket.assigns.subject.id, id)
+
+    {:noreply, load_subject_question_types(socket)}
+  end
+
+  def handle_event(
+        "update_question_duration",
+        %{"duration" => %{"id" => id, "work_duration" => duration}},
+        socket
+      ) do
+    case SubjectQuestionTypes.update_duration(
+           socket.assigns.profile.id,
+           socket.assigns.subject.id,
+           id,
+           duration
+         ) do
       {:ok, _} ->
         {:noreply,
          socket
-         |> assign(settings_form: to_form(CaptainHomework.Settings.change(), as: :settings))
-         |> put_flash(:info, "Instructions par défaut enregistrées.")}
+         |> load_subject_question_types()
+         |> put_flash(:info, "Durée de travail enregistrée.")}
 
-      {:error, changeset} ->
-        {:noreply, assign(socket, settings_form: to_form(changeset, as: :settings))}
+      {:error, _} ->
+        {:noreply,
+         socket
+         |> load_subject_question_types()
+         |> put_flash(:error, "Impossible d’enregistrer cette durée de travail.")}
     end
   end
 
@@ -424,7 +556,7 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
     {:noreply,
      assign(socket,
        instructions: params["instructions"] || socket.assigns.instructions,
-       example_ids: params["example_ids"] || []
+       question_types: selected_question_types(params, socket)
      )}
   end
 
@@ -437,38 +569,32 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
       when event in ["generate_exam", "resume_generation"], do: {:noreply, socket}
 
   def handle_event("generate_exam", params, socket) do
-    parent = self()
-    profile_id = socket.assigns.profile.id
-    lesson_id = socket.assigns.lesson.id
-    count = socket.assigns.question_count
-    instructions = params["instructions"] || socket.assigns.instructions
-    examples = Enum.uniq(params["example_ids"] || [])
+    case Exams.generate(
+           socket.assigns.profile.id,
+           socket.assigns.lesson.id,
+           socket.assigns.question_count,
+           params["instructions"] || socket.assigns.instructions,
+           question_types: selected_question_types(params, socket),
+           background: true
+         ) do
+      {:ok, exam} ->
+        {:noreply,
+         socket
+         |> assign(error: nil, busy: true)
+         |> push_navigate(to: child_path(socket.assigns.profile, ~p"/controles/#{exam.id}"))}
 
-    socket =
-      socket
-      |> assign(busy: true, busy_text: "Préparation du contrôle…", error: nil)
-      |> start_async(:generate, fn ->
-        Exams.generate(profile_id, lesson_id, count, instructions, examples,
-          progress: fn message -> send(parent, {:generation_progress, message}) end
-        )
-      end)
-
-    {:noreply, socket}
+      {:error, reason} ->
+        {:noreply, assign(socket, error: AI.message(reason))}
+    end
   end
 
   def handle_event("resume_generation", _, socket) do
-    parent = self()
-    profile_id = socket.assigns.profile.id
-    exam_id = socket.assigns.exam.id
-
-    {:noreply,
-     socket
-     |> assign(busy: true, busy_text: "Reprise des questions manquantes…", error: nil)
-     |> start_async(:generate, fn ->
-       Exams.resume_generation(profile_id, exam_id,
-         progress: fn message -> send(parent, {:generation_progress, message}) end
-       )
-     end)}
+    case Exams.resume_generation(socket.assigns.profile.id, socket.assigns.exam.id,
+           background: true
+         ) do
+      {:ok, _} -> {:noreply, socket |> assign(error: nil) |> refresh_exam()}
+      {:error, reason} -> {:noreply, assign(socket, error: AI.message(reason))}
+    end
   end
 
   def handle_event("save_answers", %{"answers" => answers}, socket) do
@@ -556,13 +682,6 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
   end
 
   @impl true
-  def handle_async(:generate, {:ok, {:ok, exam}}, socket),
-    do:
-      {:noreply,
-       socket
-       |> assign(busy: false)
-       |> push_navigate(to: child_path(socket.assigns.profile, ~p"/controles/#{exam.id}"))}
-
   def handle_async(:ocr_answer, {:ok, {:ok, text}}, socket),
     do: {:noreply, assign(socket, busy: false, ocr_text: text)}
 
@@ -573,10 +692,6 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
     do: {:noreply, assign(socket, busy: false, error: "L’opération a été interrompue. Réessaie.")}
 
   @impl true
-  def handle_info({:generation_progress, message}, socket) do
-    {:noreply, assign(socket, busy_text: message)}
-  end
-
   def handle_info(:lesson_updated, socket) do
     socket = refresh_lesson(socket)
 
@@ -619,7 +734,28 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
     exam = Study.get_exam!(socket.assigns.profile.id, socket.assigns.exam.id)
     Exams.recover_stale(exam)
     exam = Study.get_exam!(socket.assigns.profile.id, exam.id)
-    assign(socket, exam: exam, answers: exam.answers, error: exam.error)
+
+    assign(socket,
+      exam: exam,
+      exam_sources: CaptainHomework.Exams.Sources.for_exam(exam, socket.assigns.profile.id),
+      answers: exam.answers,
+      error: exam.error
+    )
+  end
+
+  defp log_upload_progress(name, entry, socket) do
+    key = {name, entry.ref}
+    bucket = div(entry.progress, 25)
+    previous = Map.get(socket.assigns.upload_log_progress, key, -1)
+
+    if bucket != previous do
+      Logger.info(
+        "document_upload progress kind=#{name} ref=#{entry.ref} bytes=#{entry.client_size} percent=#{entry.progress} done=#{entry.done?}"
+      )
+    end
+
+    progress = Map.put(socket.assigns.upload_log_progress, key, bucket)
+    {:noreply, assign(socket, upload_log_progress: progress)}
   end
 
   defp save_uploads(socket, name, lesson, kind) do
@@ -632,7 +768,12 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
       {:ok, attrs}, {s, ids} ->
         case Study.add_page(lesson, Map.put(attrs, :kind, kind)) do
           {:ok, page} ->
+            Logger.info(
+              "document_upload saved kind=#{kind} page_id=#{page.id} lesson_id=#{lesson.id}"
+            )
+
             if kind == "lesson", do: launch_ocr(page)
+            if kind == "example", do: CaptainHomework.ExampleStyles.schedule(page)
             {s, ids ++ [page.id]}
 
           _ ->
@@ -663,15 +804,10 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
   defp resource_images(lesson, resource_id),
     do: Enum.filter(lesson.pages, &(&1.resource_id == resource_id and &1.kind == "illustration"))
 
-  defp resource_priority?(lesson, resource_id),
-    do:
-      Enum.any?(
-        resource_pages(lesson, resource_id),
-        &(&1.document_kind in ["assessment", "activity"])
-      )
-
   defp launch_ocr(page) do
     work = fn ->
+      CaptainHomework.ProcessingProgress.update(page, 10, "Lecture OCR")
+
       result =
         try do
           AI.transcribe(Uploads.read(page), page.content_type)
@@ -690,6 +826,17 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
         set: Map.to_list(attrs)
       )
 
+      if updated = Repo.get(Page, page.id) do
+        if updated.status == "ready" do
+          case CaptainHomework.Catalogues.prepare_page(updated) do
+            {:ok, _} -> CaptainHomework.ProcessingProgress.complete(updated)
+            _ -> CaptainHomework.ProcessingProgress.clear(updated)
+          end
+        else
+          CaptainHomework.ProcessingProgress.clear(updated)
+        end
+      end
+
       Phoenix.PubSub.broadcast(
         CaptainHomework.PubSub,
         "lesson:#{page.lesson_id}",
@@ -698,10 +845,64 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
     end
 
     if AI.configured?() do
-      page |> Page.changeset(%{status: "pending", error: nil}) |> Repo.update()
+      page
+      |> Page.changeset(%{status: "pending", error: nil})
+      |> Ecto.Changeset.change(processing_progress: 0, processing_stage: "Lecture OCR")
+      |> Repo.update()
+
       Task.Supervisor.start_child(CaptainHomework.Tasks, work)
     else
       work.()
+    end
+  end
+
+  defp selected_question_types(params, socket) do
+    if Map.has_key?(params, "question_types") do
+      params["question_types"]
+      |> List.wrap()
+      |> Enum.filter(
+        &(&1 in Enum.map(socket.assigns.available_question_types, fn type -> type["id"] end))
+      )
+      |> Enum.uniq()
+    else
+      socket.assigns.question_types
+    end
+  end
+
+  defp count_label(count, singular, plural) do
+    "#{count} #{if count == 1, do: singular, else: plural}"
+  end
+
+  defp generation_stage_label(nil), do: "Préparation des questions …"
+
+  defp generation_stage_label(stage) do
+    label =
+      stage
+      |> String.replace(~r/^\d+ questions prêtes sur \d+ ·\s*/u, "")
+      |> String.replace(~r/\s*(?:…|\.\.\.)$/u, "")
+      |> String.trim()
+      |> String.replace(~r/^correction de /iu, "Ajustement de ")
+
+    label =
+      if String.downcase(label) in ["préparation", "préparation en cours"],
+        do: "Préparation des questions",
+        else: label
+
+    case String.next_grapheme(label) do
+      {first, rest} -> String.upcase(first) <> rest <> " …"
+      nil -> "Préparation des questions …"
+    end
+  end
+
+  defp generation_duration(nil), do: "non enregistré"
+
+  defp generation_duration(milliseconds) do
+    seconds = max(div(milliseconds + 999, 1000), 1)
+
+    cond do
+      seconds < 60 -> "#{seconds} sec"
+      seconds < 3600 -> "#{div(seconds, 60)}mn #{rem(seconds, 60)} sec"
+      true -> "#{div(seconds, 3600)}h #{div(rem(seconds, 3600), 60)}mn #{rem(seconds, 60)} sec"
     end
   end
 
@@ -715,6 +916,15 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
       |> String.trim_trailing("0")
       |> String.trim_trailing(".")
       |> String.replace(".", ",")
+
+  defp raw_score_label(exam) do
+    {earned, total} = Exams.raw_score(exam)
+    "#{number(earned)}/#{number(total)}"
+  end
+
+  defp score_class(score) when is_number(score) and score >= 16, do: "score-good"
+  defp score_class(score) when is_number(score) and score >= 10, do: "score-average"
+  defp score_class(_score), do: "score-low"
 
   defp type_name(type),
     do:
@@ -739,11 +949,6 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
 
   defp slots_value(answers, id, slot),
     do: if(is_map(answers[id]), do: answers[id][slot] || "", else: "")
-
-  defp answer_text(answer) when is_map(answer),
-    do: answer |> Enum.sort() |> Enum.map_join(" · ", fn {k, v} -> "#{k} : #{v}" end)
-
-  defp answer_text(answer), do: if(Exams.blank?(answer), do: "Sans réponse", else: answer)
 
   defp completed_count(exam, answers),
     do: Enum.count(exam.questions, &(not Exams.blank?(answers[&1["id"]])))

@@ -2,9 +2,37 @@ defmodule CaptainHomework.AI do
   @callback transcribe(binary(), String.t()) :: {:ok, String.t()} | {:error, term()}
   @callback analyze_resource(binary(), String.t()) :: {:ok, map()} | {:error, term()}
   @optional_callbacks analyze_resource: 2
+  @callback analyze_example_style(binary(), String.t()) :: {:ok, map()} | {:error, term()}
+  @optional_callbacks analyze_example_style: 2
+
+  @callback build_catalogue(list()) :: {:ok, map()} | {:error, term()}
+  @optional_callbacks build_catalogue: 1
+
+  def catalogue_supported?,
+    do: Code.ensure_loaded?(provider()) and function_exported?(provider(), :build_catalogue, 1)
+
+  def build_catalogue(pages), do: provider().build_catalogue(pages)
+
+  @callback plan_control(map(), list(), list(), integer(), String.t(), list(), list()) ::
+              {:ok, map()} | {:error, term()}
+  @callback repair_control_plan(
+              map(),
+              list(),
+              list(),
+              integer(),
+              String.t(),
+              list(),
+              list(),
+              map()
+            ) ::
+              {:ok, map()} | {:error, term()}
+  @callback generate_planned(map(), map(), list(), String.t(), list()) ::
+              {:ok, list()} | {:ok, list(), map()} | {:error, term()}
+  @optional_callbacks plan_control: 7, repair_control_plan: 8, generate_planned: 5
+
   @callback generate(map(), list(), list(), integer(), String.t(), list()) ::
               {:ok, list()} | {:error, term()}
-  @callback grade(map()) :: {:ok, list()} | {:error, term()}
+  @callback grade(map()) :: {:ok, list() | map()} | {:error, term()}
   def provider, do: Application.fetch_env!(:captain_homework, :ai_provider)
   def transcribe(data, type), do: provider().transcribe(data, type)
 
@@ -26,6 +54,14 @@ defmodule CaptainHomework.AI do
     do:
       provider() != CaptainHomework.AI.OpenAI or
         (Application.get_env(:captain_homework, :openai_api_key) || "") != ""
+
+  def message(:invalid_effort_review),
+    do:
+      "La vérification de l’équilibre des questions n’a pas abouti. Réessaie les questions manquantes."
+
+  def message(:invalid_plan),
+    do:
+      "La préparation des questions n’a pas abouti malgré une tentative de correction automatique. Réessaie la génération."
 
   def message(reason) when is_binary(reason), do: reason
   def message(_), do: "Le service IA est indisponible. Réessaie dans un instant."

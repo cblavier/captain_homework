@@ -5,7 +5,6 @@ defmodule CaptainHomework.Resources do
   alias CaptainHomework.Study.{Resource, Page}
   alias CaptainHomework.Resources.{Download, Documents}
 
-  @max_bytes 20 * 1024 * 1024
   @processing_timeout 2 * 60 * 60
 
   def get!(profile_id, id) do
@@ -19,19 +18,38 @@ defmodule CaptainHomework.Resources do
   def create_upload(profile_id, lesson_id, temp, filename) do
     lesson = Study.get_lesson!(profile_id, lesson_id)
 
-    with {:ok, %{size: size}} when size <= @max_bytes <- File.stat(temp),
-         {:ok, data} <- File.read(temp),
-         {:ok, type, ext} <- Documents.type(data) do
-      key = store(data, ext)
-
+    with {:ok, type, ext} <- upload_type(temp),
+         {:ok, key} <- copy_upload(temp, ext) do
       insert(%Resource{
         lesson_id: lesson.id,
         filename: Path.basename(filename),
         storage_key: key,
         content_type: type
       })
+    end
+  end
+
+  defp upload_type(path) do
+    with {:ok, %{type: :regular}} <- File.stat(path),
+         {:ok, header} when is_binary(header) <-
+           File.open(path, [:read, :binary], &IO.binread(&1, 512)),
+         {:ok, type, ext} <- Documents.type(header) do
+      {:ok, type, ext}
     else
-      _ -> {:error, "Choisis un PDF, JPEG, PNG ou WebP de moins de 20 Mo."}
+      _ -> {:error, "Choisis un PDF, JPEG, PNG ou WebP."}
+    end
+  end
+
+  defp copy_upload(path, ext) do
+    key = Ecto.UUID.generate() <> ext
+
+    with :ok <- File.mkdir_p(Uploads.directory()),
+         :ok <- File.cp(path, Uploads.path(key)) do
+      {:ok, key}
+    else
+      _ ->
+        File.rm(Uploads.path(key))
+        {:error, "Le fichier n’a pas pu être enregistré. Réessaie."}
     end
   end
 
@@ -80,18 +98,24 @@ defmodule CaptainHomework.Resources do
   end
 
   defp process_resource(resource) do
-    # A retry replaces incomplete OCR output; only ready resources are used by generation.
-    remove_pages(resource.id)
-
+    # Completed pages survive failed attempts so long documents do not restart their OCR.
     resource =
       resource |> Ecto.Changeset.change(status: "processing", error: nil) |> Repo.update!()
 
-    broadcast(resource)
+    CaptainHomework.ProcessingProgress.update(resource, 5, "Import du document")
 
     result =
       with {:ok, resource} <- obtain_original(resource),
+           {:ok, resource} <- name_document(resource),
+           :ok <-
+             CaptainHomework.ProcessingProgress.update(
+               resource,
+               20,
+               "Extraction des pages et illustrations"
+             ),
            {:ok, parts} <- Documents.extract(resource),
-           :ok <- import_parts(resource, parts) do
+           :ok <- import_parts(resource, parts),
+           {:ok, _catalogue} <- CaptainHomework.Catalogues.prepare_resource(resource) do
         {:ok, resource}
       end
 
@@ -161,24 +185,100 @@ defmodule CaptainHomework.Resources do
     end
   end
 
+  defp name_document(%{source_url: url} = resource) when is_binary(url) do
+    case Documents.title(resource) do
+      nil ->
+        {:ok, resource}
+
+      title ->
+        filename =
+          if String.ends_with?(String.downcase(title), ".pdf"), do: title, else: title <> ".pdf"
+
+        resource |> Ecto.Changeset.change(filename: filename) |> Repo.update()
+    end
+  end
+
+  defp name_document(resource), do: {:ok, resource}
+
   defp import_parts(resource, parts) do
     lesson = Repo.get!(Study.Lesson, resource.lesson_id)
+    expected = MapSet.new(parts, &{&1.kind, &1.name})
+    existing = Repo.all(from p in Page, where: p.resource_id == ^resource.id)
 
-    Enum.reduce_while(parts, :ok, fn part, _ ->
-      result =
-        if part.kind == "illustration" do
-          persist_part(lesson, resource, part, "", "other")
-        else
-          with {:ok, result} <- AI.analyze_resource(part.data, part.type) do
-            persist_part(lesson, resource, part, result["text"], result["document_kind"])
+    {completed_pages, obsolete_pages} =
+      Enum.split_with(existing, fn page ->
+        MapSet.member?(expected, {page.kind, page.filename}) and page.status == "ready" and
+          File.regular?(Uploads.path(page.storage_key))
+      end)
+
+    Enum.each(obsolete_pages, &Study.delete_page/1)
+
+    completed =
+      MapSet.new(completed_pages, &{&1.kind, &1.filename})
+
+    total = Enum.count(parts, &(&1.kind != "illustration"))
+    done = Enum.count(completed_pages, &(&1.kind != "illustration"))
+    report_ocr_progress(resource, done, total)
+
+    result =
+      parts
+      |> Enum.reject(&MapSet.member?(completed, {&1.kind, &1.name}))
+      |> Task.async_stream(
+        &analyze_part/1,
+        max_concurrency: 3,
+        ordered: true,
+        timeout: 180_000,
+        on_timeout: :kill_task
+      )
+      |> Enum.reduce_while({:ok, done}, fn
+        {:ok, {part, {:ok, result}}}, {:ok, done} ->
+          case persist_part(lesson, resource, part, result["text"], result["document_kind"]) do
+            {:ok, _} ->
+              done = done + if(part.kind == "illustration", do: 0, else: 1)
+              if part.kind != "illustration", do: report_ocr_progress(resource, done, total)
+              {:cont, {:ok, done}}
+
+            {:error, reason} ->
+              {:halt, {:error, reason}}
           end
-        end
 
-      case result do
-        {:ok, _} -> {:cont, :ok}
-        {:error, reason} -> {:halt, {:error, reason}}
-      end
-    end)
+        {:ok, {_part, {:error, reason}}}, _ ->
+          {:halt, {:error, reason}}
+
+        {:exit, _}, _ ->
+          {:halt,
+           {:error,
+            "La lecture d’une page a été interrompue. Réessaie : les pages déjà reconnues sont conservées."}}
+      end)
+
+    case result do
+      {:ok, _} -> :ok
+      error -> error
+    end
+  end
+
+  defp report_ocr_progress(resource, done, total) do
+    percent = 30 + round(55 * done / max(total, 1))
+
+    CaptainHomework.ProcessingProgress.update(
+      resource,
+      percent,
+      "Lecture OCR — #{done}/#{total} pages"
+    )
+  end
+
+  defp analyze_part(part) do
+    result =
+      if part.kind == "illustration",
+        do: {:ok, %{"text" => "", "document_kind" => "other"}},
+        else: AI.analyze_resource(part.data, part.type)
+
+    {part, result}
+  rescue
+    _ ->
+      {part,
+       {:error,
+        "La lecture d’une page a échoué. Réessaie : les pages déjà reconnues sont conservées."}}
   end
 
   defp persist_part(lesson, resource, part, text, kind) do
@@ -217,18 +317,18 @@ defmodule CaptainHomework.Resources do
       current ->
         result =
           current
-          |> Ecto.Changeset.change(status: status, error: error, processing_started_at: nil)
+          |> Ecto.Changeset.change(
+            status: status,
+            error: error,
+            processing_started_at: nil,
+            processing_stage: nil,
+            processing_progress: if(status == "ready", do: 100, else: current.processing_progress)
+          )
           |> Repo.update()
 
         broadcast(current)
         result
     end
-  end
-
-  defp remove_pages(id) do
-    pages = Repo.all(from p in Page, where: p.resource_id == ^id)
-    Repo.delete_all(from p in Page, where: p.resource_id == ^id)
-    Enum.each(pages, &File.rm(Uploads.path(&1.storage_key)))
   end
 
   defp store(data, ext) do

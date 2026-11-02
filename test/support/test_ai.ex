@@ -13,22 +13,28 @@ defmodule CaptainHomework.TestAI do
   end
 
   def grade(exam) do
-    {:ok,
-     Enum.map(exam.questions, fn q ->
-       fraction =
-         case exam.answers[q["id"]] do
-           "moitié" -> 0.5
-           "quart" -> 0.25
-           "trois quarts" -> 0.75
-           "faux" -> 0
-           _ -> 1
-         end
+    grades =
+      Enum.map(exam.questions, fn q ->
+        fraction =
+          case exam.answers[q["id"]] do
+            "moitié" -> 0.5
+            "quart" -> 0.25
+            "trois quarts" -> 0.75
+            "faux" -> 0
+            _ -> 1
+          end
 
-       %{
-         "id" => q["id"],
-         "fraction" => fraction,
-         "feedback" => "La membrane délimite la cellule."
-       }
-     end)}
+        %{
+          "id" => q["id"],
+          "fraction" => fraction,
+          "feedback" => "La membrane délimite la cellule."
+        }
+      end)
+
+    {:ok,
+     %{
+       "grades" => grades,
+       "appreciation" => "Des connaissances solides ; précise tes justifications."
+     }}
   end
 end

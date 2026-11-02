@@ -2,7 +2,11 @@ import "phoenix_html"
 import {Socket} from "phoenix"
 import {LiveSocket} from "phoenix_live_view"
 import topbar from "../vendor/topbar"
+import {ThemeSettings} from "./theme_settings"
+import {ExamAnswers} from "./exam_answers"
 const Hooks = {
+  ThemeSettings,
+  ExamAnswers,
   Dialog: {
     mounted() {this.previousFocus = document.activeElement; (this.el.querySelector("input:not([type=hidden]),textarea") || this.el.querySelector("button"))?.focus(); document.body.style.overflow = "hidden"},
     destroyed() {document.body.style.overflow = ""; this.previousFocus?.focus()}

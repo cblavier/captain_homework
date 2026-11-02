@@ -29,22 +29,25 @@ defmodule CaptainHomework.ExamsTest do
     assert length(Exams.retry_questions([e], 1)) == 1
   end
 
-  test "shared defaults are combined with additions and saved as a snapshot" do
-    {:ok, _} = CaptainHomework.Settings.save(%{"instructions" => "Consignes communes"})
+  test "legacy general instructions are ignored and each control keeps its own instructions" do
+    now = NaiveDateTime.utc_now()
+
+    Repo.insert_all("settings", [
+      %{id: 1, instructions: "Ancien prompt général", inserted_at: now, updated_at: now}
+    ])
+
     p = profile()
     l = lesson(p)
     page(l)
+
+    old =
+      exam(l) |> Ecto.Changeset.change(instructions: "Instructions historiques") |> Repo.update!()
+
     {:ok, first} = Exams.generate(p.id, l.id, 2, "Insister sur les dates", [])
-
-    assert first.instructions ==
-             "Consignes communes\n\nInstructions supplémentaires pour ce contrôle :\nInsister sur les dates"
-
-    {:ok, _} = CaptainHomework.Settings.save(%{"instructions" => "Nouvelles consignes"})
-    other = profile("Marius")
-    other_lesson = lesson(other, "francais")
-    page(other_lesson)
-    {:ok, second} = Exams.generate(other.id, other_lesson.id, 2, "", [])
-    assert second.instructions == "Nouvelles consignes"
+    assert first.instructions == "Insister sur les dates"
+    {:ok, second} = Exams.generate(p.id, l.id, 2, "", [])
+    assert second.instructions == ""
+    assert Repo.get!(Study.Exam, old.id).instructions == "Instructions historiques"
     assert Repo.get!(Study.Exam, first.id).instructions == first.instructions
   end
 
@@ -69,7 +72,7 @@ defmodule CaptainHomework.ExamsTest do
     assert hd(e.questions)["origin_id"] == "failed"
     assert hd(e.questions)["prompt"] == question()["prompt"]
     assert hd(e.questions)["id"] != "failed"
-    assert e.instructions == Study.default_instructions()
+    assert e.instructions == ""
   end
 
   test "generation requires readable lessons and valid count" do
@@ -82,17 +85,19 @@ defmodule CaptainHomework.ExamsTest do
     assert {:error, _} = Exams.generate(p.id, l.id, 31, "", [])
   end
 
-  test "retries span the child's subject while excluding other subjects and children" do
+  test "retries stay within the current lesson and exclude other subjects and children" do
     p = profile()
     target = lesson(p)
     page(target)
+    completed(target, [question("same-lesson")], [0.25])
     completed(lesson(p), [question("same-subject")], [0.25])
     completed(lesson(p, "anglais"), [question("other-subject")], [0])
     completed(lesson(profile("Bob")), [question("other-child")], [0])
 
     {:ok, generated} = Exams.generate(p.id, target.id, 4, "", [])
     origins = Enum.map(generated.questions, & &1["origin_id"])
-    assert hd(origins) == "same-subject"
+    assert hd(origins) == "same-lesson"
+    refute "same-subject" in origins
     refute "other-subject" in origins
     refute "other-child" in origins
   end
@@ -124,10 +129,23 @@ defmodule CaptainHomework.ExamsTest do
       )
 
     assert result.status == "completed"
+    assert result.appreciation == "Des connaissances solides ; précise tes justifications."
     assert result.score == 7.5
     assert result.corrections["q1"]["points"] == 1.0
     assert result.corrections["q4"]["points"] == 0
     assert {:error, :already_submitted} = Exams.submit(p.id, e.id, %{}, sync: true)
+  end
+
+  test "marks are rounded to the nearest quarter without changing raw points" do
+    assert Exams.round_score(16.71) == 16.75
+    assert Exams.round_score(16.12) == 16.0
+    assert Exams.round_score(16.125) == 16.25
+    assert Exams.round_score(9.99) == 10.0
+
+    assert Exams.raw_score(%{
+             questions: [%{"points" => 29}],
+             corrections: %{"q" => %{"points" => 24}}
+           }) == {24, 29}
   end
 
   test "MCQ is scored deterministically even if model gives wrong grade" do

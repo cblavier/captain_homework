@@ -181,17 +181,24 @@ defmodule CaptainHomework.Study do
   def delete_lesson(profile_id, id) do
     lesson = get_lesson!(profile_id, id)
 
-    with {:ok, lesson} <- Repo.delete(lesson) do
-      Enum.each(lesson.pages, &File.rm(CaptainHomework.Uploads.path(&1.storage_key)))
+    pages = from p in Page, select: p.lesson_id
+    exams = from e in Exam, select: e.lesson_id
+    resources = from r in CaptainHomework.Study.Resource, select: r.lesson_id
 
-      Enum.each(lesson.resources, fn resource ->
-        if resource.storage_key, do: File.rm(CaptainHomework.Uploads.path(resource.storage_key))
-      end)
+    {count, _} =
+      Repo.delete_all(
+        from l in Lesson,
+          where: l.id == ^lesson.id and l.profile_id == ^profile_id,
+          where: l.id not in subquery(pages),
+          where: l.id not in subquery(exams),
+          where: l.id not in subquery(resources)
+      )
 
-      Enum.each(lesson.exams, &CaptainHomework.Exams.Illustrations.delete_exam_images/1)
-      {:ok, lesson}
-    end
+    if count == 1, do: {:ok, lesson}, else: {:error, :not_empty}
   end
+
+  def lesson_empty?(lesson),
+    do: lesson.pages == [] and lesson.exams == [] and lesson.resources == []
 
   def get_page!(profile_id, id) do
     if not valid_id?(id), do: raise(Ecto.NoResultsError, queryable: Page)
@@ -249,38 +256,19 @@ defmodule CaptainHomework.Study do
     end)
   end
 
-  def update_page(page, text),
-    do: page |> Page.changeset(%{text: text, status: "ready", error: nil}) |> Repo.update()
+  def update_page(page, text) do
+    with {:ok, page} <-
+           page |> Page.changeset(%{text: text, status: "ready", error: nil}) |> Repo.update() do
+      CaptainHomework.Catalogues.schedule(page)
+      {:ok, page}
+    end
+  end
 
   def delete_page(page) do
     with {:ok, page} <- Repo.delete(page) do
       File.rm(CaptainHomework.Uploads.path(page.storage_key))
       {:ok, page}
     end
-  end
-
-  def default_instructions, do: CaptainHomework.Settings.instructions()
-
-  def builtin_instructions do
-    """
-    S’inspirer si possible du modèle de contrôle d’exemple.
-    Produire une liste de questions variée, de types différents, correspondant au contenu des leçons.
-    Les textes de compréhension peuvent apporter des compléments à la leçon : les réponses doivent alors figurer dans le texte.
-    Varier les formes : définitions, QCM, textes à trous, compréhension de texte, réponses rédigées et schémas à légender.
-    La variété n’impose jamais de produire un schéma : privilégier un exercice simple et clair lorsqu’un dessin n’apporte aucune information utile.
-    Chaque exercice doit être compréhensible et résoluble à partir des connaissances de la leçon et des éléments réellement affichés dans la question. Fournir tous les documents, événements, choix et correspondances nécessaires ; ne jamais renvoyer à une illustration ou une liste absente.
-    Pour une chronologie, donner dans l’énoncé les événements à classer, chacun associé à un numéro, puis demander une réponse rédigée contenant les numéros du plus ancien au plus récent. Ne pas utiliser un schéma de cases numérotées pour cet exercice.
-    Réserver les schémas à légender aux dessins dont les formes et la disposition permettent réellement d’identifier les éléments étudiés. Des cases contenant seulement 1, 2, 3, 4 ne constituent pas un schéma exploitable. Si le dessin ne peut pas être représenté clairement, choisir un autre type de question.
-    Interdire les listes de définitions déguisées en schémas : disposer des numéros dans des ovales ou rectangles, même accompagnés de définitions dans l’énoncé, n’est pas un exercice visuel. Si supprimer le dessin ne change rien à la résolution, supprimer le schéma et utiliser des définitions ou un texte à trous.
-    Pour plusieurs définitions à compléter, placer un trou numéroté après chaque définition et demander explicitement de compléter toutes les définitions. Pour une seule définition, ne présenter que cette définition et un seul champ de réponse.
-    Préciser ce qui est attendu dans chaque réponse : un mot, une explication ou une suite de numéros. Pour un schéma, demander le nom de chaque élément repéré, et non de recopier les numéros déjà visibles.
-    Faire correspondre exactement la consigne, le nombre de réponses et le barème. Ne jamais demander seulement le numéro 1 si cinq champs sont affichés. La correction doit couvrir tous les champs demandés, sans en ajouter.
-    Avant de rendre le contrôle, vérifier chaque exercice du point de vue de l’élève, sans consulter la correction : les informations nécessaires sont-elles présentes et la consigne est-elle cohérente avec le mode de réponse ? Reformuler ou remplacer toute question ambiguë ou incomplète sans révéler sa réponse.
-    Autoriser la saisie des réponses rédigées par photo avec reconnaissance du texte.
-    Donner la correction uniquement à la fin, en rouge, avec une note totale sur 20, une note par question et les réponses attendues.
-    Accorder des points partiels (25 %, 50 % ou 75 %) aux réponses partiellement correctes.
-    """
-    |> String.trim()
   end
 
   def save_answers(profile_id, exam_id, answers) when is_map(answers) do

@@ -78,21 +78,47 @@ defmodule CaptainHomeworkWeb.CoreComponents do
 
   attr :id, :string, required: true
   attr :ancestors, :list, required: true
+  attr :subject, :map, default: nil
   slot :inner_block, required: true
+  slot :trailing
 
   def page_breadcrumb(assigns) do
     ~H"""
-    <nav class="page-breadcrumb" aria-label="Fil d’Ariane" id={"#{@id}-breadcrumb"}>
-      <ol>
-        <li :for={{label, path} <- @ancestors}>
-          <.link navigate={path}>{label}</.link>
-          <.icon name="arrow" class="breadcrumb-separator" />
-        </li>
-        <li aria-current="page">
-          <.page_title id={@id}>{render_slot(@inner_block)}</.page_title>
-        </li>
-      </ol>
-    </nav>
+    <div class="page-breadcrumb" id={"#{@id}-breadcrumb"}>
+      <nav :if={@ancestors != []} aria-label="Fil d’Ariane">
+        <ol>
+          <li :for={{{label, path}, index} <- Enum.with_index(@ancestors)}>
+            <.link navigate={path}>{label}</.link>
+            <.icon
+              :if={index < length(@ancestors) - 1}
+              name="arrow"
+              class="breadcrumb-separator"
+            />
+          </li>
+        </ol>
+      </nav>
+      <div class="breadcrumb-title" aria-current="page">
+        <div :if={@subject} class={["icon-tile small", @subject.color]} aria-hidden="true">
+          <.icon name={@subject.icon} />
+        </div>
+        <.page_title id={@id}>{render_slot(@inner_block)}</.page_title>
+        <div :if={@trailing != []} class="breadcrumb-trailing">{render_slot(@trailing)}</div>
+      </div>
+    </div>
+    """
+  end
+
+  attr :id, :string, required: true
+  attr :percent, :integer, required: true
+  attr :stage, :string, required: true
+
+  def processing_progress(assigns) do
+    ~H"""
+    <span id={@id} class="processing-progress" role="status" aria-live="polite">
+      <span class="spinner" aria-hidden="true" />
+      <strong title="Avancement total estimé">≈ {@percent} %</strong>
+      <span>{@stage}</span>
+    </span>
     """
   end
 

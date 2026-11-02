@@ -1,6 +1,7 @@
 defmodule CaptainHomework.Resources.Download do
   @moduledoc false
-  @max_bytes 20 * 1024 * 1024
+  alias CaptainHomework.Resources.GoogleDrive
+  @transfer_timeout 10 * 60 * 1000
 
   def validate_url(url) when is_binary(url) do
     uri = URI.parse(String.trim(url))
@@ -25,7 +26,40 @@ defmodule CaptainHomework.Resources.Download do
 
   def validate_url(_), do: invalid_url()
 
-  def fetch(url), do: fetch(url, 0)
+  def fetch(url) do
+    with {:ok, uri} <- validate_url(url) do
+      case GoogleDrive.prepare(uri) do
+        :not_drive -> fetch(url, 0)
+        {:ok, download_url, id} -> fetch_drive(download_url, URI.to_string(uri), id, 0)
+        {:error, _} = error -> error
+      end
+    end
+  end
+
+  defp fetch_drive(url, original, id, confirmations) do
+    with {:ok, body, type, _} <- fetch(url, 0) do
+      cond do
+        String.starts_with?(body, "%PDF-") ->
+          {:ok, body, "application/pdf", original}
+
+        match?({:ok, _, _}, CaptainHomework.Uploads.image_type(body)) ->
+          {:ok, image_type, _} = CaptainHomework.Uploads.image_type(body)
+          {:ok, body, image_type, original}
+
+        type in ["text/html", "application/xhtml+xml"] and confirmations == 0 ->
+          with {:ok, confirmation_url} <- GoogleDrive.confirmation(body, id) do
+            fetch_drive(confirmation_url, original, id, confirmations + 1)
+          end
+
+        type in ["text/html", "application/xhtml+xml"] ->
+          GoogleDrive.access_error()
+
+        true ->
+          {:error, "Le fichier Google Drive doit être un PDF ou une image JPEG, PNG ou WebP."}
+      end
+    end
+  end
+
   defp fetch(_, hops) when hops > 4, do: {:error, "Trop de redirections pour cette URL."}
 
   defp fetch(url, hops) do
@@ -34,7 +68,7 @@ defmodule CaptainHomework.Resources.Download do
       # Pin the validated address, preserving the HTTP host and TLS certificate hostname.
       pinned = %{uri | host: ip |> :inet.ntoa() |> to_string(), fragment: nil}
       headers = [{"host", uri.host}, {"accept-encoding", "identity"}]
-      deadline = System.monotonic_time(:millisecond) + 30_000
+      deadline = System.monotonic_time(:millisecond) + @transfer_timeout
 
       response =
         Req.get(URI.to_string(pinned),
@@ -43,23 +77,22 @@ defmodule CaptainHomework.Resources.Download do
           retry: false,
           decode_body: false,
           compressed: false,
-          receive_timeout: 15_000,
+          receive_timeout: 30_000,
           connect_options: [hostname: uri.host, timeout: 5_000, protocols: [:http1]],
           into: fn {:data, chunk}, {request, response} ->
-            body = response.body || ""
-
-            if byte_size(body) + byte_size(chunk) > @max_bytes or
-                 System.monotonic_time(:millisecond) > deadline do
-              {:halt, {request, %{response | body: :limit_exceeded}}}
+            if System.monotonic_time(:millisecond) > deadline do
+              {:halt, {request, %{response | body: :download_timeout}}}
             else
-              {:cont, {request, %{response | body: body <> chunk}}}
+              chunks = if is_list(response.body), do: response.body, else: []
+              {:cont, {request, %{response | body: [chunk | chunks]}}}
             end
           end
         )
 
       case response do
-        {:ok, %{body: :limit_exceeded}} ->
-          {:error, "Le document est trop volumineux ou trop lent (20 Mo maximum)."}
+        {:ok, %{body: :download_timeout}} ->
+          {:error,
+           "Le téléchargement du document a pris trop de temps. Réessaie ou importe directement le fichier."}
 
         {:ok, %{status: status} = response} when status in [301, 302, 303, 307, 308] ->
           case Req.Response.get_header(response, "location") do
@@ -67,7 +100,10 @@ defmodule CaptainHomework.Resources.Download do
             _ -> {:error, "La redirection du document est invalide."}
           end
 
-        {:ok, %{status: 200, body: body} = response} when is_binary(body) ->
+        {:ok, %{status: 200, body: chunks} = response}
+        when is_list(chunks) or is_binary(chunks) ->
+          body = chunks |> List.wrap() |> Enum.reverse() |> IO.iodata_to_binary()
+
           type =
             response
             |> Req.Response.get_header("content-type")
