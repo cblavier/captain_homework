@@ -3,17 +3,36 @@
   child_theme={if @profile, do: @profile.theme, else: "blue"}
   immersive={@live_action == :exam and flashcard_active?(@exam)}
 >
-  <main :if={@live_action == :exam and flashcard_active?(@exam)} id="flashcard-player">
+  <main
+    :if={@live_action == :exam and flashcard_active?(@exam)}
+    id="flashcard-player"
+    phx-remove={
+      @exam.card_index + 1 == length(@exam.questions) &&
+        JS.hide(
+          to: "#flashcard-session",
+          transition:
+            {"flashcard-finish-transition", "flashcard-finish-start", "flashcard-finish-end"},
+          time: 500
+        )
+    }
+  >
     <.flashcard
       exam={@exam}
       answers={@answers}
+      subject={Study.subject!(@lesson.subject).name}
       error={@error}
       close_path={child_path(@profile, ~p"/lecons/#{@lesson.id}")}
     />
   </main>
   <main
     :if={@live_action != :exam or not flashcard_active?(@exam)}
-    class={["app", @live_action == :exam && "exam-app"]}
+    id="homework-content"
+    class={[
+      "app",
+      @live_action == :exam && "exam-app",
+      @live_action == :exam && @exam.format == "flashcard" && @exam.status == "completed" &&
+        "flashcard-results-enter"
+    ]}
   >
     <div class="identity-row">
       <details
@@ -302,6 +321,7 @@
           <label for="type-label">Nom</label>
           <input
             id="type-label"
+            autocorrect="off"
             name={@question_type_form[:label].name}
             value={@question_type_form[:label].value}
             required
@@ -311,6 +331,7 @@
           <label for="type-description">Consigne pour la génération</label>
           <textarea
             id="type-description"
+            autocorrect="off"
             name={@question_type_form[:description].name}
             required
             maxlength="1000"
@@ -1012,6 +1033,7 @@
             </p>
             <textarea
               id="instructions"
+              autocorrect="off"
               name="instructions"
               rows="4"
               maxlength="8000"
@@ -1202,6 +1224,7 @@
                       <label for={"answer-#{q["id"]}-#{slot}"}>{slot}</label>
                       <input
                         id={"answer-#{q["id"]}-#{slot}"}
+                        autocorrect="off"
                         name={"answers[#{q["id"]}][#{slot}]"}
                         value={slots_value(@answers, q["id"], slot)}
                         phx-debounce="500"
@@ -1214,6 +1237,7 @@
                     <label class="sr-only" for={"answer-#{q["id"]}"}>Ta réponse</label>
                     <input
                       id={"answer-#{q["id"]}"}
+                      autocorrect="off"
                       name={"answers[#{q["id"]}]"}
                       value={@answers[q["id"]] || ""}
                       phx-debounce="500"
@@ -1224,6 +1248,7 @@
                   <div :if={q["type"] in ["long", "reading"]}>
                     <label class="sr-only" for={"answer-#{q["id"]}"}>Ta réponse</label><textarea
                       id={"answer-#{q["id"]}"}
+                      autocorrect="off"
                       name={"answers[#{q["id"]}]"}
                       rows="5"
                       phx-debounce="500"
@@ -1391,9 +1416,21 @@
       </.form>
     </.modal>
     <.modal :if={@modal == "lesson"} title="Nouvelle leçon">
-      <.form for={@form} phx-change="validate" phx-submit="create_lesson" id="lesson-form">
+      <.form
+        for={@lesson_form}
+        phx-change="validate_lesson"
+        phx-submit="create_lesson"
+        id="lesson-form"
+      >
         <label for="lesson-title">Nom de la leçon</label>
-        <input id="lesson-title" name="title" required maxlength="120" />
+        <input
+          id="lesson-title"
+          name={@lesson_form[:title].name}
+          value={@lesson_form[:title].value}
+          autocorrect="off"
+          required
+          maxlength="120"
+        />
         <p class="muted date-line">{date(Study.today())}</p>
         <label>Pages de la leçon</label>
         <.upload_field upload={@uploads.pages} name="pages" label="Ajouter des pages" />
@@ -1439,6 +1476,7 @@
         <.form for={@form} phx-change="validate_page" phx-submit="save_page" id="page-text-form">
           <label for="page-text">Texte reconnu</label><textarea
             id="page-text"
+            autocorrect="off"
             name="text"
             rows="14"
             maxlength="60000"
@@ -1488,6 +1526,7 @@
         <label for="transcription">Vérifie ta réponse</label><textarea
           name="text"
           id="transcription"
+          autocorrect="off"
           rows="9"
         >{@ocr_text}</textarea>
         <div class="form-actions">

@@ -5,11 +5,13 @@ import topbar from "../vendor/topbar"
 import {ThemeSettings} from "./theme_settings"
 import {ExamAnswers} from "./exam_answers"
 import {FlashcardViewport} from "./flashcard_viewport"
+import {FlashcardStack} from "./flashcard_stack"
 import "./viewport"
 const Hooks = {
   ThemeSettings,
   ExamAnswers,
   FlashcardViewport,
+  FlashcardStack,
   Dialog: {
     mounted() {this.previousFocus = document.activeElement; (this.el.querySelector("input:not([type=hidden]),textarea") || this.el.querySelector("button"))?.focus(); document.body.style.overflow = "hidden"},
     destroyed() {document.body.style.overflow = ""; this.previousFocus?.focus()}

@@ -48,7 +48,8 @@ cp -n .env.example .env
 Compléter le fichier `.env` :
 
 - `OPENAI_API_KEY` : clé API OpenAI.
-- `OPENAI_MODEL` : modèle utilisé pour tous les appels IA (OCR, ressources, génération et correction), `gpt-5.4` par défaut.
+- `OPENAI_MODEL` : modèle utilisé pour l’OCR, les ressources, la génération et la correction des contrôles classiques, `gpt-5.4` par défaut.
+- `OPENAI_FLASHCARD_MODEL` : modèle dédié à la correction après chaque flashcard, `gpt-5.4-mini` par défaut, avec le raisonnement désactivé (`none`) pour réduire l’attente. Le modèle choisi doit accepter ce réglage et les sorties JSON structurées.
 - `HOMEWORK_CHILD_n_FIRST_NAME` : prénom de chaque enfant.
 - `HOMEWORK_CHILD_n_AVATAR_BASE64` : avatar facultatif en PNG, JPEG ou WebP encodé en base64.
 - `PRONOTE_CHILD_n_THEME` : thème `blue` ou `green`, avec le même numéro que l’enfant. Le nom de variable est partagé avec Captain Notes.

@@ -425,8 +425,12 @@ defmodule CaptainHomework.Exams.Generation do
     end)
   end
 
-  defp fingerprint(q),
-    do: q["prompt"] |> String.downcase() |> String.replace(~r/\s+/, " ") |> String.trim()
+  defp fingerprint(q) do
+    # The prompt can be a shared heading; the actual question may be in text.
+    Enum.map(~w(prompt text), fn field ->
+      q[field] |> String.downcase() |> String.replace(~r/\s+/, " ") |> String.trim()
+    end)
+  end
 
   defp checkpoint(exam, questions, errors) do
     plan =

@@ -853,6 +853,12 @@ defmodule CaptainHomework.AI.OpenAI do
       vérifie que les connaissances demandées sont enseignées dans les sources de leçon citées ou
       déductibles des supports visibles. Signale une réponse inventée ou une citation hors sujet via
       consistent=false. Les sources justificatives OCR sont cachées à l'élève, jamais des réponses exposées.
+      Vérifie aussi que l'élève dispose des éléments auxquels l'énoncé renvoie : liste numérotée,
+      tableau, image, passage ou exercice. Une source OCR qui contient ces éléments ne les rend pas
+      visibles. Si une question demande « quel mot correspond au numéro 1 dans la liste ? » sans
+      afficher cette liste, consistent=false, même si la réponse figure dans le cours caché.
+      Mémoriser une notion ne signifie pas mémoriser sa position ou son numéro dans un document.
+      Demande une reformulation autonome qui nomme l'objet à traduire ou la notion à rappeler.
       Examine aussi la géométrie et les étiquettes du diagram fourni, ainsi que leur cohérence avec slots.
       Ne confonds pas des réponses alternatives
       acceptables avec des éléments tous obligatoires. reason décrit brièvement les défauts à corriger.
@@ -950,6 +956,12 @@ defmodule CaptainHomework.AI.OpenAI do
     Utilise exclusivement les connaissances des pages de cours ci-dessous et répartis les notions
     sur l'ensemble de ces pages. N'utilise aucun contrôle d'exemple, ressource externe ou exercice ancien.
     Chaque carte est montrée seule : aucune référence à une autre carte, aucun document partagé.
+    Les pages de cours et leur OCR ne sont pas affichés pendant la révision. Ne reprends jamais
+    un renvoi à une liste, un numéro, une image ou un exercice de ces pages. Les numéros et positions
+    des mots dans le document ne sont pas des connaissances à mémoriser.
+    Transforme les exercices sources en questions autonomes : au lieu de « Quel mot correspond au
+    numéro 1 dans la liste ? », demande par exemple « Quel mot anglais signifie chauve-souris ? »
+    avec des choix en anglais. Ne recopie pas la liste des réponses pour rendre la carte possible.
     La réponse doit mobiliser la mémoire du cours, sans être révélée par un texte de support.
     Un seul geste rapide : choisir, nommer, compléter, rappeler un fait ou une définition.
     Aucune explication développée, justification, rédaction longue ou analyse de document.
@@ -1049,7 +1061,12 @@ defmodule CaptainHomework.AI.OpenAI do
         end)
       end)
 
-    request(prompt, images, schema)
+    if Map.get(exam, :format) == "flashcard" do
+      model = Application.get_env(:captain_homework, :openai_flashcard_model, "gpt-5.4-mini")
+      request(prompt, images, schema, "none", 16000, model)
+    else
+      request(prompt, images, schema)
+    end
   end
 
   defp staged_request(stage, prompt, images, schema, effort, max_tokens) do
@@ -1058,12 +1075,19 @@ defmodule CaptainHomework.AI.OpenAI do
     end)
   end
 
-  defp request(prompt, images, schema, reasoning_effort \\ "low", max_output_tokens \\ 16000) do
+  defp request(
+         prompt,
+         images,
+         schema,
+         reasoning_effort \\ "low",
+         max_output_tokens \\ 16000,
+         model \\ nil
+       ) do
     key = Application.get_env(:captain_homework, :openai_api_key)
 
     if is_binary(key) and key != "" do
       body = %{
-        model: Application.get_env(:captain_homework, :openai_model, "gpt-5.4"),
+        model: model || Application.get_env(:captain_homework, :openai_model, "gpt-5.4"),
         store: false,
         instructions: @system,
         input: [%{role: "user", content: [%{type: "input_text", text: prompt} | images]}],

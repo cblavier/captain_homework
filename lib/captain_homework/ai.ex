@@ -115,10 +115,42 @@ defmodule CaptainHomework.AI do
     ]
 
     errors = for {false, reason} <- checks, do: reason
-    if errors == [], do: type_errors(q), else: errors
+    if errors == [], do: type_errors(q) ++ support_errors(q), else: errors
   end
 
   def question_errors(_), do: ["objet question attendu"]
+
+  defp support_errors(q) do
+    prompt = String.normalize(q["prompt"], :nfc)
+
+    numbers =
+      Regex.scan(~r/\b(?:num[eé]ro|n[°ºo])\s*(\d+)\b/iu, prompt, capture: :all_but_first)
+      |> List.flatten()
+
+    missing_list? =
+      Regex.match?(~r/\bliste\b/iu, prompt) and numbers != [] and
+        not visible_support?(q) and
+        not Enum.all?(numbers, &listed_in_prompt?(prompt, &1))
+
+    if missing_list?,
+      do: [
+        "liste numérotée absente : affiche les éléments référencés dans l’énoncé ou reformule la question pour qu’elle soit autonome"
+      ],
+      else: []
+  end
+
+  defp visible_support?(q) do
+    images = Map.get(q, "images", [])
+
+    String.trim(q["text"]) != "" or Map.get(q, "image_ids", []) != [] or
+      (is_list(images) and images != []) or
+      (q["type"] == "diagram" and valid_diagram?(q["diagram"], q["slots"]))
+  end
+
+  defp listed_in_prompt?(prompt, number) do
+    # A number mentioned in the question or an MCQ option is not a numbered source list.
+    Regex.match?(~r/(?:^|[\n\r;,:])[ \t]*#{number}[ \t]*[.):\-][ \t]*\S/u, prompt)
+  end
 
   defp type_errors(q) do
     case q["type"] do

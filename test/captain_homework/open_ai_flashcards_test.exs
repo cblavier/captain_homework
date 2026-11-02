@@ -116,4 +116,110 @@ defmodule CaptainHomework.OpenAIFlashcardsTest do
 
     assert generated.generation_plan == nil
   end
+
+  test "hidden numbered vocabulary is rejected and repaired while autonomous cards are kept" do
+    p = profile()
+    l = lesson(p)
+
+    source =
+      page(l)
+      |> Ecto.Changeset.change(text: "Halloween vocabulary\n1. bat\n2. candle\n3. ghost")
+      |> Repo.update!()
+
+    translation =
+      question("translation", "definition")
+      |> Map.merge(%{
+        "prompt" => "Traduis « bougie » en anglais.",
+        "answer" => "candle",
+        "rubric" => "1 point pour candle.",
+        "source_page_ids" => [source.id]
+      })
+
+    missing_list =
+      question("missing-list", "mcq")
+      |> Map.merge(%{
+        "prompt" => "QCM : Quel mot correspond au numéro 1 dans la liste ?",
+        "options" => ["bat", "ghost", "cat"],
+        "answer" => "bat",
+        "rubric" => "1 point pour bat.",
+        "source_page_ids" => [source.id]
+      })
+
+    repaired = Map.put(missing_list, "prompt", "Quel mot anglais signifie chauve-souris ?")
+    drafts = start_supervised!({Agent, fn -> 0 end})
+    owner = self()
+
+    Req.Test.stub(__MODULE__, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      request = Jason.decode!(body)
+      [%{"content" => [%{"type" => "input_text", "text" => prompt}]}] = request["input"]
+      schema = request["text"]["format"]["schema"]["properties"]
+
+      result =
+        if schema["questions"] do
+          assert prompt =~ "Les pages de cours et leur OCR ne sont pas affichés"
+
+          case Agent.get_and_update(drafts, &{&1, &1 + 1}) do
+            0 ->
+              %{"questions" => [translation, missing_list]}
+
+            1 ->
+              assert prompt =~ "Crée exactement 1 flashcards"
+              assert prompt =~ "Diagnostics"
+              saved = Repo.one!(Study.Exam)
+              assert [kept] = saved.questions
+              assert kept["prompt"] == translation["prompt"]
+              send(owner, {:kept_card, kept["id"]})
+              %{"questions" => [repaired]}
+          end
+        else
+          assert prompt =~ "Une source OCR qui contient ces éléments ne les rend pas"
+
+          questions =
+            prompt |> String.trim() |> String.split("\n") |> List.last() |> Jason.decode!()
+
+          # Even an auditor approving everything never sees the unusable draft.
+          refute Enum.any?(questions, &(&1["prompt"] == missing_list["prompt"]))
+
+          %{
+            "reviews" =>
+              Enum.map(questions, fn q ->
+                %{
+                  "plan_id" => q["plan_id"],
+                  "actual_effort" => "direct",
+                  "actual_basis" => "knowledge",
+                  "answer_exposed" => false,
+                  "exposure_source_id" => "",
+                  "exposure_quote" => "",
+                  "consistent" => true,
+                  "reason" => "Rappel rapide du cours."
+                }
+              end)
+          }
+        end
+
+      Req.Test.json(conn, %{
+        "status" => "completed",
+        "output" => [
+          %{"content" => [%{"type" => "output_text", "text" => Jason.encode!(result)}]}
+        ]
+      })
+    end)
+
+    assert {:ok, generated} =
+             Exams.generate(p.id, l.id, 2, "",
+               format: "flashcard",
+               question_types: ["definition", "mcq"]
+             )
+
+    assert generated.status == "in_progress"
+    assert generated.generation_errors == []
+
+    assert Enum.map(generated.questions, & &1["prompt"]) ==
+             [translation["prompt"], repaired["prompt"]]
+
+    assert_receive {:kept_card, kept_id}
+    assert hd(generated.questions)["id"] == kept_id
+    assert Agent.get(drafts, & &1) == 2
+  end
 end

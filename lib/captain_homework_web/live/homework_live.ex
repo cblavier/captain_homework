@@ -21,6 +21,7 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
     socket =
       assign(socket,
         form: to_form(%{}),
+        lesson_form: lesson_form(),
         resource_form: to_form(%{"url" => ""}, as: :resource),
         question_type_form: to_form(SubjectQuestionTypes.change_type(), as: :question_type),
         available_question_types: [],
@@ -284,6 +285,10 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
      )}
   end
 
+  def handle_event("open_modal", %{"modal" => "lesson"}, socket) do
+    {:noreply, assign(socket, modal: "lesson", error: nil, lesson_form: lesson_form())}
+  end
+
   def handle_event("open_modal", %{"modal" => modal}, socket),
     do: {:noreply, assign(socket, modal: modal, error: nil)}
 
@@ -291,6 +296,10 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
     do: {:noreply, assign(socket, modal: nil, error: nil, ocr_text: nil)}
 
   def handle_event("validate", _, socket), do: {:noreply, socket}
+
+  def handle_event("validate_lesson", %{"lesson" => %{"title" => title}}, socket) do
+    {:noreply, assign(socket, lesson_form: lesson_form(title))}
+  end
 
   def handle_event("cancel_upload", %{"name" => name, "ref" => ref}, socket) do
     upload =
@@ -304,7 +313,8 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
     {:noreply, cancel_upload(socket, upload, ref)}
   end
 
-  def handle_event("create_lesson", %{"title" => title}, socket) do
+  def handle_event("create_lesson", %{"lesson" => %{"title" => title}}, socket) do
+    socket = assign(socket, lesson_form: lesson_form(title))
     attrs = %{"title" => String.trim(title), "subject" => socket.assigns.subject.id}
 
     case Study.create_lesson(socket.assigns.profile, attrs) do
@@ -635,8 +645,17 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
   end
 
   def handle_event("next_card", %{"id" => id}, socket) do
-    Flashcards.advance(socket.assigns.profile.id, socket.assigns.exam.id, id)
-    {:noreply, refresh_exam(socket)}
+    case Flashcards.advance(socket.assigns.profile.id, socket.assigns.exam.id, id) do
+      {:ok, exam} ->
+        socket = refresh_exam(socket)
+
+        if exam.status == "completed",
+          do: {:noreply, socket},
+          else: {:noreply, push_event(socket, "flashcard:advanced", %{})}
+
+      {:error, _} ->
+        {:noreply, push_event(refresh_exam(socket), "flashcard:advance-cancelled", %{})}
+    end
   end
 
   def handle_event("confirm_submit", params, socket) do
@@ -753,6 +772,12 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
     else
       {:noreply, socket}
     end
+  end
+
+  defp lesson_form(title \\ "") do
+    %Study.Lesson{}
+    |> Ecto.Changeset.change(title: title)
+    |> to_form(as: :lesson)
   end
 
   defp refresh_lesson(socket) do

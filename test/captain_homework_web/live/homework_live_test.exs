@@ -328,7 +328,7 @@ defmodule CaptainHomeworkWeb.HomeworkLiveTest do
     p = profile()
     {:ok, view, _} = live(conn, "/alice/matieres/francais")
     view |> element("#new-lesson") |> render_click()
-    view |> form("#lesson-form", %{title: "Le présent"}) |> render_submit()
+    view |> form("#lesson-form", %{lesson: %{title: "Le présent"}}) |> render_submit()
     [lesson] = Study.lessons(p.id, "francais")
     assert_redirect(view, "/alice/lecons/#{lesson.id}")
     assert lesson.date == Study.today()
