@@ -133,7 +133,49 @@ defmodule CaptainHomework.CatalogueSelectionTest do
     assert Jason.decode!(content)["catalogue"] == [fallback]
   end
 
-  test "reserves a feasible visual before course content exhausts the catalogue budget" do
+  test "extracted illustrations remain indexed and selected with their own visual and source IDs" do
+    lesson = lesson(profile())
+
+    resource =
+      Repo.insert!(%Study.Resource{
+        lesson_id: lesson.id,
+        filename: "Exercises.png",
+        status: "ready"
+      })
+
+    crop =
+      Repo.insert!(%Study.Page{
+        lesson_id: lesson.id,
+        resource_id: resource.id,
+        kind: "illustration",
+        extracted_from_id: Ecto.UUID.generate(),
+        status: "ready",
+        text: "Trace un segment [AB].",
+        document_kind: "activity",
+        filename: "extrait.png",
+        storage_key: "crop.png",
+        content_type: "image/png"
+      })
+
+    File.write!(Uploads.path(crop.storage_key), "crop pixels")
+    exercise = entry(crop, %{"visual_page_ids" => [crop.id]})
+    stub([exercise])
+    assert {:ok, _} = Catalogues.prepare_resource(resource)
+    lesson = Study.get_lesson!(lesson.profile_id, lesson.id)
+    pages = CaptainHomework.Exams.Illustrations.content_pages(lesson)
+    assert pages == [crop]
+    assert {:ok, content, [^crop], []} = Catalogues.context(lesson, pages, [], 1, "", [])
+    assert Jason.decode!(content)["catalogue"] == [exercise]
+    assert Jason.decode!(content)["source_kinds"] == %{crop.id => "resource"}
+    exam = exam(lesson, [question() |> Map.put("source_page_ids", [crop.id])])
+
+    assert [%{page_id: id}] =
+             CaptainHomework.Exams.Sources.for_exam(exam, lesson.profile_id)["q1"]
+
+    assert id == crop.id
+  end
+
+  test "resource budget retains whole exercises and does not discard course knowledge" do
     lesson = lesson(profile())
     course_page = page(lesson)
 
@@ -175,7 +217,7 @@ defmodule CaptainHomework.CatalogueSelectionTest do
 
     visual =
       entry(visual_page, %{
-        "content" => String.duplicate("E", 7_000),
+        "content" => String.duplicate("E", 2_000),
         "visual_page_ids" => [visual_page.id]
       })
 
@@ -184,7 +226,7 @@ defmodule CaptainHomework.CatalogueSelectionTest do
         entry(visual_page, %{
           "kind" => "knowledge",
           "title" => "Fait #{n}",
-          "content" => String.duplicate(to_string(n), 7_000)
+          "content" => String.duplicate(to_string(n), 1_000)
         })
       end
 
@@ -198,6 +240,7 @@ defmodule CaptainHomework.CatalogueSelectionTest do
     selected = Jason.decode!(content)["catalogue"]
     assert visual in selected
     assert small_course in selected
-    refute large_course in selected
+    assert large_course in selected
+    assert Enum.all?(supporting_facts, &(&1 in selected))
   end
 end

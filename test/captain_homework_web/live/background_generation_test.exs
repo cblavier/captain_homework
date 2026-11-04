@@ -40,7 +40,7 @@ defmodule CaptainHomeworkWeb.BackgroundGenerationTest do
     {path, _} = assert_redirect(view)
     [exam] = Study.get_lesson!(l.profile_id, l.id).exams
     assert path == "/alice/controles/#{exam.id}"
-    assert_receive {:generation_waiting, worker, []}
+    assert_receive {:generation_waiting, worker, []}, 2000
     ref = Process.monitor(worker)
     view_ref = Process.monitor(view.pid)
     Process.exit(view.pid, :shutdown)
@@ -56,13 +56,47 @@ defmodule CaptainHomeworkWeb.BackgroundGenerationTest do
     {:ok, refreshed, _} = live(conn, path)
     refute has_element?(refreshed, "#generation-errors")
     assert has_element?(refreshed, "#generation-stage", "Préparation des questions …")
+    assert has_element?(refreshed, "#generation-elapsed", "Temps écoulé")
     Phoenix.PubSub.subscribe(CaptainHomework.PubSub, "exam:#{exam.id}")
+    Phoenix.PubSub.subscribe(CaptainHomework.PubSub, "exam_generation")
     questions = for n <- 1..10, do: question("q#{n}") |> Map.put("prompt", "Question #{n}")
     send(worker, {:generation_reply, {:ok, questions}})
     assert_receive {:DOWN, ^ref, :process, ^worker, :normal}, 2000
     ready = await_status(exam.id, "in_progress")
+    assert_receive {:exam_generation_finished, %{id: id, status: "in_progress"}}, 2000
+    assert id == exam.id
     assert length(ready.questions) == 10
     assert has_element?(refreshed, "#exam-answers")
+    _ = :sys.get_state(GenerationJobs)
+  end
+
+  test "a running control displays elapsed time and the number of questions being repaired", %{
+    conn: conn,
+    lesson: lesson
+  } do
+    lesson = Study.get_lesson!(lesson.profile_id, lesson.id)
+    source = hd(lesson.pages)
+    exam = exam(lesson, [])
+
+    exam =
+      exam
+      |> Ecto.Changeset.change(
+        status: "generating",
+        generation_target: 1,
+        question_types: ["long"],
+        generation_started_at: DateTime.add(DateTime.utc_now(), -65)
+      )
+      |> Repo.update!()
+
+    assert {:ok, _} = GenerationJobs.start(exam, lesson, [source], [], [])
+    assert_receive {:generation_waiting, worker, []}, 2000
+    ref = Process.monitor(worker)
+    exam |> Ecto.Changeset.change(generation_stage: "Ajustement de 1 question…") |> Repo.update!()
+    {:ok, view, _} = live(conn, "/alice/controles/#{exam.id}")
+    assert has_element?(view, "#generation-stage", "Ajustement de 1 question")
+    assert has_element?(view, "#generation-elapsed", "1mn")
+    send(worker, {:generation_reply, {:ok, [question()]}})
+    assert_receive {:DOWN, ^ref, :process, ^worker, :normal}, 2000
     _ = :sys.get_state(GenerationJobs)
   end
 
@@ -91,7 +125,7 @@ defmodule CaptainHomeworkWeb.BackgroundGenerationTest do
   test "a crashed worker immediately exposes saved questions for recovery", %{lesson: l} do
     {:ok, exam} = Exams.generate(l.profile_id, l.id, 2, "", background: true)
     Phoenix.PubSub.subscribe(CaptainHomework.PubSub, "exam:#{exam.id}")
-    assert_receive {:generation_waiting, worker, []}
+    assert_receive {:generation_waiting, worker, []}, 2000
     send(worker, {:generation_reply, {:ok, [question("kept")]}})
     assert_receive {:generation_waiting, ^worker, [kept]}, 2000
     ref = Process.monitor(worker)
@@ -103,7 +137,7 @@ defmodule CaptainHomeworkWeb.BackgroundGenerationTest do
     _ = :sys.get_state(GenerationJobs)
     {:ok, resumed} = Exams.resume_generation(l.profile_id, exam.id, background: true)
     assert {:error, _} = Exams.resume_generation(l.profile_id, exam.id, background: true)
-    assert_receive {:generation_waiting, next_worker, [^kept]}
+    assert_receive {:generation_waiting, next_worker, [^kept]}, 2000
     Generation.interrupt(exam, "Old run must not affect the resumed job")
     assert Repo.get!(Study.Exam, resumed.id).status == "generating"
     next_ref = Process.monitor(next_worker)
@@ -119,7 +153,7 @@ defmodule CaptainHomeworkWeb.BackgroundGenerationTest do
   test "the deadline stops a stalled worker and permits recovery", %{lesson: l} do
     {:ok, exam} = Exams.generate(l.profile_id, l.id, 1, "", background: true)
     Phoenix.PubSub.subscribe(CaptainHomework.PubSub, "exam:#{exam.id}")
-    assert_receive {:generation_waiting, worker, []}
+    assert_receive {:generation_waiting, worker, []}, 2000
     ref = Process.monitor(worker)
 
     {job_ref, _} =

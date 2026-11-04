@@ -20,6 +20,77 @@ defmodule CaptainHomework.OpenAIFlashcardsTest do
     :ok
   end
 
+  test "chronological flashcards use numbered events and a permutation as their expected answer" do
+    {:ok, _} = CaptainHomework.QuestionDefinitions.seed!()
+
+    type =
+      Enum.find(CaptainHomework.QuestionDefinitions.list(), &(&1.response_kind == "ordering"))
+
+    l = lesson(profile(), "histoire-geo")
+    source = page(l)
+
+    Req.Test.stub(__MODULE__, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      request = Jason.decode!(body)
+      schema = request["text"]["format"]["schema"]["properties"]
+      [%{"content" => [%{"text" => prompt}]}] = request["input"]
+
+      result =
+        if schema["questions"] do
+          assert schema["questions"]["items"]["properties"]["type"]["enum"] == ["ordering"]
+          assert prompt =~ "l’interface les numérote de 1 à N"
+
+          %{
+            "questions" => [
+              question("q1", "ordering")
+              |> Map.merge(%{
+                "prompt" => "Classe ces événements du plus ancien au plus récent.",
+                "options" => ["Écriture", "Maîtrise du feu", "Agriculture"],
+                "answer" => "2, 3, 1",
+                "points" => 1,
+                "source_page_ids" => [source.id]
+              })
+            ]
+          }
+        else
+          questions =
+            prompt |> String.trim() |> String.split("\n") |> List.last() |> Jason.decode!()
+
+          %{
+            "reviews" =>
+              Enum.map(questions, fn q ->
+                %{
+                  "plan_id" => q["plan_id"],
+                  "actual_effort" => "direct",
+                  "actual_basis" => "knowledge",
+                  "answer_exposed" => false,
+                  "exposure_source_id" => "",
+                  "exposure_quote" => "",
+                  "consistent" => true,
+                  "reason" => "Classement de faits appris."
+                }
+              end)
+          }
+        end
+
+      Req.Test.json(conn, %{
+        "status" => "completed",
+        "output" => [
+          %{"content" => [%{"type" => "output_text", "text" => Jason.encode!(result)}]}
+        ]
+      })
+    end)
+
+    assert {:ok, generated} =
+             Exams.generate(l.profile_id, l.id, 1, "",
+               format: "flashcard",
+               question_types: [type.id]
+             )
+
+    assert generated.status == "in_progress"
+    assert [%{"type" => "ordering", "answer" => "2, 3, 1"}] = generated.questions
+  end
+
   test "real generation adapter sends only course pages, enforces one point and audits quick recall" do
     p = profile()
     l = lesson(p)
@@ -101,7 +172,7 @@ defmodule CaptainHomework.OpenAIFlashcardsTest do
     assert {:ok, generated} =
              Exams.generate(p.id, l.id, 1, "",
                format: "flashcard",
-               question_types: ["definition", "long"]
+               question_types: question_type_ids(["definition", "long"])
              )
 
     assert generated.status == "in_progress"
@@ -209,7 +280,7 @@ defmodule CaptainHomework.OpenAIFlashcardsTest do
     assert {:ok, generated} =
              Exams.generate(p.id, l.id, 2, "",
                format: "flashcard",
-               question_types: ["definition", "mcq"]
+               question_types: question_type_ids(["definition", "mcq"])
              )
 
     assert generated.status == "in_progress"

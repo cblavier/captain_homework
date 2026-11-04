@@ -26,6 +26,8 @@ defmodule CaptainHomework.Family do
                   key: prefix,
                   index: String.to_integer(index),
                   name: name,
+                  school_name: optional_text(env[prefix <> "_SCHOOL_NAME"]),
+                  class_name: optional_text(env[prefix <> "_CLASS_NAME"]),
                   avatar: avatar(env[prefix <> "_AVATAR_BASE64"]),
                   theme: env["PRONOTE_CHILD_#{index}_THEME"]
                 }
@@ -49,6 +51,13 @@ defmodule CaptainHomework.Family do
   end
 
   def normalize(name), do: name |> String.trim() |> String.downcase() |> String.normalize(:nfc)
+
+  defp optional_text(value) do
+    case String.trim(value || "") do
+      "" -> nil
+      text -> text
+    end
+  end
 
   defp avatar(encoded) when is_binary(encoded) and byte_size(encoded) <= 262_144 do
     with {:ok, bytes} <- Base.decode64(encoded, ignore: :whitespace),

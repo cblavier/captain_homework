@@ -3,7 +3,9 @@ import Config
 config :captain_homework,
   openai_api_key: System.get_env("OPENAI_API_KEY"),
   openai_model: System.get_env("OPENAI_MODEL", "gpt-5.4"),
+  openai_illustration_model: System.get_env("OPENAI_ILLUSTRATION_MODEL", "gpt-6-astra"),
   openai_flashcard_model: System.get_env("OPENAI_FLASHCARD_MODEL", "gpt-5.4-mini"),
+  openai_speech_model: System.get_env("OPENAI_SPEECH_MODEL", "gpt-realtime-2.1-mini"),
   access_password: System.get_env("HOMEWORK_PASSWORD")
 
 if System.get_env("PHX_SERVER") == "true",

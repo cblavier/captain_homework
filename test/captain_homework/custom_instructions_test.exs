@@ -77,7 +77,7 @@ defmodule CaptainHomework.CustomInstructionsTest do
         properties["questions"] ->
           refute prompt =~ "ACTIVITY_ONLY_CONTENT"
           refute prompt =~ ctx.activity.id
-          assert prompt =~ "aucune grille ni quota"
+          assert prompt =~ "aucune proportion n’est imposée"
           send(owner, :draft)
           response(conn, plan)
 
@@ -95,7 +95,7 @@ defmodule CaptainHomework.CustomInstructionsTest do
 
     assert {:ok, exam} =
              Exams.generate(ctx.lesson.profile_id, ctx.lesson.id, 3, @instructions,
-               question_types: ["definition", "long"]
+               question_types: question_type_ids(["definition", "long"])
              )
 
     assert exam.status == "in_progress"
@@ -113,9 +113,9 @@ defmodule CaptainHomework.CustomInstructionsTest do
     assert exam.generation_plan["slot_constraints"] == nil
     assert exam.generation_plan["custom_instructions"] == @instructions
     assert exam.generation_plan["allowed_source_page_ids"] == [ctx.course.id]
-    assert exam.generation_plan["enforce_default_balance"] == false
+    assert exam.generation_plan["question_ids"] == ~w(q1 q2 q3)
 
-    assert {:error, _} =
+    assert :ok =
              Plan.validate(plan, 3, ["definition", "long"], [ctx.course, ctx.activity], [])
 
     # Repair uses the saved source restrictions and author instructions, not default quotas.
@@ -138,7 +138,7 @@ defmodule CaptainHomework.CustomInstructionsTest do
                []
              )
 
-    assert repaired["enforce_default_balance"] == false
+    assert repaired["question_ids"] == ~w(q1 q2 q3)
 
     Req.Test.stub(__MODULE__, fn conn ->
       response(conn, %{
@@ -282,6 +282,19 @@ defmodule CaptainHomework.CustomInstructionsTest do
   end
 
   defp response(conn, result) do
+    result =
+      case result do
+        %{"questions" => questions, "supports" => _} when is_list(questions) ->
+          Map.put(
+            result,
+            "questions",
+            Map.new(questions, &{&1["id"], Map.drop(&1, ["id", "plan_id"])})
+          )
+
+        _ ->
+          result
+      end
+
     Req.Test.json(conn, %{
       "status" => "completed",
       "output" => [%{"content" => [%{"type" => "output_text", "text" => Jason.encode!(result)}]}]

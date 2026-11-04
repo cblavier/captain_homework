@@ -233,6 +233,19 @@ defmodule CaptainHomework.OpenAIResourcesTest do
   end
 
   defp response(conn, result) do
+    result =
+      case result do
+        %{"questions" => questions, "supports" => _} when is_list(questions) ->
+          Map.put(
+            result,
+            "questions",
+            Map.new(questions, &{&1["id"], Map.drop(&1, ["id", "plan_id"])})
+          )
+
+        _ ->
+          result
+      end
+
     Req.Test.json(conn, %{
       "status" => "completed",
       "output" => [
@@ -264,7 +277,13 @@ defmodule CaptainHomework.OpenAIResourcesTest do
     plan = %{
       "questions" => [complete_question("q1", "long", source, %{"support_id" => "s1"})],
       "supports" => [
-        %{"id" => "s1", "title" => "Cellule", "text" => "", "image_ids" => [source.id]}
+        %{
+          "id" => "s1",
+          "title" => "Cellule",
+          "text" => "",
+          "image_ids" => [source.id],
+          "image_regions" => [full_frame(source.id)]
+        }
       ]
     }
 
@@ -274,13 +293,31 @@ defmodule CaptainHomework.OpenAIResourcesTest do
       content = Jason.decode!(raw)["input"] |> hd() |> Map.fetch!("content")
       assert Enum.count(content, &(&1["type"] == "input_image")) == 1
       assert Enum.any?(content, &String.contains?(&1["text"] || "", source.id))
-      assert hd(content)["text"] =~ "CONTRÔLE COMPLET"
-      assert hd(content)["text"] =~ "inclus au moins une question"
+      assert hd(content)["text"] =~ "questions est un OBJET"
+      assert hd(content)["text"] =~ "500 × 300"
+
+      props =
+        get_in(Jason.decode!(raw), [
+          "text",
+          "format",
+          "schema",
+          "properties",
+          "questions",
+          "properties",
+          "q1",
+          "properties"
+        ])
+
+      nodes = hd(props["diagram"]["anyOf"])["properties"]["nodes"]
+      assert nodes["maxItems"] == 20
+      assert nodes["items"]["properties"]["x"]["maximum"] < 500
+      assert nodes["items"]["properties"]["y"]["maximum"] < 300
+      assert hd(content)["text"] =~ "aucune proportion n’est imposée"
       response(conn, plan)
     end)
 
     assert {:ok, result} = OpenAI.plan_control(lesson, [source], [], 1, "", [], ["long"])
-    assert result["version"] == 2
+    assert result["version"] == CaptainHomework.Exams.Plan.version()
     assert {:ok, [question]} = CaptainHomework.Exams.Plan.ready_questions(result)
     assert question["image_ids"] == [source.id]
     assert question["prompt"] == hd(plan["questions"])["prompt"]
@@ -329,7 +366,10 @@ defmodule CaptainHomework.OpenAIResourcesTest do
 
     Req.Test.stub(__MODULE__, fn conn ->
       {:ok, raw, conn} = Plug.Conn.read_body(conn)
-      content = Jason.decode!(raw)["input"] |> hd() |> Map.fetch!("content")
+      body = Jason.decode!(raw)
+      assert body["reasoning"] == %{"effort" => "medium"}
+      assert body["max_output_tokens"] >= 12_000
+      content = body["input"] |> hd() |> Map.fetch!("content")
       prompt = hd(content)["text"]
       assert prompt =~ "Support qui dévoile la réponse"
       assert prompt =~ "Sources justificatives NON VISIBLES"
@@ -363,7 +403,7 @@ defmodule CaptainHomework.OpenAIResourcesTest do
     stub(%{"entries" => [entry(source, %{"visual_page_ids" => []})]})
     assert {:ok, _} = Catalogues.prepare_resource(resource)
     calls = start_supervised!({Agent, fn -> [] end})
-    draft = complete_question("q1", "reading", source)
+    draft = complete_question("q1", "reading", source, %{"response_effort" => "short"})
 
     Req.Test.stub(__MODULE__, fn conn ->
       {:ok, raw, conn} = Plug.Conn.read_body(conn)
@@ -381,7 +421,7 @@ defmodule CaptainHomework.OpenAIResourcesTest do
 
     assert {:ok, exam} =
              CaptainHomework.Exams.generate(lesson.profile_id, lesson.id, 1, "",
-               question_types: ["reading"]
+               question_types: question_type_ids(["reading"])
              )
 
     assert exam.status == "in_progress"
@@ -389,6 +429,64 @@ defmodule CaptainHomework.OpenAIResourcesTest do
     assert hd(exam.questions)["prompt"] == draft["prompt"]
     assert hd(exam.questions)["verified_response_effort"] == "direct"
     assert hd(exam.questions)["verified_answer_basis"] == "document"
+    assert hd(exam.questions)["response_effort"] == "direct"
+    assert hd(exam.generation_plan["questions"])["response_effort"] == "direct"
+  end
+
+  test "different tasks on one shared document survive generation and audit without repair" do
+    {lesson, resource, [source]} = document(1)
+    stub(%{"entries" => [entry(source, %{"visual_page_ids" => []})]})
+    assert {:ok, _} = Catalogues.prepare_resource(resource)
+    calls = start_supervised!({Agent, fn -> [] end})
+    tasks = ["Qui sont les auteurs ?", "Les migrations sont-elles rapides ?"]
+
+    drafts =
+      for {task, index} <- Enum.with_index(tasks, 1) do
+        complete_question("q#{index}", "reading", source, %{
+          "prompt" => "Analyse le document.",
+          "text" => task,
+          "support_id" => "s1",
+          "objective" => task,
+          "expected_elements" => [task]
+        })
+      end
+
+    support = %{
+      "id" => "s1",
+      "title" => "Les migrations",
+      "text" => "Document commun et sa source.",
+      "image_ids" => []
+    }
+
+    Req.Test.stub(__MODULE__, fn conn ->
+      {:ok, raw, conn} = Plug.Conn.read_body(conn)
+      body = Jason.decode!(raw)
+      props = get_in(body, ["text", "format", "schema", "properties"])
+      kind = if Map.has_key?(props, "reviews"), do: :audit, else: :plan
+      Agent.update(calls, &(&1 ++ [kind]))
+
+      result =
+        if kind == :plan do
+          %{"questions" => drafts, "supports" => [support]}
+        else
+          prompt = hd(hd(body["input"])["content"])["text"]
+          for task <- tasks, do: assert(prompt =~ task)
+          assert prompt =~ support["text"]
+          %{"reviews" => [review("q1"), review("q2")]}
+        end
+
+      response(conn, result)
+    end)
+
+    assert {:ok, exam} =
+             CaptainHomework.Exams.generate(lesson.profile_id, lesson.id, 2, "",
+               question_types: question_type_ids(["reading"])
+             )
+
+    assert exam.status == "in_progress"
+    assert Agent.get(calls, & &1) == [:plan, :audit]
+    assert Enum.map(exam.questions, & &1["text"]) == tasks
+    assert Enum.all?(exam.questions, &(&1["support_text"] == support["text"]))
   end
 
   test "only a rejected question is repaired before the complete control is audited again" do
@@ -420,7 +518,16 @@ defmodule CaptainHomework.OpenAIResourcesTest do
 
           :audit ->
             actual = if history == [:plan], do: "developed", else: "direct"
-            %{"reviews" => [review("q1", %{"actual_effort" => actual})]}
+
+            %{
+              "reviews" => [
+                review("q1", %{
+                  "actual_effort" => actual,
+                  "consistent" => history != [:plan],
+                  "reason" => "Le barème exige un élément absent de la consigne"
+                })
+              ]
+            }
 
           :repair ->
             assert prompt =~ "effort constaté developed"
@@ -436,13 +543,67 @@ defmodule CaptainHomework.OpenAIResourcesTest do
 
     assert {:ok, exam} =
              CaptainHomework.Exams.generate(lesson.profile_id, lesson.id, 1, "",
-               question_types: ["reading"]
+               question_types: question_type_ids(["reading"])
              )
 
     assert exam.status == "in_progress"
     assert Agent.get(calls, & &1) == [:plan, :audit, :repair, :audit]
     assert hd(exam.questions)["prompt"] == "Nomme uniquement la structure."
   end
+
+  test "repair transmits only useful images and cannot introduce an unseen candidate" do
+    {lesson, _, [visible, needed, unused]} = document(3)
+
+    kept =
+      complete_question("q1", "reading", visible, %{
+        "image_ids" => [visible.id],
+        "answer" => "RETAINED_PRIVATE_ANSWER"
+      })
+
+    rejected = complete_question("q2", "reading", needed)
+    catalogue = [entry(visible), entry(needed, %{"visual_page_ids" => []}), entry(unused)]
+
+    plan = %{
+      "version" => CaptainHomework.Exams.Plan.version(),
+      "questions" => [kept, rejected],
+      "supports" => [],
+      "types" => ["reading"],
+      "image_ids" => [visible.id, needed.id, unused.id],
+      "context" => Jason.encode!(%{"catalogue" => catalogue, "source_kinds" => %{}})
+    }
+
+    Req.Test.stub(__MODULE__, fn conn ->
+      {:ok, raw, conn} = Plug.Conn.read_body(conn)
+      input = Jason.decode!(raw)["input"] |> hd() |> Map.fetch!("content")
+      prompt = hd(input)["text"]
+      assert Enum.count(input, &(&1["type"] == "input_image")) == 1
+      assert prompt =~ kept["prompt"]
+      refute prompt =~ "RETAINED_PRIVATE_ANSWER"
+      refute prompt =~ unused.id
+      response(conn, %{"questions" => [rejected], "supports" => []})
+    end)
+
+    assert {:ok, [_], updated} = OpenAI.generate_planned(lesson, plan, [rejected], "", [kept])
+    assert hd(updated["questions"]) == kept
+
+    Req.Test.stub(__MODULE__, fn conn ->
+      response(conn, %{
+        "questions" => [
+          Map.merge(rejected, %{
+            "image_ids" => [unused.id],
+            "image_regions" => [full_frame(unused.id)]
+          })
+        ],
+        "supports" => []
+      })
+    end)
+
+    assert {:error, reason} = OpenAI.generate_planned(lesson, plan, [rejected], "", [kept])
+    assert reason =~ "n’a pas été transmise"
+  end
+
+  defp full_frame(id),
+    do: %{"image_id" => id, "x" => 0, "y" => 0, "width" => 1000, "height" => 1000}
 
   test "invalid plans are repaired once and expose only a readable error" do
     {lesson, resource, [source]} = document(1)
@@ -470,7 +631,7 @@ defmodule CaptainHomework.OpenAIResourcesTest do
 
     {:ok, exam} =
       CaptainHomework.Exams.generate(lesson.profile_id, lesson.id, 2, "",
-        question_types: ["reading"]
+        question_types: question_type_ids(["reading"])
       )
 
     assert Agent.get(counter, & &1) == 2
@@ -511,7 +672,7 @@ defmodule CaptainHomework.OpenAIResourcesTest do
 
     {:ok, partial} =
       CaptainHomework.Exams.generate(lesson.profile_id, lesson.id, 1, "",
-        question_types: ["reading"]
+        question_types: question_type_ids(["reading"])
       )
 
     assert partial.status == "generation_partial"

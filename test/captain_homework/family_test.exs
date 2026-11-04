@@ -36,6 +36,21 @@ defmodule CaptainHomework.FamilyTest do
     assert Enum.map(members, & &1.theme) == ["green", "blue", "blue"]
   end
 
+  test "school and class come from optional environment variables" do
+    Application.put_env(:captain_homework, :family_env, %{
+      "HOMEWORK_CHILD_1_FIRST_NAME" => "Alice",
+      "HOMEWORK_CHILD_1_SCHOOL_NAME" => " Collège Jean Monnet ",
+      "HOMEWORK_CHILD_1_CLASS_NAME" => " 4A ",
+      "HOMEWORK_CHILD_2_FIRST_NAME" => "Marius"
+    })
+
+    [alice, marius] = Study.profiles()
+    assert alice.school_name == "Collège Jean Monnet"
+    assert alice.class_name == "4A"
+    assert is_nil(marius.school_name)
+    assert is_nil(marius.class_name)
+  end
+
   test "invalid and oversized avatars fall back to initials" do
     for value <- ["invalid base64", Base.encode64("<svg></svg>"), String.duplicate("a", 262_145)] do
       assert [%{avatar: nil}] =

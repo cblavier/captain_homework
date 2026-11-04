@@ -90,6 +90,28 @@ defmodule CaptainHomework.AITraceTest do
     assert call.stage == "catalogue"
   end
 
+  test "reports the actual request stage before calling the provider and restores the callback" do
+    request = %{
+      text: %{
+        format: %{schema: %{"properties" => %{"questions" => %{"properties" => %{"q2" => %{}}}}}}
+      }
+    }
+
+    parent = self()
+
+    Trace.with_progress(fn stage, count -> send(parent, {:started, stage, count}) end, fn ->
+      Trace.with_stage("repair", fn ->
+        Trace.request(request, fn ->
+          assert_received {:started, "repair", 1}
+          {:error, :timeout}
+        end)
+      end)
+    end)
+
+    Trace.request(request, fn -> {:error, :timeout} end)
+    refute_received {:started, _, _}
+  end
+
   defp body do
     %{
       "model" => "gpt-5.4",

@@ -78,6 +78,25 @@ defmodule CaptainHomework.ExposureEvidenceTest do
     assert checked["answer_exposed"]
   end
 
+  test "a document carried by a retried question remains visible evidence" do
+    other =
+      Map.merge(@question, %{
+        "plan_id" => "retry-stable",
+        "support_id" => "",
+        "support_text" => "Un nomade se déplace."
+      })
+
+    [checked] =
+      ExposureEvidence.verify(
+        [review("question:retry-stable", "Un nomade se déplace.")],
+        [@question, other],
+        [],
+        []
+      )
+
+    assert checked["answer_exposed"]
+  end
+
   test "visual proofs require an image that is actually displayed and a concrete observation" do
     [valid] =
       ExposureEvidence.verify(

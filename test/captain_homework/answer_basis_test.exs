@@ -4,17 +4,6 @@ defmodule CaptainHomework.AnswerBasisTest do
 
   @pages [%{id: "course", kind: "lesson"}, %{id: "external", kind: "resource"}]
 
-  test "resolution targets distinguish memorized knowledge from document work" do
-    assert AnswerBasis.targets(10, @pages, ["long"]) == %{"knowledge" => 5, "document" => 5}
-    assert AnswerBasis.targets(3, @pages, ["long"]) == %{"knowledge" => 2, "document" => 1}
-    assert AnswerBasis.targets(10, @pages, ["reading"]) == %{"knowledge" => 0, "document" => 10}
-
-    assert AnswerBasis.targets(10, [hd(@pages)], ["long"]) == %{
-             "knowledge" => 10,
-             "document" => 0
-           }
-  end
-
   test "course origin alone cannot stand in for knowledge questions" do
     knowledge = %{
       "answer_basis" => "knowledge",
@@ -29,7 +18,7 @@ defmodule CaptainHomework.AnswerBasisTest do
     }
 
     assert AnswerBasis.valid?([knowledge, document], @pages, ["long"])
-    refute AnswerBasis.valid?([document, document], @pages, ["long"])
+    assert AnswerBasis.valid?([document, document], @pages, ["long"])
 
     refute AnswerBasis.valid?([Map.put(knowledge, "support_id", "s1"), document], @pages, ["long"])
 
@@ -91,7 +80,6 @@ defmodule CaptainHomework.AnswerBasisTest do
     ]
 
     errors = AnswerBasis.validation_errors(questions, @pages, ["long"])
-    assert Enum.any?(errors, &(&1 =~ "Effectifs réels" and &1 =~ ~s("knowledge":2)))
     assert Enum.any?(errors, &(&1 =~ "sans source de leçon : q1"))
     assert Enum.any?(errors, &(&1 =~ "support visible à retirer : q2"))
   end

@@ -1,22 +1,6 @@
 defmodule CaptainHomework.Exams.ResponseEffort do
   @categories ~w(direct short developed)
 
-  def targets(count, types), do: CaptainHomework.Exams.Constraints.targets(count, types).effort
-
-  def balanced?(questions, types, pages \\ nil) do
-    # Legacy plans can still be resumed.
-    if Enum.all?(questions, &Map.has_key?(&1, "response_effort")) do
-      actual = Enum.frequencies_by(questions, & &1["response_effort"])
-
-      Enum.all?(
-        CaptainHomework.Exams.Constraints.targets(length(questions), types, pages).effort,
-        fn {key, n} -> Map.get(actual, key, 0) == n end
-      )
-    else
-      true
-    end
-  end
-
   def review(questions, reviews) when is_list(reviews) do
     ids = Enum.map(questions, & &1["plan_id"])
     reviewed_ids = Enum.map(reviews, & &1["plan_id"])
@@ -33,11 +17,19 @@ defmodule CaptainHomework.Exams.ResponseEffort do
         Enum.reduce(questions, {[], []}, fn q, {accepted, errors} ->
           review = Map.fetch!(by_id, q["plan_id"])
 
-          if review["actual_effort"] == q["response_effort"] and review["consistent"] and
+          compatible? =
+            not Map.has_key?(q, "type") or
+              CaptainHomework.Exams.Constraints.effort_supported?(
+                q["type"],
+                review["actual_effort"]
+              )
+
+          if review["consistent"] and compatible? and
                CaptainHomework.Exams.AnswerBasis.review_ok?(q, review) do
             {accepted ++
                [
                  q
+                 |> Map.put("response_effort", review["actual_effort"])
                  |> Map.put("verified_response_effort", review["actual_effort"])
                  |> Map.put("verified_answer_basis", review["actual_basis"])
                ], errors}
@@ -45,7 +37,7 @@ defmodule CaptainHomework.Exams.ResponseEffort do
             {accepted,
              errors ++
                [
-                 "Question #{q["plan_id"]} : effort attendu #{q["response_effort"]}, effort constaté #{review["actual_effort"]}. Mode prévu #{q["answer_basis"]}, mode constaté #{review["actual_basis"]}, réponse exposée #{review["answer_exposed"]}. Réécris la consigne, la réponse et le barème pour respecter l'effort et le mode prévus. Pour knowledge, choisis une notion enseignée dans le cours dont la réponse n'est pas fournie dans les supports du contrôle. Diagnostic : #{review["reason"]}"
+                 "Question #{q["plan_id"]} : effort attendu #{q["response_effort"]}, effort constaté #{review["actual_effort"]}. Mode prévu #{q["answer_basis"]}, mode constaté #{review["actual_basis"]}, réponse exposée #{review["answer_exposed"]}. Corrige uniquement le défaut pédagogique décrit ci-dessous. La catégorie d’effort est descriptive, elle n’impose pas de réécriture à elle seule. Pour knowledge, choisis une notion enseignée dans le cours dont la réponse n'est pas fournie dans les supports du contrôle. Diagnostic : #{review["reason"]}"
                ]}
           end
         end)

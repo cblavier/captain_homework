@@ -17,6 +17,7 @@
     }
   >
     <.flashcard
+      profile={@profile}
       exam={@exam}
       answers={@answers}
       subject={Study.subject!(@lesson.subject).name}
@@ -29,82 +30,16 @@
     id="homework-content"
     class={[
       "app",
-      @live_action == :exam && "exam-app",
       @live_action == :exam && @exam.format == "flashcard" && @exam.status == "completed" &&
         "flashcard-results-enter"
     ]}
   >
-    <div class="identity-row">
-      <details
-        :if={@profile}
-        id="child-picker"
-        phx-click-away={JS.remove_attribute("open", to: "#child-picker")}
-        phx-window-keydown={JS.remove_attribute("open", to: "#child-picker")}
-        phx-key="Escape"
-      >
-        <summary id="child-picker-toggle" aria-label="Compte et paramètres">
-          <span class="child-picker-avatar">
-            <img
-              :if={@profile.avatar}
-              id="profile-avatar"
-              src={@profile.avatar}
-              decoding="sync"
-              alt=""
-            />
-            <span :if={!@profile.avatar} id="profile-initial">{String.first(@profile.name)}</span>
-          </span>
-          <span class="child-picker-name-row">
-            <h1 id="child-name">{@profile.name}</h1>
-            <.icon name="chevron-down" class="child-picker-chevron" />
-          </span>
-        </summary>
-        <div id="child-picker-panel">
-          <.form for={@form} action={~p"/profil"} method="post" id="profile-switch">
-            <ul aria-label="Enfants">
-              <li :for={p <- @profiles} :if={p.id != @profile.id}>
-                <button
-                  id={"switch-profile-#{p.id}"}
-                  type="submit"
-                  name="profile_id"
-                  value={p.id}
-                  class="child-picker-option"
-                >
-                  <span class="child-option-avatar" data-child-theme={p.theme}>
-                    <img :if={p.avatar} src={p.avatar} alt="" />
-                    <span :if={!p.avatar}>{String.first(p.name)}</span>
-                  </span>
-                  <span>{p.name}</span>
-                  <.icon name="arrows-right-left" />
-                </button>
-              </li>
-            </ul>
-            <p :if={length(@profiles) == 1} id="no-other-profiles" class="muted">
-              Aucun autre espace disponible.
-            </p>
-          </.form>
-          <hr class="child-picker-separator" />
-          <.link
-            navigate={child_path(@profile, ~p"/parametres")}
-            id="settings-link"
-            class="child-picker-option"
-            aria-current={if @live_action == :settings, do: "page"}
-            phx-click={JS.remove_attribute("open", to: "#child-picker")}
-          >
-            <.icon name="hero-cog-6-tooth" />
-            <span>Paramètres</span>
-          </.link>
-          <div class="child-picker-logout">
-            <button id="logout" type="button" class="child-picker-option" disabled>
-              <.icon name="hero-arrow-right-on-rectangle" />
-              <span>Se déconnecter</span>
-            </button>
-          </div>
-        </div>
-      </details>
-      <.link :if={!@profile} navigate={child_path(@profile, ~p"/parametres")} id="settings-link">
-        Paramètres
-      </.link>
-    </div>
+    <.profile_header
+      profile={@profile}
+      profiles={@profiles}
+      form={@form}
+      settings_active={@live_action == :settings}
+    />
     <p :if={@error && !@modal} class="notice error" role="alert">{@error}</p>
 
     <section
@@ -117,11 +52,11 @@
       <p>Les espaces de la famille n’ont pas encore été configurés.</p>
     </section>
 
-    <section :if={@live_action == :settings} id="settings-page" class="setup-section">
+    <section :if={@live_action == :settings} id="settings-page" class="settings-page">
       <div class="page-heading">
         <.page_breadcrumb
           id="settings-title"
-          ancestors={[{"Matières", child_path(@profile, ~p"/")}]}
+          ancestors={[{:home, child_path(@profile, ~p"/")}]}
         >
           Paramètres
         </.page_breadcrumb>
@@ -177,6 +112,57 @@
         </section>
         <p class="muted">Ces réglages sont conservés sur cet appareil.</p>
       </div>
+    </section>
+
+    <section
+      :if={@live_action == :subjects_settings}
+      id="subjects-settings-page"
+      class="settings-page"
+    >
+      <div class="page-heading">
+        <.page_breadcrumb
+          id="subjects-settings-title"
+          ancestors={[{:home, child_path(@profile, ~p"/")}]}
+        >
+          Paramètres
+        </.page_breadcrumb>
+      </div>
+      <section :if={@profile} id="student-subjects-card" class="settings-card">
+        <h3>Matières de {@profile.name}</h3>
+        <p class="muted">Choisis les matières proposées à cet élève.</p>
+        <.link
+          id="manage-student-subjects"
+          class="button primary"
+          navigate={child_path(@profile, ~p"/parametres/matieres")}
+        >
+          Gérer les matières
+        </.link>
+      </section>
+      <section :if={@profile} id="question-types-card" class="settings-card">
+        <h3>Types de questions</h3>
+        <p class="muted">Catalogue commun à toutes les matières et à tous les profils.</p>
+        <.link
+          id="manage-question-types"
+          class="button primary"
+          navigate={child_path(@profile, ~p"/parametres/types")}
+        >
+          Gérer les types de questions
+        </.link>
+      </section>
+    </section>
+
+    <section :if={@live_action == :subject_preferences} id="subject-preferences-page">
+      <div class="page-heading">
+        <.page_breadcrumb
+          id="subject-preferences-title"
+          ancestors={[
+            {:home, child_path(@profile, ~p"/")},
+            {"Paramètres", child_path(@profile, ~p"/matieres/parametres")}
+          ]}
+        >
+          Matières de {@profile.name}
+        </.page_breadcrumb>
+      </div>
       <.form
         :if={@profile}
         for={@subjects_form}
@@ -217,12 +203,25 @@
 
     <div :if={@profile}>
       <section :if={@live_action == :home}>
-        <div class="page-heading">
-          <.page_breadcrumb id="subjects-title" ancestors={[]}>Mes matières</.page_breadcrumb>
+        <div class="page-heading subjects-page-heading">
+          <.page_breadcrumb id="subjects-title" ancestors={[]} title_icon="home">
+            Accueil
+          </.page_breadcrumb>
+          <.link
+            id="subjects-settings-button"
+            class="button secondary settings-gear-button"
+            navigate={child_path(@profile, ~p"/matieres/parametres")}
+            aria-label="Paramètres"
+          >
+            <.icon name="hero-cog-6-tooth" />
+          </.link>
         </div>
         <div :if={@subjects == []} id="no-enabled-subjects" class="empty-state">
           <p>Aucune matière activée.</p>
-          <.link navigate={child_path(@profile, ~p"/parametres")} class="button secondary">
+          <.link
+            navigate={child_path(@profile, ~p"/matieres/parametres")}
+            class="button secondary"
+          >
             Choisir les matières
           </.link>
         </div>
@@ -239,7 +238,13 @@
               <span>
                 {Map.get(@counts, s.id, 0)} {if Map.get(@counts, s.id, 0) == 1,
                   do: "leçon",
-                  else: "leçons"}
+                  else: "leçons"} · {Map.get(@exam_counts, s.id, 0)} {if Map.get(
+                                                                           @exam_counts,
+                                                                           s.id,
+                                                                           0
+                                                                         ) == 1,
+                                                                         do: "contrôle",
+                                                                         else: "contrôles"}
               </span>
             </div>
             <.icon name="arrow" class="card-arrow" />
@@ -247,147 +252,14 @@
         </div>
       </section>
 
-      <section :if={@live_action == :subject_settings}>
-        <div class="page-heading">
-          <.page_breadcrumb
-            id="subject-settings-title"
-            subject={@subject}
-            ancestors={[
-              {"Matières", child_path(@profile, ~p"/")},
-              {@subject.name, child_path(@profile, ~p"/matieres/#{@subject.id}")}
-            ]}
-          >
-            Paramètres
-          </.page_breadcrumb>
-        </div>
-        <p class="muted subject-settings-intro">
-          Types de questions disponibles en {@subject.name} pour {@profile.name}.
-          Les modifications s’appliquent aux prochains contrôles.
-        </p>
-        <p :if={@available_question_types == []} id="no-question-types" class="muted">
-          Aucun type de question. Ajoute un premier type ci-dessous.
-        </p>
-        <div id="configured-question-types" phx-update="stream">
-          <article
-            :for={{dom_id, type} <- @streams.subject_question_types}
-            id={dom_id}
-            class="configured-question-type"
-          >
-            <div class="question-type-copy">
-              <h2>{type["label"]}</h2>
-              <p>{type["description"]}</p>
-            </div>
-            <.form
-              for={type["duration_form"]}
-              id={"duration-form-#{type["id"]}"}
-              class="question-duration-form"
-              phx-change="update_question_duration"
-              phx-submit="update_question_duration"
-            >
-              <label for={"type-duration-#{type["id"]}"}>Durée de travail</label>
-              <div class="select-field">
-                <select
-                  id={"type-duration-#{type["id"]}"}
-                  name={type["duration_form"][:work_duration].name}
-                >
-                  {Phoenix.HTML.Form.options_for_select(
-                    CaptainHomework.WorkDuration.select_options(),
-                    type["duration_form"][:work_duration].value
-                  )}
-                </select>
-                <.icon name="chevron-down" class="select-chevron" />
-              </div>
-              <input type="hidden" name={type["duration_form"][:id].name} value={type["id"]} />
-            </.form>
-            <button
-              id={"delete-type-#{type["id"]}"}
-              type="button"
-              class="button text-button"
-              phx-click="delete_question_type"
-              phx-value-id={type["id"]}
-              data-confirm="Supprimer ce type pour cette matière et cet enfant ? Les contrôles existants sont conservés."
-            >
-              Supprimer
-            </button>
-          </article>
-        </div>
-        <.form
-          for={@question_type_form}
-          id="question-type-form"
-          phx-submit="add_question_type"
-          class="panel question-type-form"
-        >
-          <h2>Ajouter un type de question</h2>
-          <label for="type-label">Nom</label>
-          <input
-            id="type-label"
-            autocorrect="off"
-            name={@question_type_form[:label].name}
-            value={@question_type_form[:label].value}
-            required
-            maxlength="80"
-            placeholder="Ex. : Calcul mental"
-          />
-          <label for="type-description">Consigne pour la génération</label>
-          <textarea
-            id="type-description"
-            autocorrect="off"
-            name={@question_type_form[:description].name}
-            required
-            maxlength="1000"
-            rows="3"
-            placeholder="Ex. : Proposer un calcul à effectuer de tête, avec une réponse numérique courte."
-          >{@question_type_form[:description].value}</textarea>
-          <label for="type-work-duration">Durée de travail</label>
-          <div class="select-field">
-            <select id="type-work-duration" name={@question_type_form[:work_duration].name}>
-              {Phoenix.HTML.Form.options_for_select(
-                CaptainHomework.WorkDuration.select_options(),
-                @question_type_form[:work_duration].value
-              )}
-            </select>
-            <.icon name="chevron-down" class="select-chevron" />
-          </div>
-          <p :for={{field, {message, _}} <- @question_type_form.errors} class="error">
-            {question_type_field_label(field)} : {message}
-          </p>
-          <div class="form-actions">
-            <button id="add-question-type" type="submit" class="button primary">
-              <.icon name="plus" /> Ajouter
-            </button>
-          </div>
-        </.form>
-      </section>
-
       <section :if={@live_action == :subject}>
         <div class="page-heading">
           <.page_breadcrumb
             id="subject-title"
             subject={@subject}
-            ancestors={[{"Matières", child_path(@profile, ~p"/")}]}
+            ancestors={[{:home, child_path(@profile, ~p"/")}]}
           >
             {@subject.name}
-            <:trailing>
-              <div class="subject-heading-actions">
-                <button
-                  class="button primary"
-                  phx-click="open_modal"
-                  phx-value-modal="lesson"
-                  id="new-lesson"
-                >
-                  <.icon name="plus" /> Nouvelle leçon
-                </button>
-                <.link
-                  id="subject-settings-link"
-                  class="icon-button"
-                  aria-label="Paramètres de la matière"
-                  title="Paramètres de la matière"
-                  navigate={child_path(@profile, ~p"/matieres/#{@subject.id}/parametres")}
-                >
-                  <.icon name="hero-cog-6-tooth" />
-                </.link>
-              </div>
-            </:trailing>
           </.page_breadcrumb>
         </div>
         <div :if={@lessons_empty?} class="empty-state">
@@ -411,17 +283,25 @@
                   "page",
                   "pages"
                 )}
+                <span>·</span> {count_label(
+                  Enum.count(lesson.exams, &(&1.status == "completed")),
+                  "contrôle",
+                  "contrôles"
+                )}
               </p>
             </div>
-            <span class="muted lesson-exam-count">
-              {count_label(
-                Enum.count(lesson.exams, &(&1.status == "completed")),
-                "contrôle",
-                "contrôles"
-              )}
-            </span>
             <.icon name="arrow" />
           </.link>
+        </div>
+        <div class="form-actions">
+          <button
+            class="button primary"
+            phx-click="open_modal"
+            phx-value-modal="lesson"
+            id="new-lesson"
+          >
+            <.icon name="plus" /> Nouvelle leçon
+          </button>
         </div>
       </section>
 
@@ -431,8 +311,9 @@
             id="lesson-title"
             subject={@subject}
             ancestors={[
-              {"Matières", child_path(@profile, ~p"/")},
-              {@subject.name, child_path(@profile, ~p"/matieres/#{@subject.id}")}
+              {:home, child_path(@profile, ~p"/")},
+              {Study.subject_short_name(@subject),
+               child_path(@profile, ~p"/matieres/#{@subject.id}")}
             ]}
           >
             {@lesson.title}
@@ -441,10 +322,10 @@
         <nav id="lesson-navigation" class="lesson-navigation" aria-label="Sections de la leçon">
           <.link
             :for={
-              {tab, label, icon} <- [
-                {"controles", "Contrôles", "paper"},
-                {"cours", "Cours", "book"},
-                {"ressources", "Ressources", "book"}
+              {tab, label, icon, count} <- [
+                {"controles", "Contrôles", "paper", length(@lesson.exams)},
+                {"cours", "Cours", "book", Enum.count(@lesson.pages, &(&1.kind == "lesson"))},
+                {"ressources", "Ressources", "book", length(@lesson.resources)}
               ]
             }
             id={"lesson-tab-#{tab}"}
@@ -453,6 +334,7 @@
             aria-current={if @lesson_tab == tab, do: "page"}
           >
             <.icon name={icon} /> {label}
+            <span id={"lesson-count-#{tab}"} class="navigation-count">{count}</span>
           </.link>
         </nav>
         <div :if={@lesson_tab == "controles"} id="lesson-controls">
@@ -530,41 +412,22 @@
                 id={"example-#{page.id}"}
                 class="page-card"
               >
-                <a
-                  href={child_path(@profile, ~p"/pages/#{page.id}")}
-                  target="_blank"
-                  rel="noopener"
-                  class="page-preview"
-                >
-                  <img src={child_path(@profile, ~p"/pages/#{page.id}")} alt={page.filename} />
-                </a>
-                <div class="page-order-actions">
-                  <button
-                    id={"example-previous-#{page.id}"}
-                    type="button"
-                    class="icon-button"
-                    phx-click="move_page"
-                    phx-value-id={page.id}
-                    phx-value-direction="previous"
-                    disabled={index == 1}
-                    aria-label={"Déplacer la page d’exemple #{index} avant la précédente"}
-                    title="Déplacer avant"
+                <div class="page-thumbnail">
+                  <a
+                    href={child_path(@profile, ~p"/pages/#{page.id}")}
+                    target="_blank"
+                    rel="noopener"
+                    class="page-preview"
                   >
-                    <.icon name="back" />
-                  </button>
-                  <button
-                    id={"example-next-#{page.id}"}
-                    type="button"
-                    class="icon-button"
-                    phx-click="move_page"
-                    phx-value-id={page.id}
-                    phx-value-direction="next"
-                    disabled={index == Enum.count(@lesson.pages, &(&1.kind == "example"))}
-                    aria-label={"Déplacer la page d’exemple #{index} après la suivante"}
-                    title="Déplacer après"
-                  >
-                    <.icon name="arrow" />
-                  </button>
+                    <img src={child_path(@profile, ~p"/pages/#{page.id}")} alt={page.filename} />
+                  </a>
+                  <.page_order_actions
+                    prefix="example"
+                    page_id={page.id}
+                    index={index}
+                    count={Enum.count(@lesson.pages, &(&1.kind == "example"))}
+                    label={"la page d’exemple #{index}"}
+                  />
                 </div>
                 <div class="page-caption">
                   <div>
@@ -635,12 +498,6 @@
           </section>
         </div>
         <div :if={@lesson_tab == "cours"} id="lesson-course">
-          <div class="section-heading">
-            <h2>La leçon</h2>
-            <button class="button text-button" phx-click="open_modal" phx-value-modal="pages">
-              <.icon name="plus" /> Ajouter des pages
-            </button>
-          </div>
           <div :if={Enum.all?(@lesson.pages, &(&1.kind != "lesson"))} class="empty-state compact">
             <.icon name="paper" />
             <p>Aucune page</p>
@@ -654,45 +511,26 @@
               id={"lesson-page-#{page.id}"}
               class="page-card"
             >
-              <button
-                type="button"
-                class="page-preview"
-                phx-click="edit_page"
-                phx-value-id={page.id}
-                aria-label={"Vérifier la page #{index}"}
-              >
-                <img
-                  src={child_path(@profile, ~p"/pages/#{page.id}")}
-                  alt={"Page #{index} de la leçon"}
+              <div class="page-thumbnail">
+                <button
+                  type="button"
+                  class="page-preview"
+                  phx-click="edit_page"
+                  phx-value-id={page.id}
+                  aria-label={"Vérifier la page #{index}"}
+                >
+                  <img
+                    src={child_path(@profile, ~p"/pages/#{page.id}")}
+                    alt={"Page #{index} de la leçon"}
+                  />
+                </button>
+                <.page_order_actions
+                  prefix="page"
+                  page_id={page.id}
+                  index={index}
+                  count={Enum.count(@lesson.pages, &(&1.kind == "lesson"))}
+                  label={"la page #{index}"}
                 />
-              </button>
-              <div class="page-order-actions">
-                <button
-                  id={"page-previous-#{page.id}"}
-                  type="button"
-                  class="icon-button"
-                  phx-click="move_page"
-                  phx-value-id={page.id}
-                  phx-value-direction="previous"
-                  disabled={index == 1}
-                  aria-label={"Déplacer la page #{index} avant la précédente"}
-                  title="Déplacer avant"
-                >
-                  <.icon name="back" />
-                </button>
-                <button
-                  id={"page-next-#{page.id}"}
-                  type="button"
-                  class="icon-button"
-                  phx-click="move_page"
-                  phx-value-id={page.id}
-                  phx-value-direction="next"
-                  disabled={index == Enum.count(@lesson.pages, &(&1.kind == "lesson"))}
-                  aria-label={"Déplacer la page #{index} après la suivante"}
-                  title="Déplacer après"
-                >
-                  <.icon name="arrow" />
-                </button>
               </div>
               <div class="page-caption">
                 <div>
@@ -722,11 +560,224 @@
               </div>
             </article>
           </div>
+          <.form for={@form} phx-change="validate" phx-submit="upload_pages" id="upload-pages">
+            <.upload_field upload={@uploads.pages} name="pages" label="Ajouter des pages" />
+            <p :if={@error} class="error" role="alert">{@error}</p>
+            <div :if={@uploads.pages.entries != []} class="form-actions">
+              <button id="save-pages" class="button primary" phx-disable-with="Enregistrement…">
+                Enregistrer les pages
+              </button>
+            </div>
+          </.form>
         </div>
         <div :if={@lesson_tab == "ressources"} id="lesson-resources">
           <p class="muted resource-intro">
             Ajoute des documents ou des liens pour enrichir les contrôles. Les exercices des évaluations et fiches d’activité sont utilisés en priorité, avec leurs illustrations d’origine.
           </p>
+          <div :if={@lesson.resources == []} class="empty-state compact">
+            <p>Aucune ressource pour cette leçon.</p>
+          </div>
+          <div id="resource-list" class="resource-list" phx-update="stream">
+            <article
+              :for={{dom_id, resource} <- @streams.resources}
+              id={dom_id}
+              class="panel resource-card"
+            >
+              <div class="section-heading">
+                <div>
+                  <h2 :if={resource.status != "processing" and resource.processing_stage == nil}>
+                    {resource_title(resource)}
+                  </h2>
+                  <p
+                    :if={resource.status != "ready" or resource.processing_stage != nil}
+                    class={[
+                      "muted",
+                      (resource.status == "processing" or resource.processing_stage != nil) &&
+                        "resource-import-status"
+                    ]}
+                    role="status"
+                  >
+                    <.processing_progress
+                      :if={resource.status == "processing" or resource.processing_stage != nil}
+                      id={"resource-progress-#{resource.id}"}
+                      percent={resource.processing_progress}
+                      stage={resource.processing_stage || "Préparation de l’import"}
+                    />
+                    <span :if={
+                      resource.status != "processing" and resource.processing_stage == nil
+                    }>
+                      {resource_status(resource)}
+                    </span>
+                  </p>
+                </div>
+                <div class="form-actions">
+                  <button
+                    id={"rename-resource-#{resource.id}"}
+                    type="button"
+                    class="icon-button"
+                    phx-click="rename_resource"
+                    phx-value-id={resource.id}
+                    title="Renommer"
+                    aria-label={"Renommer #{resource_title(resource)}"}
+                  >
+                    <.icon name="pencil" />
+                  </button>
+                  <button
+                    id={"delete-resource-#{resource.id}"}
+                    class="icon-button"
+                    phx-click="delete_resource"
+                    phx-value-id={resource.id}
+                    data-confirm="Supprimer cette ressource et ses pages importées ? Les illustrations des contrôles déjà créés sont conservées."
+                    aria-label={"Supprimer #{resource_title(resource)}"}
+                  >
+                    <.icon name="close" />
+                  </button>
+                </div>
+              </div>
+              <p :if={resource.error} class="error" role="alert">{resource.error}</p>
+              <button
+                :if={resource.status == "error"}
+                id={"retry-resource-#{resource.id}"}
+                class="button secondary"
+                phx-click="retry_resource"
+                phx-value-id={resource.id}
+              >
+                Réessayer l’import
+              </button>
+              <details
+                :if={resource_pages(@lesson, resource.id) != []}
+                id={"resource-text-#{resource.id}"}
+                class="resource-content"
+                phx-mounted={JS.ignore_attributes("open")}
+              >
+                <summary>
+                  Texte reconnu · {count_label(
+                    length(resource_pages(@lesson, resource.id)),
+                    "page",
+                    "pages"
+                  )}
+                </summary>
+                <div
+                  :for={{page, index} <- Enum.with_index(resource_pages(@lesson, resource.id), 1)}
+                  class="resource-page"
+                >
+                  <div class="section-heading">
+                    <strong>Page {index}</strong>
+                    <button
+                      :if={String.starts_with?(page.content_type, "image/")}
+                      id={"delete-resource-page-#{page.id}"}
+                      class="button text-button danger"
+                      phx-click="delete_resource_image"
+                      phx-value-id={page.id}
+                      disabled={resource.status != "ready" or resource.processing_stage != nil}
+                      data-confirm="Supprimer cette page importée et son texte reconnu ? Les devoirs déjà créés sont conservés."
+                    >
+                      Supprimer la page
+                    </button>
+                    <button
+                      class="button text-button"
+                      phx-click="edit_page"
+                      phx-value-id={page.id}
+                    >
+                      Vérifier le texte
+                    </button>
+                  </div>
+                  <p class="resource-text">{page.text}</p>
+                </div>
+              </details>
+              <div class="resource-card-bottom">
+                <details
+                  :if={resource.status == "ready" or resource_images(@lesson, resource.id) != []}
+                  id={"resource-photos-#{resource.id}"}
+                  class="resource-content"
+                  phx-mounted={JS.ignore_attributes("open")}
+                >
+                  <summary>
+                    {length(resource_images(@lesson, resource.id))} illustrations conservées
+                  </summary>
+                  <p :if={resource_images(@lesson, resource.id) == []} class="muted">
+                    Aucune image conservée.
+                  </p>
+                  <div class="pages-grid">
+                    <article
+                      :for={
+                        {page, index} <- Enum.with_index(resource_images(@lesson, resource.id), 1)
+                      }
+                      id={"resource-image-#{page.id}"}
+                      class="page-card"
+                    >
+                      <div class="page-thumbnail">
+                        <button
+                          type="button"
+                          id={"open-resource-image-#{page.id}"}
+                          class="page-preview"
+                          phx-click="open_resource_image"
+                          phx-value-id={page.id}
+                          aria-label={"Extraire des illustrations de l’illustration #{index}"}
+                          disabled={
+                            resource.status != "ready" or resource.processing_stage != nil
+                          }
+                        >
+                          <img
+                            src={child_path(@profile, ~p"/pages/#{page.id}")}
+                            alt={"Illustration #{index}"}
+                            loading="lazy"
+                          />
+                        </button>
+                        <.page_order_actions
+                          prefix="resource-image"
+                          page_id={page.id}
+                          index={index}
+                          count={length(resource_images(@lesson, resource.id))}
+                          label={"l’illustration #{index}"}
+                          disabled={
+                            resource.status != "ready" or resource.processing_stage != nil
+                          }
+                        />
+                      </div>
+                      <div class="page-caption">
+                        <div>
+                          <strong title={page.filename}>Illustration {index}</strong>
+                          <span class="muted">
+                            {if page.text != "", do: "Texte reconnu", else: "Prête"}
+                          </span>
+                        </div>
+                        <button
+                          id={"delete-resource-image-#{page.id}"}
+                          class="icon-button"
+                          phx-click="delete_resource_image"
+                          phx-value-id={page.id}
+                          disabled={
+                            resource.status != "ready" or resource.processing_stage != nil
+                          }
+                          data-confirm="Supprimer cette image et son éventuelle copie avec texte reconnu ? Les devoirs déjà créés sont conservés."
+                          aria-label={"Supprimer l’illustration #{index}"}
+                        >
+                          <.icon name="close" />
+                        </button>
+                      </div>
+                    </article>
+                  </div>
+                  <p :if={resource.content_type == "application/pdf"} class="muted">
+                    Supprimer une illustration extraite ne la retire pas de la page PDF. Pour exclure
+                    une page entière, supprime-la dans « Texte reconnu ».
+                  </p>
+                </details>
+                <div :if={resource.storage_key} class="resource-card-actions">
+                  <.link
+                    id={"download-resource-#{resource.id}"}
+                    href={child_path(@profile, "/ressources/#{resource.id}")}
+                    class="icon-button"
+                    download={resource.filename}
+                    aria-label="Télécharger le document original"
+                    title="Télécharger le document original"
+                  >
+                    <.icon name="download" />
+                  </.link>
+                </div>
+              </div>
+            </article>
+          </div>
           <div class="resource-imports">
             <.form
               for={@form}
@@ -764,123 +815,6 @@
               </div>
             </.form>
           </div>
-          <div :if={@lesson.resources == []} class="empty-state compact">
-            <p>Aucune ressource pour cette leçon.</p>
-          </div>
-          <div id="resource-list" class="resource-list" phx-update="stream">
-            <article
-              :for={{dom_id, resource} <- @streams.resources}
-              id={dom_id}
-              class="panel resource-card"
-            >
-              <div class="section-heading">
-                <div>
-                  <h2 :if={
-                    resource.status != "processing" and resource.processing_stage == nil and
-                      resource.filename != "view"
-                  }>
-                    {resource.filename}
-                  </h2>
-                  <p
-                    class={[
-                      "muted",
-                      (resource.status == "processing" or resource.processing_stage != nil) &&
-                        "resource-import-status"
-                    ]}
-                    role="status"
-                  >
-                    <.processing_progress
-                      :if={resource.status == "processing" or resource.processing_stage != nil}
-                      id={"resource-progress-#{resource.id}"}
-                      percent={resource.processing_progress}
-                      stage={resource.processing_stage || "Préparation de l’import"}
-                    />
-                    <span :if={
-                      resource.status != "processing" and resource.processing_stage == nil
-                    }>
-                      {resource_status(resource)}
-                    </span>
-                  </p>
-                </div>
-                <button
-                  id={"delete-resource-#{resource.id}"}
-                  class="icon-button"
-                  phx-click="delete_resource"
-                  phx-value-id={resource.id}
-                  data-confirm="Supprimer cette ressource et ses pages importées ? Les illustrations des contrôles déjà créés sont conservées."
-                  aria-label={"Supprimer #{resource.filename}"}
-                >
-                  <.icon name="close" />
-                </button>
-              </div>
-              <p :if={resource.source_url} class="resource-source">
-                <a href={resource.source_url} target="_blank" rel="noopener noreferrer">
-                  {resource.source_url}
-                </a>
-              </p>
-              <.link
-                :if={resource.storage_key}
-                href={child_path(@profile, "/ressources/#{resource.id}")}
-                class="resource-original"
-              >
-                Télécharger le document original
-              </.link>
-              <p :if={resource.error} class="error" role="alert">{resource.error}</p>
-              <button
-                :if={resource.status == "error"}
-                id={"retry-resource-#{resource.id}"}
-                class="button secondary"
-                phx-click="retry_resource"
-                phx-value-id={resource.id}
-              >
-                Réessayer l’import
-              </button>
-              <details :if={resource_pages(@lesson, resource.id) != []} class="resource-content">
-                <summary>
-                  Texte reconnu · {count_label(
-                    length(resource_pages(@lesson, resource.id)),
-                    "page",
-                    "pages"
-                  )}
-                </summary>
-                <div
-                  :for={{page, index} <- Enum.with_index(resource_pages(@lesson, resource.id), 1)}
-                  class="resource-page"
-                >
-                  <div class="section-heading">
-                    <strong>Page {index}</strong>
-                    <button
-                      class="button text-button"
-                      phx-click="edit_page"
-                      phx-value-id={page.id}
-                    >
-                      Vérifier le texte
-                    </button>
-                  </div>
-                  <p class="resource-text">{page.text}</p>
-                </div>
-              </details>
-              <details :if={resource_images(@lesson, resource.id) != []} class="resource-content">
-                <summary>
-                  {length(resource_images(@lesson, resource.id))} illustrations conservées
-                </summary>
-                <div class="pages-grid">
-                  <a
-                    :for={page <- resource_images(@lesson, resource.id)}
-                    href={child_path(@profile, ~p"/pages/#{page.id}")}
-                    target="_blank"
-                    rel="noopener"
-                  >
-                    <img
-                      src={child_path(@profile, ~p"/pages/#{page.id}")}
-                      alt={page.filename}
-                      loading="lazy"
-                    />
-                  </a>
-                </div>
-              </details>
-            </article>
-          </div>
         </div>
         <div class="page-delete-actions">
           <span
@@ -917,8 +851,9 @@
             id="new-exam-title"
             subject={@subject}
             ancestors={[
-              {"Matières", child_path(@profile, ~p"/")},
-              {@subject.name, child_path(@profile, ~p"/matieres/#{@subject.id}")},
+              {:home, child_path(@profile, ~p"/")},
+              {Study.subject_short_name(@subject),
+               child_path(@profile, ~p"/matieres/#{@subject.id}")},
               {@lesson.title, child_path(@profile, ~p"/lecons/#{@lesson.id}")}
             ]}
           >
@@ -932,9 +867,9 @@
           phx-submit="generate_exam"
           class="panel setup-panel"
         >
-          <fieldset disabled={@busy}>
+          <fieldset disabled={@busy} class="exam-setup-fields">
             <fieldset id="exam-format" class="exam-format-choice">
-              <legend class="exam-field-label">Format du contrôle</legend>
+              <legend class="form-field-label">Format du contrôle</legend>
               <div class="exam-format-options">
                 <label for="exam-format-classic">
                   <input
@@ -956,90 +891,88 @@
                 </label>
               </div>
               <p :if={@exam_format == "flashcard"} id="flashcard-help" class="muted">
-                Révise toutes les pages de ta leçon avec des cartes rapides et ludiques, corrigées une par une. Les contrôles d’exemple et les ressources externes ne sont pas utilisés. Chaque carte vaut 1 point.
+                Révise ta leçon avec des cartes rapides et ludiques. Contrôles d’exemple et ressources externes ne sont pas utilisés.
+              </p>
+              <p :if={@exam_format == "classic"} id="classic-help" class="muted">
+                Fais un contrôle comme en classe, à partir de tes leçons, et d'éventuelles ressources externes
               </p>
             </fieldset>
-            <div class="count-row">
-              <label class="exam-field-label" for="question-count">Nombre de questions</label>
-              <div class="stepper">
-                <button
-                  type="button"
-                  phx-click="change_count"
-                  phx-value-delta="-1"
-                  disabled={@question_count <= 1}
-                  aria-label="Moins de questions"
-                >
-                  <.icon name="minus" />
-                </button>
-                <output id="question-count" aria-live="polite">{@question_count}</output><button
-                  type="button"
-                  phx-click="change_count"
-                  phx-value-delta="1"
-                  disabled={@question_count >= 30}
-                  aria-label="Plus de questions"
-                ><.icon name="plus" /></button>
-              </div>
-            </div>
+            <.count_stepper
+              id="question-count"
+              value={@question_count}
+              event="change_count"
+              label="Nombre de questions"
+            />
             <fieldset
               id="question-types"
               class="question-types"
-              aria-describedby="question-types-help"
+              aria-describedby={if @exam_format == "flashcard", do: "question-types-help"}
             >
-              <legend class="exam-field-label">Types de questions</legend>
-              <p id="question-types-help" class="muted">
-                <%= if @exam_format == "flashcard" do %>
-                  Seuls les types de questions de durée rapide sont disponibles en mode Flashcard.
-                <% else %>
-                  Les exemples guident la répartition parmi les types cochés, selon le cours et les supports disponibles.
-                <% end %>
+              <legend class="form-field-label">Types de questions</legend>
+              <p :if={@exam_format == "flashcard"} id="question-types-help" class="muted">
+                Les types autorisés en mode Flashcard sont disponibles.
               </p>
               <p :if={@available_question_types == []} class="notice">
-                Aucun type disponible. Ajoute un type dans les paramètres de cette matière.
+                Aucun type disponible. Ajoute un type dans le catalogue commun.
               </p>
-              <.link
-                class="question-types-settings-link"
-                navigate={child_path(@profile, ~p"/matieres/#{@subject.id}/parametres")}
-              >
-                Configurer les types de questions
-              </.link>
               <input type="hidden" name="question_types[]" value="" />
-              <div class="subject-checkbox-grid">
-                <label
-                  :for={type <- @available_question_types}
-                  class="subject-checkbox"
-                  for={"question-type-#{type["id"]}"}
-                  title={type["description"]}
-                >
-                  <input
-                    type="checkbox"
-                    id={"question-type-#{type["id"]}"}
-                    name="question_types[]"
-                    value={type["id"]}
-                    checked={type["id"] in @question_types}
-                    disabled={@exam_format == "flashcard" and type["work_duration"] != "quick"}
-                  />
-                  <span>{type["label"]}</span>
-                </label>
-              </div>
+              <section
+                :for={{duration, label, types} <- question_type_groups(@available_question_types)}
+                id={"question-types-#{duration}"}
+                class="question-type-group"
+                aria-labelledby={"question-types-#{duration}-title"}
+              >
+                <h3 id={"question-types-#{duration}-title"}>{label}</h3>
+                <div class="subject-checkbox-grid">
+                  <label
+                    :for={type <- types}
+                    class="subject-checkbox"
+                    for={"question-type-#{type.id}"}
+                    title={type.instruction}
+                  >
+                    <input
+                      type="checkbox"
+                      id={"question-type-#{type.id}"}
+                      name="question_types[]"
+                      value={type.id}
+                      checked={type.id in @question_types}
+                      disabled={
+                        not CaptainHomework.QuestionDefinitions.mode_allowed?(type, @exam_format) or
+                          not CaptainHomework.QuestionDefinitions.generation_supported?(type)
+                      }
+                    />
+                    <span>
+                      {type.name}<small
+                        :if={not CaptainHomework.QuestionDefinitions.generation_supported?(type)}
+                        class="muted"
+                      > · Aperçu uniquement</small>
+                    </span>
+                  </label>
+                </div>
+              </section>
               <p :if={@question_types == []} id="question-types-error" class="error">
                 Choisis au moins un type de question.
               </p>
             </fieldset>
-            <label class="exam-field-label" for="instructions">
-              Consignes personnalisées (facultatif)
-            </label>
-            <p class="muted">
-              Ces consignes sont prioritaires sur les règles par défaut : notions à réviser, contenus à ignorer, difficulté ou forme des questions.
-            </p>
-            <textarea
-              id="instructions"
-              autocorrect="off"
-              name="instructions"
-              rows="4"
-              maxlength="8000"
-              placeholder="Ex. : Ignorer les activités et interroger uniquement sur les connaissances du cours."
-              phx-debounce="300"
-            >{@instructions}</textarea>
+            <div class="exam-instructions">
+              <label class="form-field-label" for="instructions">
+                Consignes personnalisées <span class="form-field-optional">(facultatif)</span>
+              </label>
+              <.input
+                wrapper={false}
+                type="textarea"
+                id="instructions"
+                aria-describedby="instructions-help"
+                autocorrect="off"
+                name="instructions"
+                rows="4"
+                maxlength="8000"
+                placeholder="Ex. : Ignorer les activités et interroger uniquement sur les connaissances du cours."
+                phx-debounce="300"
+                value={@instructions}
+              />
+              <p id="instructions-help" class="muted">Tes consignes sont prioritaires.</p>
+            </div>
             <div class="form-actions">
               <.link
                 navigate={child_path(@profile, ~p"/lecons/#{@lesson.id}")}
@@ -1067,8 +1000,9 @@
               id="exam-title"
               subject={@subject}
               ancestors={[
-                {"Matières", child_path(@profile, ~p"/")},
-                {@subject.name, child_path(@profile, ~p"/matieres/#{@subject.id}")},
+                {:home, child_path(@profile, ~p"/")},
+                {Study.subject_short_name(@subject),
+                 child_path(@profile, ~p"/matieres/#{@subject.id}")},
                 {@lesson.title, child_path(@profile, ~p"/lecons/#{@lesson.id}")}
               ]}
             >
@@ -1115,6 +1049,9 @@
             <span class="spinner" aria-hidden="true" />
             <span>{generation_stage_label(@exam.generation_stage)}</span>
           </p>
+          <p :if={@exam.status == "generating"} id="generation-elapsed" class="muted">
+            Temps écoulé : {generation_duration(@generation_elapsed_ms)}
+          </p>
           <p :if={@exam.status == "generating"} class="muted">
             Tu peux quitter la page, la génération continue.
           </p>
@@ -1148,11 +1085,6 @@
             data-saved={@saved}
             class="saved"
           ><.icon name="check" /> Enregistré</span>
-          <progress
-            max={length(@exam.questions)}
-            value={completed_count(@exam, @answers)}
-            aria-label="Réponses complétées"
-          />
         </div>
         <p
           :if={@exam.format == "classic" and @exam.status == "grading"}
@@ -1180,10 +1112,15 @@
             >
               <header :if={group.shared?} class="shared-question-support">
                 <h2>
-                  Document commun aux questions {Enum.map_join(group.questions, ", ", fn {_,
-                                                                                          index} ->
-                    index
-                  end)}
+                  {if length(group.questions) == 1,
+                    do: "Document de la question",
+                    else: "Document commun aux questions"} {Enum.map_join(
+                    group.questions,
+                    ", ",
+                    fn {_, index} ->
+                      index
+                    end
+                  )}
                 </h2>
                 <.question_images question={group.support} exam={@exam} profile={@profile} />
                 <div :if={group.support["text"] != ""} class="reading-text" phx-no-format>{readable_text(group.support["text"])}</div>
@@ -1193,19 +1130,116 @@
                 class="question"
                 id={"question-#{q["id"]}"}
               >
-                <div class="question-meta">
-                  <span class="question-number">{index}</span><span>{type_name(q["type"])}</span><span class="points">{q["points"]} {if q["points"] == 1, do: "point", else: "points"}</span>
-                </div>
-                <h2>{q["prompt"]}</h2>
+                <.question_heading
+                  prompt={q["prompt"]}
+                  type_label={type_name(q["type"])}
+                  index={index}
+                  points={q["points"]}
+                />
                 <.question_images
                   :if={!group.shared?}
                   question={q}
                   exam={@exam}
                   profile={@profile}
                 />
-                <div :if={!group.shared? and q["text"] != ""} class="reading-text" phx-no-format>{readable_text(q["text"])}</div>
+                <p
+                  :if={@exam.status == "in_progress" and q["help"] not in [nil, ""]}
+                  id={"question-help-#{q["id"]}"}
+                  class="preview-help"
+                >
+                  {q["help"]}
+                </p>
+                <.question_audio question={q} exam={@exam} profile={@profile} />
+                <.question_text
+                  :if={
+                    CaptainHomework.Exams.SupportGroups.question_text_visible?(q, group.shared?)
+                  }
+                  text={readable_text(q["text"])}
+                />
                 <.diagram :if={q["type"] == "diagram"} question={q} />
+                <.photo_answer
+                  :if={q["type"] == "photo"}
+                  id={"photo-response-#{q["id"]}"}
+                  show_filename={false}
+                  src={
+                    if is_map(@exam.answers[q["id"]]),
+                      do:
+                        child_path(
+                          @profile,
+                          ~p"/controles/#{@exam.id}/images/#{@exam.answers[q["id"]]["id"]}"
+                        )
+                  }
+                >
+                  <:picker :if={@exam.status == "in_progress"}>
+                    <.webcam_capture
+                      id={"webcam-#{q["id"]}"}
+                      upload_name={drawing_upload_name(@exam, q["id"])}
+                    />
+                    <label
+                      id={"choose-photo-#{q["id"]}"}
+                      class="button primary photo-picker"
+                      hidden={@uploads[drawing_upload_name(@exam, q["id"])].entries != []}
+                    >
+                      <.icon name="camera" />
+                      <span class="photo-picker-mobile-label">
+                        {if is_map(@exam.answers[q["id"]]),
+                          do: "Remplacer la photo",
+                          else: "Prendre ou choisir une photo"}
+                      </span>
+                      <span class="photo-picker-desktop-label">Choisir une photo</span>
+                      <.live_file_input
+                        upload={@uploads[drawing_upload_name(@exam, q["id"])]}
+                        class="photo-file-input"
+                        aria-label="Photo de ton dessin"
+                      />
+                    </label>
+                    <div :for={entry <- @uploads[drawing_upload_name(@exam, q["id"])].entries}>
+                      <p :if={entry.valid?} role="status">Envoi : {entry.progress} %</p>
+                      <p
+                        :for={
+                          error <-
+                            upload_errors(@uploads[drawing_upload_name(@exam, q["id"])], entry)
+                        }
+                        class="error"
+                        role="alert"
+                      >
+                        {if error == :too_large,
+                          do: "La photo dépasse 12 Mo.",
+                          else: "Choisis une photo JPEG, PNG ou WebP valide."}
+                      </p>
+                      <button
+                        type="button"
+                        class="button secondary"
+                        phx-click="cancel_upload"
+                        phx-value-name={drawing_upload_name(@exam, q["id"])}
+                        phx-value-ref={entry.ref}
+                      >
+                        Annuler
+                      </button>
+                    </div>
+                  </:picker>
+                  <:remove :if={@exam.status == "in_progress" and is_map(@exam.answers[q["id"]])}>
+                    <button
+                      id={"remove-photo-#{q["id"]}"}
+                      type="button"
+                      class="button secondary"
+                      phx-click="remove_drawing_photo"
+                      phx-value-id={q["id"]}
+                    >
+                      Supprimer
+                    </button>
+                  </:remove>
+                </.photo_answer>
                 <div :if={@exam.status != "completed"}>
+                  <.ordering_input
+                    :if={q["type"] == "ordering"}
+                    id={"ordering-#{q["id"]}"}
+                    question_id={q["id"]}
+                    name={"answers[#{q["id"]}]"}
+                    options={q["options"]}
+                    value={@answers[q["id"]]}
+                    disabled={@exam.status != "in_progress"}
+                  />
                   <div :if={q["type"] == "mcq"} class="options">
                     <label
                       :for={{option, i} <- Enum.with_index(q["options"])}
@@ -1219,53 +1253,91 @@
                       /><span class="option-letter">{<<65 + i>>}</span><span>{option}</span>
                     </label>
                   </div>
-                  <div :if={q["type"] in ["cloze", "diagram"]} class="slot-inputs">
-                    <div :for={slot <- q["slots"]}>
-                      <label for={"answer-#{q["id"]}-#{slot}"}>{slot}</label>
-                      <input
-                        id={"answer-#{q["id"]}-#{slot}"}
+                  <.symbol_answer
+                    :if={
+                      q["type"] in [
+                        "cloze",
+                        "diagram",
+                        "definition",
+                        "long",
+                        "reading",
+                        "listening"
+                      ]
+                    }
+                    id={"symbols-#{q["id"]}"}
+                    context={CaptainHomework.Symbols.context(q, @lesson.pages)}
+                    disabled={@exam.status != "in_progress"}
+                  >
+                    <div :if={q["type"] in ["cloze", "diagram"]} class="slot-inputs">
+                      <div :for={slot <- q["slots"]}>
+                        <label for={"answer-#{q["id"]}-#{slot}"}>{slot}</label>
+                        <.input
+                          wrapper={false}
+                          id={"answer-#{q["id"]}-#{slot}"}
+                          autocorrect="off"
+                          name={"answers[#{q["id"]}][#{slot}]"}
+                          value={slots_value(@answers, q["id"], slot)}
+                          phx-debounce="500"
+                          maxlength="2000"
+                          autocomplete="off"
+                        />
+                      </div>
+                    </div>
+                    <div :if={q["type"] in ["definition", "listening"]}>
+                      <label class="sr-only" for={"answer-#{q["id"]}"}>Ta réponse</label>
+                      <.input
+                        wrapper={false}
+                        id={"answer-#{q["id"]}"}
                         autocorrect="off"
-                        name={"answers[#{q["id"]}][#{slot}]"}
-                        value={slots_value(@answers, q["id"], slot)}
+                        name={"answers[#{q["id"]}]"}
+                        value={@answers[q["id"]] || ""}
                         phx-debounce="500"
-                        maxlength="2000"
+                        maxlength="12000"
                         autocomplete="off"
                       />
                     </div>
-                  </div>
-                  <div :if={q["type"] == "definition"}>
-                    <label class="sr-only" for={"answer-#{q["id"]}"}>Ta réponse</label>
-                    <input
-                      id={"answer-#{q["id"]}"}
-                      autocorrect="off"
-                      name={"answers[#{q["id"]}]"}
-                      value={@answers[q["id"]] || ""}
-                      phx-debounce="500"
-                      maxlength="12000"
-                      autocomplete="off"
-                    />
-                  </div>
-                  <div :if={q["type"] in ["long", "reading"]}>
-                    <label class="sr-only" for={"answer-#{q["id"]}"}>Ta réponse</label><textarea
-                      id={"answer-#{q["id"]}"}
-                      autocorrect="off"
-                      name={"answers[#{q["id"]}]"}
-                      rows="5"
-                      phx-debounce="500"
-                      maxlength="12000"
-                    >{@answers[q["id"]] || ""}</textarea>
-                    <button
-                      type="button"
-                      class="button text-button photo-answer"
-                      phx-click="open_ocr"
-                      phx-value-id={q["id"]}
-                    >
-                      <.icon name="camera" /> Répondre avec une photo
-                    </button>
-                  </div>
+                    <div :if={q["type"] in ["long", "reading"]}>
+                      <label class="sr-only" for={"answer-#{q["id"]}"}>Ta réponse</label>
+                      <.input
+                        wrapper={false}
+                        type="textarea"
+                        id={"answer-#{q["id"]}"}
+                        autocorrect="off"
+                        name={"answers[#{q["id"]}]"}
+                        rows="5"
+                        phx-debounce="500"
+                        maxlength="12000"
+                        value={@answers[q["id"]] || ""}
+                      />
+                      <button
+                        type="button"
+                        class="button text-button photo-answer"
+                        phx-click="open_ocr"
+                        phx-value-id={q["id"]}
+                      >
+                        <.icon name="camera" /> Répondre avec une photo
+                      </button>
+                    </div>
+                  </.symbol_answer>
                 </div>
                 <div :if={@exam.status == "completed"} class="graded-answer">
-                  <div class="student-answer" id={"student-answer-#{q["id"]}"}>
+                  <.ordering_input
+                    :if={q["type"] == "ordering"}
+                    id={"ordering-#{q["id"]}"}
+                    question_id={q["id"]}
+                    name={"answers[#{q["id"]}]"}
+                    options={q["options"]}
+                    value={@exam.answers[q["id"]]}
+                    disabled
+                  />
+                  <div
+                    :if={q["type"] != "photo"}
+                    class="student-answer"
+                    id={"student-answer-#{q["id"]}"}
+                  >
+                    <div class="correction-heading">
+                      <strong>Réponse de {@profile.name}</strong>
+                    </div>
                     <div
                       :for={
                         row <-
@@ -1296,16 +1368,16 @@
                       <strong>Sources</strong>
                       <ul :if={Map.get(@exam_sources, q["id"], []) != []}>
                         <li :for={source <- Map.get(@exam_sources, q["id"], [])}>
-                          <.link
-                            href={child_path(@profile, ~p"/pages/#{source.page_id}")}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                          <button
+                            type="button"
+                            id={"open-source-#{q["id"]}-#{source.page_id}"}
+                            class="source-link"
+                            phx-click="open_source"
+                            phx-value-id={source.page_id}
+                            aria-haspopup="dialog"
                           >
                             {source.label}
-                            <span class="sr-only">
-                              (ouvre la page d’origine dans un nouvel onglet)
-                            </span>
-                          </.link>
+                          </button>
                           <span :if={source.page_number} class="source-page-number">
                             (page {source.page_number})
                           </span>
@@ -1346,9 +1418,24 @@
               type="button"
               class="button text-button"
               phx-click="delete_exam"
-              data-confirm="Supprimer ce contrôle non rendu ? Cette action est définitive."
+              data-confirm={
+                if @exam.status == "completed",
+                  do: "Supprimer ce contrôle et ses résultats ? Cette action est définitive.",
+                  else: "Supprimer ce contrôle ? Cette action est définitive."
+              }
             >
               Supprimer
+            </button>
+            <span :if={@exam.status == "completed"} aria-hidden="true">-</span>
+            <button
+              :if={@exam.status == "completed"}
+              id="redo-exam"
+              type="button"
+              class="button text-button"
+              phx-click="redo_exam"
+              phx-disable-with="Création…"
+            >
+              Refaire
             </button>
           </div>
           <button
@@ -1357,6 +1444,7 @@
             form="exam-answers"
             class="button primary"
             id="finish-exam"
+            disabled={drawing_upload_pending?(@uploads)}
           >
             Rendre ma copie <.icon name="check" />
           </button>
@@ -1375,6 +1463,35 @@
       <p id="language-error-explanation">{@language_error["explanation"]}</p>
     </.modal>
 
+    <.modal
+      :if={@modal == "rename_resource"}
+      id="rename-resource-modal"
+      title="Renommer la ressource"
+    >
+      <.form for={@rename_resource_form} id="rename-resource-form" phx-submit="save_resource_name">
+        <.input
+          field={@rename_resource_form[:title]}
+          id="resource-title"
+          label="Nom de la ressource"
+          required
+          maxlength="240"
+        />
+        <div class="form-actions">
+          <button
+            id="cancel-rename-resource"
+            type="button"
+            class="button secondary"
+            phx-click="close_modal"
+          >
+            Annuler
+          </button>
+          <button id="save-resource-name" type="submit" class="button primary">
+            Enregistrer
+          </button>
+        </div>
+      </.form>
+    </.modal>
+
     <.modal :if={@modal == "resource_url"} id="resource-url-modal" title="Importer depuis une URL">
       <.form
         for={@resource_form}
@@ -1383,7 +1500,8 @@
         phx-submit="add_resource_url"
       >
         <label for="resource-url">Adresse du document</label>
-        <input
+        <.input
+          wrapper={false}
           id="resource-url"
           name={@resource_form[:url].name}
           type="url"
@@ -1423,7 +1541,8 @@
         id="lesson-form"
       >
         <label for="lesson-title">Nom de la leçon</label>
-        <input
+        <.input
+          wrapper={false}
           id="lesson-title"
           name={@lesson_form[:title].name}
           value={@lesson_form[:title].value}
@@ -1442,20 +1561,79 @@
         </div>
       </.form>
     </.modal>
-    <.modal :if={@modal == "pages"} title="Ajouter des pages">
-      <.form for={@form} phx-change="validate" phx-submit="upload_pages" id="upload-pages">
-        <.upload_field upload={@uploads.pages} name="pages" label="Choisir des photos" />
-        <p :if={@error} class="error" role="alert">{@error}</p>
-        <div class="form-actions">
-          <button
-            class="button primary"
-            disabled={@uploads.pages.entries == []}
-            phx-disable-with="Enregistrement…"
-          >
-            Ajouter
-          </button>
-        </div>
-      </.form>
+    <.modal :if={@modal == "source" and @source_page} id="source-modal" title="Source">
+      <div id="source-content" class="source-content">
+        <img
+          :if={String.starts_with?(@source_page.content_type, "image/")}
+          src={child_path(@profile, ~p"/pages/#{@source_page.id}")}
+          alt="Page source de la correction"
+        />
+        <p :if={!String.starts_with?(@source_page.content_type, "image/")}>
+          {@source_page.text}
+        </p>
+      </div>
+    </.modal>
+    <.modal
+      :if={@modal == "extract_illustrations" and @extraction_source}
+      id="extract-illustrations-modal"
+      title="Extraire une ou plusieurs illustrations"
+    >
+      <div class="page-editor illustration-editor">
+        <a
+          href={child_path(@profile, ~p"/pages/#{@extraction_source.id}")}
+          target="_blank"
+          rel="noopener"
+        >
+          <img
+            id="extraction-source-image"
+            src={child_path(@profile, ~p"/pages/#{@extraction_source.id}")}
+            alt="Illustration originale à recadrer"
+          />
+        </a>
+        <.form
+          for={@extraction_form}
+          id="illustration-extraction-form"
+          phx-change="configure_extraction"
+          phx-submit="extract_illustrations"
+        >
+          <.count_stepper
+            id="illustration-count"
+            value={@extraction_count}
+            max={Resources.Extraction.max_count()}
+            event="change_extraction_count"
+            label="Nombre d'illustrations"
+            disabled={@extraction_ref != nil}
+          />
+          <.input
+            field={@extraction_form[:instructions]}
+            id="extraction-instructions"
+            label="Consignes pour l'extraction"
+            type="textarea"
+            rows="6"
+            maxlength="4000"
+            disabled={@extraction_ref != nil}
+            placeholder="Par exemple : la page comporte 2 exercices, chaque exercice commence par son numéro en orange."
+          />
+          <p class="muted extraction-note">
+            L’illustration originale est conservée. Tu pourras la supprimer ensuite.
+          </p>
+          <p :if={@extraction_error} id="extraction-error" class="error" role="alert">
+            {@extraction_error}
+          </p>
+          <div class="form-actions">
+            <button
+              id="extract-illustrations"
+              type="submit"
+              class="button primary"
+              disabled={@extraction_ref != nil}
+              aria-busy={to_string(@extraction_ref != nil)}
+            >
+              <span :if={@extraction_ref} class="spinner" aria-hidden="true" />
+              {if @extraction_ref, do: "Extraction en cours…", else: "Extraire"}
+            </button>
+          </div>
+        </.form>
+      </div>
     </.modal>
     <.modal :if={@modal == "edit_page"} id="page-modal" title="Vérifier la page">
       <div class="page-editor">
@@ -1474,13 +1652,17 @@
           </span>
         </a>
         <.form for={@form} phx-change="validate_page" phx-submit="save_page" id="page-text-form">
-          <label for="page-text">Texte reconnu</label><textarea
+          <label for="page-text">Texte reconnu</label>
+          <.input
+            wrapper={false}
+            type="textarea"
             id="page-text"
             autocorrect="off"
             name="text"
             rows="14"
             maxlength="60000"
-          >{@page_text}</textarea>
+            value={@page_text}
+          />
           <.processing_progress
             :if={@edit_page.status == "pending" or @edit_page.processing_stage != nil}
             id="editor-processing-progress"
@@ -1510,6 +1692,7 @@
         phx-submit="transcribe_answer"
         id="answer-photo-form"
       >
+        <.webcam_capture id="webcam-answer-photo" upload_name="answer_photo" />
         <.upload_field
           upload={@uploads.answer_photo}
           name="answer_photo"
@@ -1523,12 +1706,16 @@
         </div>
       </.form>
       <.form :if={@ocr_text} for={@form} phx-submit="use_transcription" id="transcription-form">
-        <label for="transcription">Vérifie ta réponse</label><textarea
+        <label for="transcription">Vérifie ta réponse</label>
+        <.input
+          wrapper={false}
+          type="textarea"
           name="text"
           id="transcription"
           autocorrect="off"
           rows="9"
-        >{@ocr_text}</textarea>
+          value={@ocr_text}
+        />
         <div class="form-actions">
           <button class="button primary">Utiliser cette réponse</button>
         </div>

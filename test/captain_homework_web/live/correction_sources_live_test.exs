@@ -28,7 +28,7 @@ defmodule CaptainHomeworkWeb.CorrectionSourcesLiveTest do
 
     assert has_element?(
              corrected,
-             "#question-sources-q1 a[href='/alice/pages/#{pg.id}'][target='_blank'][rel='noopener noreferrer']",
+             "#open-source-q1-#{pg.id}[phx-click='open_source'][aria-haspopup='dialog']",
              "Leçon : La cellule"
            )
 
@@ -83,7 +83,7 @@ defmodule CaptainHomeworkWeb.CorrectionSourcesLiveTest do
 
     assert has_element?(
              view,
-             "#question-sources-q1 a[href='/alice/pages/#{pg.id}']",
+             "#open-source-q1-#{pg.id}[phx-click='open_source']",
              "Document : Fiche.pdf"
            )
 

@@ -2,6 +2,17 @@ defmodule CaptainHomework.AI do
   @callback transcribe(binary(), String.t()) :: {:ok, String.t()} | {:error, term()}
   @callback analyze_resource(binary(), String.t()) :: {:ok, map()} | {:error, term()}
   @optional_callbacks analyze_resource: 2
+  @callback extract_illustrations(binary(), String.t(), pos_integer(), String.t()) ::
+              {:ok, list()} | {:error, term()}
+  @optional_callbacks extract_illustrations: 4
+
+  def extract_illustrations(data, type, count, instructions) do
+    if Code.ensure_loaded?(provider()) and
+         function_exported?(provider(), :extract_illustrations, 4),
+       do: provider().extract_illustrations(data, type, count, instructions),
+       else: {:error, "L’extraction d’illustrations n’est pas disponible avec ce service IA."}
+  end
+
   @callback analyze_example_style(binary(), String.t()) :: {:ok, map()} | {:error, term()}
   @optional_callbacks analyze_example_style: 2
 
@@ -39,6 +50,15 @@ defmodule CaptainHomework.AI do
   @callback select_exam_content(list(), list(), String.t()) ::
               {:ok, list(), boolean()} | {:error, term()}
   @optional_callbacks select_exam_content: 3
+  @callback synthesize_speech(map()) :: {:ok, binary()} | {:error, term()}
+  @optional_callbacks synthesize_speech: 1
+
+  def synthesize_speech(script) do
+    if Code.ensure_loaded?(provider()) and function_exported?(provider(), :synthesize_speech, 1),
+      do: provider().synthesize_speech(script),
+      else: {:error, "La synthèse vocale n’est pas disponible avec ce service IA."}
+  end
+
   def provider, do: Application.fetch_env!(:captain_homework, :ai_provider)
   def transcribe(data, type), do: provider().transcribe(data, type)
 
@@ -62,8 +82,7 @@ defmodule CaptainHomework.AI do
         (Application.get_env(:captain_homework, :openai_api_key) || "") != ""
 
   def message(:invalid_effort_review),
-    do:
-      "La vérification de l’équilibre des questions n’a pas abouti. Réessaie les questions manquantes."
+    do: "La vérification des questions n’a pas abouti. Réessaie les questions manquantes."
 
   def message(:invalid_plan),
     do:
@@ -102,7 +121,9 @@ defmodule CaptainHomework.AI do
     checks = [
       {is_list(image_ids) and length(image_ids) <= 6 and Enum.all?(image_ids, &is_binary/1),
        "illustrations : liste de six identifiants maximum attendue"},
-      {q["type"] in ~w(definition mcq cloze reading long diagram), "type de question inconnu"},
+      {CaptainHomework.ImageCrops.validate(image_ids, Map.get(q, "image_regions", [])) == :ok,
+       "recadrage : zones complètes et valides requises pour les illustrations sélectionnées"},
+      {q["type"] in CaptainHomework.ResponseFormats.ids(), "type de question inconnu"},
       {Enum.all?(~w(prompt answer rubric), &(is_binary(q[&1]) and String.trim(q[&1]) != "")),
        "énoncé, réponse ou barème manquant"},
       {is_integer(q["points"]) and q["points"] in 1..8, "points : entier de 1 à 8 attendu"},
@@ -115,7 +136,10 @@ defmodule CaptainHomework.AI do
     ]
 
     errors = for {false, reason} <- checks, do: reason
-    if errors == [], do: type_errors(q) ++ support_errors(q), else: errors
+
+    if errors == [],
+      do: type_errors(q) ++ support_errors(q) ++ CaptainHomework.Exams.Listening.errors(q),
+      else: errors
   end
 
   def question_errors(_), do: ["objet question attendu"]
@@ -142,8 +166,10 @@ defmodule CaptainHomework.AI do
   defp visible_support?(q) do
     images = Map.get(q, "images", [])
 
-    String.trim(q["text"]) != "" or Map.get(q, "image_ids", []) != [] or
+    String.trim(q["text"]) != "" or String.trim(q["support_text"] || "") != "" or
+      Map.get(q, "image_ids", []) != [] or
       (is_list(images) and images != []) or
+      (q["type"] == "ordering" and q["options"] != []) or
       (q["type"] == "diagram" and valid_diagram?(q["diagram"], q["slots"]))
   end
 
@@ -160,8 +186,17 @@ defmodule CaptainHomework.AI do
            do: [],
            else: ["QCM : 2 à 6 choix distincts et réponse identique à un choix requis"]
 
+      "ordering" ->
+        if CaptainHomework.Exams.Ordering.valid_question?(q),
+          do: [],
+          else: [
+            "classement : 2 à 8 événements distincts et réponse contenant chaque numéro une seule fois, séparé par une virgule et une espace"
+          ]
+
       "reading" ->
-        if String.trim(q["text"]) != "", do: [], else: ["texte de compréhension absent"]
+        if visible_support?(q),
+          do: [],
+          else: ["support de compréhension absent"]
 
       "cloze" ->
         holes =
@@ -180,7 +215,7 @@ defmodule CaptainHomework.AI do
         if valid_diagram?(q["diagram"], q["slots"]),
           do: [],
           else: [
-            "schéma : formes, dimensions ou correspondance des numéros invalides ; remplacer par une définition si nécessaire"
+            "schéma : respecte le repère 500 × 300 (x + width ≤ 500 et y + height ≤ 300), les dimensions positives et les numéros de slots ; les formes sont séparées des images, pas superposées"
           ]
 
       _ ->

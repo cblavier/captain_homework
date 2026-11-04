@@ -10,7 +10,7 @@ defmodule CaptainHomeworkWeb.Router do
 
     plug :put_secure_browser_headers, %{
       "content-security-policy" =>
-        "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ws: wss:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+        "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ws: wss:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
       "referrer-policy" => "same-origin",
       "x-robots-tag" => "noindex, nofollow"
     }
@@ -35,26 +35,44 @@ defmodule CaptainHomeworkWeb.Router do
     get "/:child/ressources/:id", ResourceController, :show
     get "/:child/controles/:exam_id/images/:id", ExamImageController, :show
     get "/controles/:exam_id/images/:id", ExamImageController, :show
+    get "/:child/controles/:exam_id/audio/:id", ExamAudioController, :show
+    get "/controles/:exam_id/audio/:id", ExamAudioController, :show
 
-    live_session :family, on_mount: [{CaptainHomeworkWeb.Access, :ensure_access}] do
+    live_session :family,
+      on_mount: [
+        {CaptainHomeworkWeb.Access, :ensure_access},
+        CaptainHomeworkWeb.GenerationNotifications
+      ] do
       live "/", HomeworkLive, :home
       live "/parametres", HomeworkLive, :settings
+      live "/matieres/parametres", HomeworkLive, :subjects_settings
+      live "/parametres/matieres", HomeworkLive, :subject_preferences
+      live "/parametres/types", QuestionTypesLive, :index
+      live "/parametres/types/nouveau", QuestionTypesLive, :new
+      live "/parametres/types/:id", QuestionTypesLive, :edit
       live "/matieres/:subject", HomeworkLive, :subject
-      live "/matieres/:subject/parametres", HomeworkLive, :subject_settings
       live "/lecons/:id", HomeworkLive, :lesson
       live "/lecons/:id/controle", HomeworkLive, :new_exam
       live "/controles/:id", HomeworkLive, :exam
       live "/enfants/:child", HomeworkLive, :home
       live "/enfants/:child/parametres", HomeworkLive, :settings
+      live "/enfants/:child/matieres/parametres", HomeworkLive, :subjects_settings
+      live "/enfants/:child/parametres/matieres", HomeworkLive, :subject_preferences
+      live "/enfants/:child/parametres/types", QuestionTypesLive, :index
+      live "/enfants/:child/parametres/types/nouveau", QuestionTypesLive, :new
+      live "/enfants/:child/parametres/types/:id", QuestionTypesLive, :edit
       live "/enfants/:child/matieres/:subject", HomeworkLive, :subject
-      live "/enfants/:child/matieres/:subject/parametres", HomeworkLive, :subject_settings
       live "/enfants/:child/lecons/:id", HomeworkLive, :lesson
       live "/enfants/:child/lecons/:id/controle", HomeworkLive, :new_exam
       live "/enfants/:child/controles/:id", HomeworkLive, :exam
       live "/:child", HomeworkLive, :home
       live "/:child/parametres", HomeworkLive, :settings
+      live "/:child/matieres/parametres", HomeworkLive, :subjects_settings
+      live "/:child/parametres/matieres", HomeworkLive, :subject_preferences
+      live "/:child/parametres/types", QuestionTypesLive, :index
+      live "/:child/parametres/types/nouveau", QuestionTypesLive, :new
+      live "/:child/parametres/types/:id", QuestionTypesLive, :edit
       live "/:child/matieres/:subject", HomeworkLive, :subject
-      live "/:child/matieres/:subject/parametres", HomeworkLive, :subject_settings
       live "/:child/lecons/:id", HomeworkLive, :lesson
       live "/:child/lecons/:id/controle", HomeworkLive, :new_exam
       live "/:child/controles/:id", HomeworkLive, :exam

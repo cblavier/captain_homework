@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 440 260" role="img" aria-label="Coupe archéologique schématique : trois couches superposées, avec les repères 1 en haut, 2 au milieu et 3 en bas.">
+   <path d="M25 55 Q120 25 215 50 T415 45 L415 105 Q310 130 215 100 T25 110Z" fill="#3f6b4c" opacity=".16"/>
+   <path d="M25 110 Q120 80 215 100 T415 105 L415 170 Q310 190 215 165 T25 180Z" fill="#3f6b4c" opacity=".32"/>
+   <path d="M25 180 Q120 145 215 165 T415 170 L415 235 L25 235Z" fill="#3f6b4c" opacity=".5"/>
+   <g fill="none" stroke="#3f6b4c" stroke-width="2"><path d="M55 75H135 M170 145H255 M95 208H185"/><path d="M55 70v10 M135 70v10 M170 140v10 M255 140v10 M95 203v10 M185 203v10"/></g>
+   <g fill="#ffffff"><rect x="348" y="55" width="42" height="32" rx="5"/><rect x="348" y="125" width="42" height="32" rx="5"/><rect x="348" y="192" width="42" height="32" rx="5"/></g>
+   <g fill="#263449" font-family="system-ui,sans-serif" font-size="18" text-anchor="middle"><text x="369" y="78">1</text><text x="369" y="148">2</text><text x="369" y="215">3</text></g>
+  </svg>

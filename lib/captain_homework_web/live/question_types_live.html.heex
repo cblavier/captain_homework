@@ -1,0 +1,427 @@
+<Layouts.app flash={@flash} child_theme={@profile.theme}>
+  <main class="app question-admin" id="question-admin">
+    <.profile_header profile={@profile} profiles={@profiles} form={@form} />
+    <section :if={@live_action == :index} id="question-type-catalogue">
+      <div class="page-heading">
+        <.page_breadcrumb
+          id="question-types-title"
+          ancestors={[
+            {:home, child_path(@profile, "/")},
+            {"Paramètres", child_path(@profile, "/matieres/parametres")}
+          ]}
+        >
+          Types de questions
+        </.page_breadcrumb>
+        <.link
+          id="new-question-type"
+          class="button primary"
+          navigate={types_path(@profile, @filters, "/nouveau")}
+        >
+          <.icon name="plus" /> Nouveau type
+        </.link>
+      </div>
+      <p class="muted">Catalogue commun à toutes les matières et à tous les profils.</p>
+      <.form
+        for={@filter_form}
+        id="type-filters"
+        class="admin-filters"
+        phx-change="filter"
+        phx-submit="filter"
+      >
+        <.input
+          field={@filter_form[:search]}
+          label="Rechercher"
+          placeholder="Nom du type de question"
+          phx-debounce="200"
+        />
+        <.input
+          field={@filter_form[:subject]}
+          type="select"
+          label="Matière"
+          options={[
+            {"Toutes les matières", ""}
+            | Enum.map(Study.subjects(), &{Study.subject_short_name(&1), &1.id})
+          ]}
+        />
+        <.input
+          field={@filter_form[:mode]}
+          type="select"
+          label="Mode"
+          options={[{"Tous les modes", ""}, {"Classique", "classic"}, {"Flashcard", "flashcard"}]}
+        />
+      </.form>
+      <div class="admin-table-wrap">
+        <table class="admin-type-table">
+          <thead>
+            <tr>
+              <th>Type et matières</th>
+              <th class="response-column">Réponse</th>
+              <th class="duration-column">Durée</th>
+              <th>Modes</th>
+              <th><span class="sr-only">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody id="question-types-list" phx-update="stream">
+            <tr :for={{dom_id, type} <- @streams.types} id={dom_id}>
+              <td>
+                <.link
+                  class="type-name"
+                  navigate={types_path(@profile, @filters, "/#{type.id}")}
+                >
+                  {type.name}
+                </.link>
+                <small class="type-sub">{subject_names(type.subjects)}</small>
+              </td>
+              <td class="response-column">{response_label(type.response_kind)}</td>
+              <td class="duration-column">{duration_label(type.work_duration)}</td>
+              <td>
+                <span :for={mode <- type.modes} class="mode-label">
+                  {if mode == "classic", do: "Classique", else: "Flashcard"}
+                </span>
+              </td>
+              <td>
+                <div class="type-row-actions">
+                  <.link
+                    id={"edit-type-#{type.id}"}
+                    class="icon-button"
+                    aria-label={"Modifier #{type.name}"}
+                    navigate={types_path(@profile, @filters, "/#{type.id}")}
+                  >
+                    <.icon name="pencil" />
+                  </.link>
+                  <button
+                    id={"delete-type-#{type.id}"}
+                    class="icon-button"
+                    aria-label={"Supprimer #{type.name}"}
+                    phx-click="ask_delete"
+                    phx-value-id={type.id}
+                  >
+                    <.icon name="trash" />
+                  </button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p id="type-count" class="muted" role="status">{@type_count} type(s) de questions</p>
+      <p :if={@type_count == 0} id="no-question-types" class="notice">
+        Aucun type ne correspond à cette sélection.
+      </p>
+    </section>
+    <section :if={@live_action in [:new, :edit]} id="question-type-editor">
+      <div class="page-breadcrumb admin-editor-breadcrumb">
+        <nav aria-label="Fil d’Ariane">
+          <ol>
+            <li>
+              <.link
+                id="type-editor-home"
+                navigate={child_path(@profile, "/")}
+                class="breadcrumb-home"
+                title="Accueil"
+              >
+                <.icon name="home" />
+                <span class="sr-only">Accueil</span>
+              </.link>
+              <.icon name="arrow" class="breadcrumb-separator" />
+            </li>
+            <li>
+              <.link navigate={child_path(@profile, "/matieres/parametres")}>Paramètres</.link>
+              <.icon name="arrow" class="breadcrumb-separator" />
+            </li>
+            <li>
+              <.link id="type-editor-breadcrumb" navigate={types_path(@profile, @filters)}>
+                Types de questions
+              </.link>
+            </li>
+          </ol>
+        </nav>
+      </div>
+      <div class="page-heading admin-editor-heading">
+        <.page_title id="type-editor-title">{@type.name || "Nouveau type"}</.page_title>
+        <div class="form-actions">
+          <.link
+            id="cancel-type"
+            class="button secondary"
+            navigate={types_path(@profile, @filters)}
+          >
+            Annuler
+          </.link>
+          <button
+            id="save-type"
+            type="submit"
+            form="type-editor"
+            class="button primary"
+            phx-disable-with="Enregistrement…"
+          >
+            Enregistrer
+          </button>
+        </div>
+      </div>
+      <div class="admin-editor-grid">
+        <.form
+          for={@type_form}
+          id="type-editor"
+          phx-change="validate_type"
+          phx-submit="save_type"
+          novalidate
+        >
+          <nav class="lesson-navigation" aria-label="Configuration du type">
+            <button
+              :for={{id, label} <- [{"definition", "Définition"}, {"aides", "Aides"}]}
+              id={"type-tab-#{id}"}
+              type="button"
+              class="navigation-tab"
+              aria-current={if @tab == id, do: "page"}
+              phx-click="tab"
+              phx-value-tab={id}
+            >
+              {label}
+            </button>
+          </nav>
+          <div
+            id="type-definition-fields"
+            class="form-fields"
+            role="group"
+            aria-label="Définition du type"
+            hidden={@tab != "definition"}
+          >
+            <.input
+              field={@type_form[:name]}
+              label="Nom du type"
+              maxlength="80"
+              aria-invalid={
+                to_string(@type_form[:name].errors != [] or @type_form[:name_key].errors != [])
+              }
+              aria-describedby={if @type_form[:name_key].errors != [], do: "flash-error"}
+            />
+            <fieldset class="admin-field">
+              <legend>Matières applicables</legend>
+              <input type="hidden" name="type[subjects][]" value="" />
+              <div class="subject-checkbox-grid">
+                <label :for={s <- Study.subjects()} class="subject-checkbox">
+                  <input
+                    id={"type-subject-#{s.id}"}
+                    type="checkbox"
+                    name="type[subjects][]"
+                    value={s.id}
+                    checked={s.id in (@type_form[:subjects].value || [])}
+                  />{Study.subject_short_name(s)}
+                </label>
+              </div>
+              <.field_errors field={@type_form[:subjects]} />
+            </fieldset>
+            <fieldset class="admin-field">
+              <legend>Modes autorisés</legend>
+              <input type="hidden" name="type[modes][]" value="" />
+              <div class="subject-checkbox-grid">
+                <label
+                  :for={
+                    {id, label} <- [{"classic", "Contrôle classique"}, {"flashcard", "Flashcard"}]
+                  }
+                  class="subject-checkbox"
+                >
+                  <input
+                    id={"type-mode-#{id}"}
+                    type="checkbox"
+                    name="type[modes][]"
+                    value={id}
+                    checked={id in (@type_form[:modes].value || [])}
+                  />{label}
+                </label>
+              </div>
+              <.field_errors field={@type_form[:modes]} />
+            </fieldset>
+            <div class="admin-field-pair">
+              <.input
+                field={@type_form[:response_kind]}
+                type="select"
+                label="Format de réponse"
+                options={QuestionDefinition.response_options()}
+              /><.input
+                field={@type_form[:work_duration]}
+                type="select"
+                label="Durée de travail"
+                options={CaptainHomework.WorkDuration.select_options()}
+              />
+            </div>
+            <fieldset class="admin-field">
+              <legend>Consigne</legend>
+              <div class="settings-choices two">
+                <label :for={{value, label} <- [{"fixed", "Fixe"}, {"dynamic", "Dynamique"}]}>
+                  <input
+                    type="radio"
+                    name="type[instruction_kind]"
+                    value={value}
+                    checked={@preview_type.instruction_kind == value}
+                  /><span>{label}</span>
+                </label>
+              </div>
+              <.input
+                :if={@preview_type.instruction_kind == "fixed"}
+                field={@type_form[:instruction]}
+                type="textarea"
+                label="Consigne fixe"
+                rows="2"
+              />
+              <p :if={@preview_type.instruction_kind == "dynamic"} class="muted">
+                La consigne est renseignée pour chaque question.
+              </p>
+            </fieldset>
+            <fieldset class="admin-field">
+              <legend>Contenu de la question</legend>
+              <div class="admin-field-pair">
+                <.input
+                  field={@type_form[:content_kind]}
+                  type="select"
+                  label="Nature"
+                  options={[
+                    {"Texte", "text"},
+                    {"Image", "image"},
+                    {"Document", "document"},
+                    {"Audio", "audio"}
+                  ]}
+                /><.input
+                  field={@type_form[:content_presence]}
+                  type="select"
+                  label="Présence"
+                  options={[
+                    {"Obligatoire", "required"},
+                    {"Facultative", "optional"},
+                    {"Aucun contenu", "none"}
+                  ]}
+                />
+              </div>
+            </fieldset>
+          </div>
+          <div class="form-fields" hidden={@tab != "aides"}>
+            <.input
+              field={@type_form[:help_classic]}
+              type="textarea"
+              label="Aide en contrôle classique"
+              placeholder="Aucune aide"
+              rows="3"
+            /><.input
+              field={@type_form[:help_flashcard]}
+              type="textarea"
+              label="Aide en flashcard"
+              placeholder="Aucune aide"
+              rows="3"
+            />
+          </div>
+          <button
+            :if={@type.id}
+            type="button"
+            id="delete-current-type"
+            class="button text-button admin-danger"
+            phx-click="ask_delete"
+            phx-value-id={@type.id}
+          >
+            Supprimer ce type
+          </button>
+        </.form>
+        <aside class="admin-preview" aria-label="Aperçu de la question">
+          <header class="lesson-navigation">
+            <h3 class="navigation-tab">Aperçu</h3>
+          </header>
+          <.form
+            for={to_form(%{"mode" => @preview_mode})}
+            id="type-preview-mode"
+            phx-change="preview_mode"
+          >
+            <div class="settings-choices two">
+              <label :for={
+                {value, label} <- [{"classic", "Classique"}, {"flashcard", "Flashcard"}]
+              }>
+                <input type="radio" name="mode" value={value} checked={@preview_mode == value} />
+                <span>
+                  {label}
+                </span>
+              </label>
+            </div>
+          </.form>
+          <p
+            :if={@preview_mode not in @preview_type.modes}
+            id="preview-unavailable"
+            class="notice"
+          >
+            Le mode {if @preview_mode == "flashcard", do: "flashcard", else: "classique"} n'est pas supporté
+          </p>
+          <.question_preview
+            :if={@preview_mode in @preview_type.modes}
+            type={@preview_type}
+            subject={@preview_subject}
+            mode={@preview_mode}
+            example={@example}
+            corrected={@preview_corrected}
+            ordering_answer={@preview_ordering_answer}
+          />
+          <hr
+            :if={@preview_mode == "classic" and @preview_mode in @preview_type.modes}
+            class="preview-separator"
+          />
+          <.form
+            :if={@preview_mode in @preview_type.modes}
+            for={@preview_subject_form}
+            id="type-preview-subject"
+            phx-change="preview_subject"
+          >
+            <.input
+              field={@preview_subject_form[:subject]}
+              type="select"
+              label="Langue de l’aperçu"
+              options={
+                for s <- Study.subjects(),
+                    s.id in @preview_type.subjects,
+                    do: {Study.subject_short_name(s), s.id}
+              }
+            />
+          </.form>
+          <.form
+            :if={@preview_mode in @preview_type.modes}
+            for={@example_form}
+            id="type-example"
+            phx-change="example"
+            phx-submit="preview_answer"
+          >
+            <.input
+              :if={@preview_type.instruction_kind == "dynamic"}
+              field={@example_form[:prompt]}
+              label="Exemple de consigne"
+              type="textarea"
+              rows="2"
+              phx-debounce="200"
+            />
+            <.input
+              :if={
+                @preview_type.content_presence != "none" and
+                  @preview_type.content_kind in ["text", "document"]
+              }
+              field={
+                @example_form[
+                  if(@preview_type.content_kind == "document", do: :document, else: :text)
+                ]
+              }
+              label="Exemple de contenu"
+              type="textarea"
+              rows="4"
+              phx-debounce="200"
+            />
+          </.form>
+        </aside>
+      </div>
+    </section>
+    <.modal :if={@modal == "delete"} id="delete-type-modal" title="Supprimer ce type ?">
+      <p>
+        « {@delete_type.name} » ne sera plus proposé pour les nouveaux contrôles. Les contrôles existants seront conservés.
+      </p>
+      <div class="form-actions">
+        <button class="button secondary" phx-click="close_modal">Annuler</button><button
+          id="confirm-delete-type"
+          class="button primary"
+          phx-click="confirm_delete"
+        >Supprimer</button>
+      </div>
+    </.modal>
+  </main>
+</Layouts.app>

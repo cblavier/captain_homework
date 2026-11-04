@@ -19,8 +19,8 @@ defmodule CaptainHomework.Exams.Language do
                is_binary(replacement) and replacement != original and
                is_binary(explanation) and String.trim(explanation) != "" and
                String.length(explanation) <= 2000 and String.length(replacement) <= 2000,
-           true <- is_integer(occurrence) and occurrence > 0,
-           {start, length} <- Enum.at(:binary.matches(text, original), occurrence - 1),
+           true <- occurrence == 1,
+           [{start, length}] <- :binary.matches(text, original),
            true <-
              String.valid?(binary_part(text, 0, start)) and
                String.valid?(binary_part(text, start, length)),

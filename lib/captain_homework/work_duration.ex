@@ -16,12 +16,4 @@ defmodule CaptainHomework.WorkDuration do
       nil -> nil
     end
   end
-
-  def with_default(type) do
-    Map.put_new(type, "work_duration", legacy_default(type["format"] || type["id"]))
-  end
-
-  defp legacy_default(format) when format in ["mcq", "definition"], do: "quick"
-  defp legacy_default(format) when format in ["reading", "long"], do: "long"
-  defp legacy_default(_), do: "medium"
 end

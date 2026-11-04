@@ -17,7 +17,7 @@ defmodule CaptainHomeworkWeb do
   those modules here.
   """
 
-  def static_paths, do: ~w(assets fonts images favicon.ico robots.txt manifest.webmanifest)
+  def static_paths, do: ~w(assets fonts images audio favicon.ico robots.txt manifest.webmanifest)
 
   def router do
     quote do
@@ -80,7 +80,9 @@ defmodule CaptainHomeworkWeb do
       # HTML escaping functionality
       import Phoenix.HTML
       # Core UI components
+      import CaptainHomeworkWeb.PhotoAnswerComponents
       import CaptainHomeworkWeb.CoreComponents
+      import CaptainHomeworkWeb.SymbolComponents
 
       # Common modules used in templates
       alias Phoenix.LiveView.JS

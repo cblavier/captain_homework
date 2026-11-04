@@ -6,11 +6,26 @@ defmodule CaptainHomework.AI.Trace do
 
   def with_exam(exam_id, fun), do: with_context(:exam_id, exam_id, fun)
   def with_stage(stage, fun), do: with_context(:stage, stage, fun)
+  def with_progress(callback, fun), do: with_context(:progress, callback, fun)
 
   def request(body, fun) do
     started = System.monotonic_time(:millisecond)
 
     try do
+      if callback = Process.get({__MODULE__, :progress}) do
+        properties =
+          get_in(field(body, :text) || %{}, [
+            :format,
+            :schema,
+            "properties",
+            "questions",
+            "properties"
+          ])
+
+        count = if is_map(properties), do: map_size(properties), else: nil
+        callback.(Process.get({__MODULE__, :stage}) || stage(body), count)
+      end
+
       result = fun.()
       record(body, result, started)
       result

@@ -4,10 +4,17 @@ import {LiveSocket} from "phoenix_live_view"
 import topbar from "../vendor/topbar"
 import {ThemeSettings} from "./theme_settings"
 import {ExamAnswers} from "./exam_answers"
+import {SymbolPalette} from "./symbol_palette"
 import {FlashcardViewport} from "./flashcard_viewport"
 import {FlashcardStack} from "./flashcard_stack"
+import {QuestionPreviewRecorder, QuestionPreviewPhoto} from "./question_preview"
+import {WebcamCapture} from "./webcam_capture"
 import "./viewport"
 const Hooks = {
+  SymbolPalette,
+  WebcamCapture,
+  QuestionPreviewRecorder,
+  QuestionPreviewPhoto,
   ThemeSettings,
   ExamAnswers,
   FlashcardViewport,

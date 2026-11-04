@@ -57,7 +57,12 @@ defmodule CaptainHomework.Exams.ExposureEvidence do
         _ -> []
       end
 
-    [question["prompt"], question["text"]] ++ options ++ labels
+    [
+      question["prompt"],
+      question["text"],
+      question["support_text"],
+      get_in(question, ["audio_script", "text"])
+    ] ++ options ++ labels
   end
 
   defp contains?(texts, quote),

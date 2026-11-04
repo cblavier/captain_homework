@@ -135,18 +135,38 @@ defmodule CaptainHomework.Exams.Flashcards do
         ids = q["source_page_ids"]
 
         is_list(ids) and ids != [] and Enum.all?(ids, &MapSet.member?(source_ids, &1)) and
-          q["response_effort"] == "direct" and q["answer_basis"] == "knowledge" and
-          q["support_id"] in [nil, ""] and Map.get(q, "image_ids", []) == []
+          q["response_effort"] == "direct" and
+          q["answer_basis"] == if(q["type"] == "listening", do: "document", else: "knowledge") and
+          q["support_id"] in [nil, ""] and Map.get(q, "image_ids", []) == [] and
+          not answer_repeated_in_text?(q)
       end)
 
     {Enum.map(valid, &Map.put(&1, "points", 1)),
      if(invalid == [],
        do: [],
        else: [
-         "Chaque flashcard doit être rapide, autonome et fondée uniquement sur les pages de cours."
+         "Chaque flashcard doit être rapide, autonome et fondée uniquement sur les pages de cours. Le champ text ne doit pas répéter la réponse attendue."
        ]
      )}
   end
+
+  def answer_repeated_in_text?(question) do
+    answer = normalize_answer(question["answer"])
+    answer != "" and normalize_answer(question["text"]) == answer
+  end
+
+  defp normalize_answer(value) when is_binary(value) do
+    value
+    |> String.normalize(:nfc)
+    |> String.downcase()
+    |> String.replace(["’", "‘"], "'")
+    |> String.replace(~r/\s+/u, " ")
+    |> String.trim()
+    |> String.replace(~r/[.!?…]+$/u, "")
+    |> String.trim()
+  end
+
+  defp normalize_answer(_), do: ""
 
   defp notify(exam) do
     Phoenix.PubSub.broadcast(CaptainHomework.PubSub, "exam:#{exam.id}", :exam_updated)

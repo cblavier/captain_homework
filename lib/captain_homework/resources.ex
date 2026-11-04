@@ -15,6 +15,28 @@ defmodule CaptainHomework.Resources do
     )
   end
 
+  def rename(profile_id, lesson_id, id, attrs) do
+    resource =
+      Repo.one(
+        from r in Resource,
+          join: l in assoc(r, :lesson),
+          where: r.id == ^id and r.lesson_id == ^lesson_id and l.profile_id == ^profile_id
+      )
+
+    case resource do
+      nil -> {:error, :not_found}
+      resource -> resource |> change_title(attrs) |> Repo.update()
+    end
+  end
+
+  def change_title(resource, attrs \\ %{}) do
+    resource
+    |> Ecto.Changeset.cast(attrs, [:title])
+    |> Ecto.Changeset.update_change(:title, &String.trim/1)
+    |> Ecto.Changeset.validate_required([:title])
+    |> Ecto.Changeset.validate_length(:title, max: 240)
+  end
+
   def create_upload(profile_id, lesson_id, temp, filename) do
     lesson = Study.get_lesson!(profile_id, lesson_id)
 
@@ -151,6 +173,68 @@ defmodule CaptainHomework.Resources do
     if count == 1,
       do: {:ok, Repo.get!(Resource, id)},
       else: {:error, "Le document est déjà traité ou en cours de traitement."}
+  end
+
+  def delete_image(profile_id, lesson_id, page_id) do
+    result =
+      Repo.transaction(fn ->
+        page =
+          Repo.one(
+            from p in Page,
+              join: l in assoc(p, :lesson),
+              where:
+                p.id == ^page_id and p.lesson_id == ^lesson_id and l.profile_id == ^profile_id
+          )
+
+        if is_nil(page) or is_nil(page.resource_id) or
+             page.kind not in ["resource", "illustration"] or
+             not String.starts_with?(page.content_type, "image/"),
+           do: Repo.rollback(:not_found)
+
+        resource = Repo.get!(Resource, page.resource_id)
+
+        if resource.status != "ready" or resource.processing_stage != nil,
+          do:
+            Repo.rollback(
+              "Attends la fin du traitement de la ressource avant de supprimer une image."
+            )
+
+        pages = Repo.all(from p in Page, where: p.resource_id == ^resource.id)
+        metadata = CaptainHomework.AI.ResourceImages.metadata(pages)
+        hash = get_in(metadata, [page.storage_key, :hash])
+        # An imported image can also have an identical OCR page. Remove both references.
+        removed =
+          Enum.filter(pages, fn candidate ->
+            candidate.id == page.id or
+              (is_nil(page.extracted_from_id) and is_nil(candidate.extracted_from_id) and
+                 hash != nil and get_in(metadata, [candidate.storage_key, :hash]) == hash)
+          end)
+
+        Enum.each(removed, &Repo.delete!/1)
+
+        if Enum.any?(removed, &CaptainHomework.Exams.Illustrations.resource_content_page?/1) do
+          resource |> Ecto.Changeset.change(catalogue: nil, catalogue_hash: nil) |> Repo.update!()
+        end
+
+        {resource, removed}
+      end)
+
+    case result do
+      {:ok, {resource, removed}} ->
+        for key <- removed |> Enum.map(& &1.storage_key) |> Enum.uniq() do
+          referenced? =
+            Repo.exists?(from p in Page, where: p.storage_key == ^key) or
+              Repo.exists?(from r in Resource, where: r.storage_key == ^key)
+
+          if not referenced?, do: File.rm(Uploads.path(key))
+        end
+
+        broadcast(resource)
+        {:ok, resource}
+
+      error ->
+        error
+    end
   end
 
   def delete(profile_id, id) do

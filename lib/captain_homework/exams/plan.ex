@@ -45,17 +45,13 @@ defmodule CaptainHomework.Exams.Plan do
             ids?(q["source_page_ids"], sources) and q["source_page_ids"] != [] and
             (not Map.has_key?(q, "planned_image_ids") or ids?(q["planned_image_ids"], image_ids)) and
             (q["support_id"] == "" or q["support_id"] in support_ids) and
-            (q["type"] not in ["cloze", "diagram"] or q["support_id"] == "")
+            (q["type"] not in ["cloze", "diagram", "listening"] or q["support_id"] == "")
         end)
 
     if valid_supports and valid_questions do
       issues =
-        CaptainHomework.Exams.AnswerBasis.validation_errors(questions, pages, types, opts)
-        |> issue(
-          Keyword.get(opts, :enforce_balance, true) and
-            not CaptainHomework.Exams.ResponseEffort.balanced?(questions, types, pages),
-          "Respecte les effectifs d'effort de réponse : #{Jason.encode!(CaptainHomework.Exams.Constraints.targets(count, types, pages).effort)}."
-        )
+        (CaptainHomework.Exams.AnswerBasis.validation_errors(questions, pages, types, opts) ++
+           Enum.flat_map(supports ++ questions, &region_errors/1))
         |> issue(
           not unique?(Enum.map(questions, &{normalize(&1["objective"]), &1["skill"]})),
           "Une notion est évaluée plusieurs fois avec la même compétence."
@@ -90,7 +86,7 @@ defmodule CaptainHomework.Exams.Plan do
 
   def validate(_, _, _, _, _, _), do: {:error, "Le plan du contrôle est incomplet."}
 
-  @version 2
+  @version 4
   def version, do: @version
 
   def fingerprint(lesson, pages, examples) do
@@ -122,9 +118,9 @@ defmodule CaptainHomework.Exams.Plan do
   def ready_questions(%{"version" => @version} = plan), do: {:ok, plan["questions"]}
   def ready_questions(_), do: :legacy
 
-  def validate_complete(plan, count, types, pages, images, slots \\ nil, opts \\ []) do
+  def validate_complete(plan, count, types, pages, images, ids \\ nil, opts \\ []) do
     with :ok <- validate(plan, count, types, pages, images, opts),
-         :ok <- CaptainHomework.Exams.Constraints.validate_slots(plan["questions"], slots) do
+         :ok <- validate_identities(plan["questions"], ids) do
       available_images = MapSet.new(images, & &1.id)
 
       errors =
@@ -150,6 +146,83 @@ defmodule CaptainHomework.Exams.Plan do
     end
   end
 
+  defp validate_identities(_, nil), do: :ok
+
+  defp validate_identities(questions, ids) do
+    if Enum.sort(Enum.map(questions, & &1["id"])) == Enum.sort(ids),
+      do: :ok,
+      else: {:error, "Les identifiants des questions diffèrent de ceux du contrôle."}
+  end
+
+  # Collect every independent question diagnostic before making a paid repair call.
+  def diagnostics(plan, ids, types, pages, images) do
+    questions = Enum.filter(List.wrap(Map.get(plan, "questions")), &is_map/1)
+    supports = Enum.filter(List.wrap(Map.get(plan, "supports")), &is_map/1)
+    image_ids = MapSet.new(images, & &1.id)
+
+    Enum.reduce(ids, %{}, fn id, errors ->
+      matches = Enum.filter(questions, &(&1["id"] == id))
+
+      reasons =
+        case matches do
+          [q] ->
+            own_supports = Enum.filter(supports, &(&1["id"] == q["support_id"]))
+            one = %{"questions" => [q], "supports" => own_supports}
+
+            structural =
+              case validate(one, 1, types, pages, images) do
+                :ok -> []
+                {:error, reason} -> [reason]
+              end
+
+            content =
+              CaptainHomework.AI.question_errors(q) ++
+                if(ids?(q["image_ids"], image_ids),
+                  do: [],
+                  else: ["Illustration de question inconnue ou non transmise au modèle."]
+                )
+
+            compatible =
+              if CaptainHomework.Exams.Constraints.compatible?(
+                   q["type"],
+                   q["response_effort"],
+                   q["answer_basis"],
+                   pages
+                 ), do: [], else: ["Format incompatible avec l’effort ou le mode annoncé."]
+
+            duplicates =
+              Enum.filter(questions, fn other ->
+                other["id"] != id and is_binary(q["objective"]) and is_binary(other["objective"]) and
+                  ((normalize(q["objective"]) == normalize(other["objective"]) and
+                      q["skill"] == other["skill"]) or
+                     (normalized_elements(q) == normalized_elements(other) and
+                        q["skill"] == other["skill"]))
+              end)
+
+            structural ++
+              content ++
+              compatible ++
+              if(duplicates == [],
+                do: [],
+                else: ["Notion ou éléments attendus déjà évalués par une autre question."]
+              )
+
+          _ ->
+            ["Question absente ou identifiant répété."]
+        end
+
+      if reasons == [], do: errors, else: Map.put(errors, id, Enum.uniq(reasons))
+    end)
+  end
+
+  defp normalized_elements(question) do
+    question["expected_elements"]
+    |> List.wrap()
+    |> Enum.filter(&is_binary/1)
+    |> Enum.map(&normalize/1)
+    |> Enum.sort()
+  end
+
   def attach(question, slots, supports) do
     with slot when not is_nil(slot) <- Enum.find(slots, &(&1["id"] == question["plan_id"])),
          true <- question["type"] == slot["type"] do
@@ -163,7 +236,8 @@ defmodule CaptainHomework.Exams.Plan do
             "answer_basis",
             "expected_elements",
             "source_page_ids",
-            "support_id"
+            "support_id",
+            "image_regions"
           ])
         )
 
@@ -174,13 +248,36 @@ defmodule CaptainHomework.Exams.Plan do
         support ->
           {:ok,
            question
-           |> Map.put("text", support["text"])
+           |> Map.put("support_text", support["text"])
            |> Map.put("image_ids", support["image_ids"])
+           |> Map.put("image_regions", Map.get(support, "image_regions", []))
            |> Map.put("support_title", support["title"])}
       end
     else
       _ -> :error
     end
+  end
+
+  def sync_review(plan, reviewed) do
+    by_id = Map.new(reviewed, &{&1["plan_id"], &1})
+
+    Map.update!(plan, "questions", fn questions ->
+      Enum.map(questions, fn question ->
+        case by_id[question["id"]] do
+          nil ->
+            question
+
+          accepted ->
+            Map.merge(
+              question,
+              Map.take(
+                accepted,
+                ~w(response_effort verified_response_effort verified_answer_basis)
+              )
+            )
+        end
+      end)
+    end)
   end
 
   def remaining(plan, kept) do
@@ -196,7 +293,9 @@ defmodule CaptainHomework.Exams.Plan do
 
     support_keys =
       Map.new(plan["supports"], fn support ->
-        {support["id"], {normalize(support["text"]), Enum.sort(support["image_ids"])}}
+        {support["id"],
+         {normalize(support["text"]), Enum.sort(support["image_ids"]),
+          Enum.sort(Map.get(support, "image_regions", []))}}
       end)
 
     keys =
@@ -227,6 +326,16 @@ defmodule CaptainHomework.Exams.Plan do
 
   defp issue(issues, true, message), do: issues ++ [message]
   defp issue(issues, false, _), do: issues
+
+  defp region_errors(entity) do
+    case CaptainHomework.ImageCrops.validate(
+           Map.get(entity, "image_ids", []),
+           Map.get(entity, "image_regions", [])
+         ) do
+      :ok -> []
+      {:error, message} -> ["Recadrage #{entity["id"]} : #{message}"]
+    end
+  end
 
   defp normalize(value),
     do:

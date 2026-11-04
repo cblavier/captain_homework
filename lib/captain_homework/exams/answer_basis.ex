@@ -1,14 +1,9 @@
 defmodule CaptainHomework.Exams.AnswerBasis do
-  def targets(count, pages, types),
-    do: CaptainHomework.Exams.Constraints.targets(count, types, pages).basis
-
   def valid?(questions, pages, types), do: validation_errors(questions, pages, types) == []
 
-  def validation_errors(questions, pages, types, opts \\ []) do
+  def validation_errors(questions, pages, _types, _opts \\ []) do
     if Enum.any?(questions, &Map.has_key?(&1, "answer_basis")) do
       course_ids = pages |> Enum.filter(&(Map.get(&1, :kind) == "lesson")) |> MapSet.new(& &1.id)
-      counts = Enum.frequencies_by(questions, & &1["answer_basis"])
-      expected = targets(length(questions), pages, types)
 
       knowledge = Enum.filter(questions, &(&1["answer_basis"] == "knowledge"))
 
@@ -28,11 +23,6 @@ defmodule CaptainHomework.Exams.AnswerBasis do
         |> Enum.map(& &1["id"])
 
       []
-      |> issue(
-        Keyword.get(opts, :enforce_balance, true) and
-          not Enum.all?(expected, fn {kind, count} -> Map.get(counts, kind, 0) == count end),
-        "Répartition connaissances/documents incorrecte. Effectifs réels : #{Jason.encode!(counts)} ; attendus : #{Jason.encode!(expected)}."
-      )
       |> issue(
         no_course != [],
         "Questions de connaissances sans source de leçon : #{Enum.join(no_course, ", ")}."

@@ -35,7 +35,7 @@ defmodule CaptainHomework.FlashcardsTest do
     assert {:ok, generated} =
              Exams.generate(p.id, l.id, 2, "",
                format: "flashcard",
-               question_types: ["definition", "long", "cloze"]
+               question_types: question_type_ids(["definition", "long", "cloze"])
              )
 
     assert generated.status == "in_progress"
@@ -59,7 +59,7 @@ defmodule CaptainHomework.FlashcardsTest do
     assert {:error, _} =
              Exams.generate(p.id, l.id, 2, "",
                format: "flashcard",
-               question_types: ["long", "cloze"]
+               question_types: question_type_ids(["long", "cloze"])
              )
 
     assert {:error, _} = Exams.generate(p.id, l.id, 2, "", format: "unknown")
@@ -151,6 +151,12 @@ defmodule CaptainHomework.FlashcardsTest do
     assert {:error, _} = Study.save_answers(p.id, e.id, %{"q1" => "change"})
   end
 
+  test "answer comparison preserves meaningful mathematical signs" do
+    refute Flashcards.answer_repeated_in_text?(%{"text" => "-2", "answer" => "+2"})
+    refute Flashcards.answer_repeated_in_text?(%{"text" => "1,5", "answer" => "15"})
+    refute Flashcards.answer_repeated_in_text?(%{"text" => "", "answer" => ""})
+  end
+
   test "source and effort validation rejects cards outside the lesson" do
     pg = page(lesson(profile()))
 
@@ -163,6 +169,9 @@ defmodule CaptainHomework.FlashcardsTest do
       })
 
     assert {[%{"points" => 1}], []} = Flashcards.validate_candidates([q], [pg])
+
+    assert {[], [_]} =
+             Flashcards.validate_candidates([Map.put(q, "text", q["answer"])], [pg])
 
     assert {[], [_]} =
              Flashcards.validate_candidates([Map.put(q, "source_page_ids", ["external"])], [pg])

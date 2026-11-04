@@ -68,7 +68,7 @@ defmodule CaptainHomework.QuestionDuplicatesTest do
     assert {:ok, generated} =
              Exams.generate(p.id, l.id, 10, "",
                format: "flashcard",
-               question_types: ["definition"]
+               question_types: question_type_ids(["definition"])
              )
 
     assert generated.status == "in_progress"
@@ -99,7 +99,7 @@ defmodule CaptainHomework.QuestionDuplicatesTest do
     assert {:ok, generated} =
              Exams.generate(p.id, l.id, 2, "",
                format: "flashcard",
-               question_types: ["definition"]
+               question_types: question_type_ids(["definition"])
              )
 
     assert generated.status == "in_progress"
@@ -122,7 +122,7 @@ defmodule CaptainHomework.QuestionDuplicatesTest do
     assert {:ok, partial} =
              Exams.generate(p.id, l.id, 10, "",
                format: "flashcard",
-               question_types: ["definition"]
+               question_types: question_type_ids(["definition"])
              )
 
     assert partial.status == "generation_partial"

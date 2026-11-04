@@ -7,8 +7,7 @@ defmodule CaptainHomework.Study.Exam do
     field :format, :string, default: "classic"
     field :card_index, :integer, default: 0
 
-    field :question_types, CaptainHomework.Study.JSONList,
-      default: CaptainHomework.QuestionTypes.ids()
+    field :question_types, CaptainHomework.Study.JSONList, default: []
 
     field :instructions, :string
     field :generation_duration_ms, :integer

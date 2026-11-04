@@ -21,7 +21,7 @@ RUN mix release
 
 # Same base guarantees compatibility with the Erlang runtime in the release.
 FROM ${ELIXIR_IMAGE} AS runner
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates tzdata curl poppler-utils \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates tzdata curl poppler-utils imagemagick \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=builder --chown=nobody:nogroup /app/_build/prod/rel/captain_homework ./

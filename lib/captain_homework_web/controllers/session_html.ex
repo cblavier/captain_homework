@@ -11,7 +11,8 @@ defmodule CaptainHomeworkWeb.SessionHTML do
         <h1>Connexion</h1>
         <.form for={@form} action="/connexion" method="post">
           <label for="password">Mot de passe</label>
-          <input
+          <.input
+            wrapper={false}
             id="password"
             type="password"
             name="password"

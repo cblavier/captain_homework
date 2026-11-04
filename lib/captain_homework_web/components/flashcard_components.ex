@@ -1,6 +1,7 @@
 defmodule CaptainHomeworkWeb.FlashcardComponents do
   use Phoenix.Component
   import CaptainHomeworkWeb.CoreComponents
+  import CaptainHomeworkWeb.SymbolComponents
   alias CaptainHomework.Exams.Flashcards
 
   def flashcard_active?(%{format: "flashcard", status: status}),
@@ -8,6 +9,7 @@ defmodule CaptainHomeworkWeb.FlashcardComponents do
 
   def flashcard_active?(_), do: false
 
+  attr :profile, :map, default: nil
   attr :exam, :map, required: true
   attr :answers, :map, required: true
   attr :subject, :string, required: true
@@ -17,12 +19,15 @@ defmodule CaptainHomeworkWeb.FlashcardComponents do
   def flashcard(assigns) do
     question = Flashcards.current(assigns.exam)
     correction = assigns.exam.corrections[question["id"]]
+    {prompt, text} = question_content(question)
 
     remaining = length(assigns.exam.questions) - assigns.exam.card_index - 1
 
     assigns =
       assign(assigns,
         question: question,
+        prompt: keep_punctuation_with_word(prompt),
+        text: text,
         correction: correction,
         remaining: remaining,
         flipped: not is_nil(correction),
@@ -77,18 +82,37 @@ defmodule CaptainHomeworkWeb.FlashcardComponents do
             inert={@flipped}
           >
             <div class="flashcard-content">
-              <div class="flashcard-eyebrow">{@subject}</div>
-              <h2 id="flashcard-question">{@question["prompt"]}</h2>
-              <p :if={@question["text"] != ""} class="reading-text">{@question["text"]}</p>
+              <.flashcard_heading id="flashcard-question" subject={@subject} prompt={@prompt} />
+              <p
+                :if={@question["help"] not in [nil, ""]}
+                id={"question-help-#{@question["id"]}"}
+                class="preview-help"
+              >
+                {@question["help"]}
+              </p>
+              <.question_audio question={@question} exam={@exam} profile={@profile} />
+              <.question_text :if={@text != ""} text={@text} />
               <.diagram :if={@question["type"] == "diagram"} question={@question} />
               <.form
                 for={@form}
                 id="flashcard-answer"
+                autocomplete="off"
+                autocapitalize="off"
+                spellcheck="false"
                 phx-change="save_answers"
                 phx-submit="validate_card"
               >
                 <input type="hidden" name="question_id" value={@question["id"]} />
                 <fieldset disabled={@grading or @flipped}>
+                  <.ordering_input
+                    :if={@question["type"] == "ordering"}
+                    id={"ordering-#{@question["id"]}"}
+                    question_id={@question["id"]}
+                    name={"answers[#{@question["id"]}]"}
+                    options={@question["options"]}
+                    value={@answers[@question["id"]]}
+                    disabled={@grading or @flipped}
+                  />
                   <div :if={@question["type"] == "mcq"} class="options">
                     <label
                       :for={{option, index} <- Enum.with_index(@question["options"])}
@@ -104,31 +128,49 @@ defmodule CaptainHomeworkWeb.FlashcardComponents do
                       <span>{option}</span>
                     </label>
                   </div>
-                  <div :if={@question["type"] in ["cloze", "diagram"]} class="slot-inputs">
-                    <div :for={{slot, index} <- Enum.with_index(@question["slots"])}>
-                      <label for={"flashcard-slot-#{index}"}>{slot}</label>
-                      <input
-                        id={"flashcard-slot-#{index}"}
+                  <.symbol_answer
+                    :if={@question["type"] not in ["mcq", "ordering"]}
+                    id={"flashcard-symbols-#{@question["id"]}"}
+                    context={@prompt <> "\n" <> @text}
+                    disabled={@grading or @flipped}
+                  >
+                    <div :if={@question["type"] in ["cloze", "diagram"]} class="slot-inputs">
+                      <div :for={{slot, index} <- Enum.with_index(@question["slots"])}>
+                        <label for={"flashcard-slot-#{index}"}>{slot}</label>
+                        <.input
+                          wrapper={false}
+                          id={"flashcard-slot-#{index}"}
+                          autocorrect="off"
+                          autocapitalize="off"
+                          spellcheck="false"
+                          writingsuggestions="false"
+                          name={"answers[#{@question["id"]}][#{slot}]"}
+                          value={slot_value(@answers[@question["id"]], slot)}
+                          maxlength="2000"
+                          autocomplete="off"
+                          phx-debounce="300"
+                        />
+                      </div>
+                    </div>
+                    <div :if={@question["type"] not in ["mcq", "cloze", "diagram", "ordering"]}>
+                      <label class="sr-only" for="flashcard-response">Ta réponse</label>
+                      <.input
+                        wrapper={false}
+                        type="textarea"
+                        id="flashcard-response"
                         autocorrect="off"
-                        name={"answers[#{@question["id"]}][#{slot}]"}
-                        value={slot_value(@answers[@question["id"]], slot)}
-                        maxlength="2000"
                         autocomplete="off"
+                        autocapitalize="off"
+                        spellcheck="false"
+                        writingsuggestions="false"
+                        name={"answers[#{@question["id"]}]"}
+                        rows="3"
+                        maxlength="12000"
                         phx-debounce="300"
+                        value={@answers[@question["id"]] || ""}
                       />
                     </div>
-                  </div>
-                  <div :if={@question["type"] not in ["mcq", "cloze", "diagram"]}>
-                    <label for="flashcard-response">Ta réponse</label>
-                    <textarea
-                      id="flashcard-response"
-                      autocorrect="off"
-                      name={"answers[#{@question["id"]}]"}
-                      rows="3"
-                      maxlength="12000"
-                      phx-debounce="300"
-                    >{@answers[@question["id"]] || ""}</textarea>
-                  </div>
+                  </.symbol_answer>
                 </fieldset>
               </.form>
             </div>
@@ -177,10 +219,10 @@ defmodule CaptainHomeworkWeb.FlashcardComponents do
                 {if @correction["fraction"] == 1, do: "Correct", else: "Incorrect"}
               </h2>
               <div class="flashcard-feedback">
-                <p>{@correction["feedback"]}</p>
+                <p>{keep_punctuation_with_word(@correction["feedback"])}</p>
                 <div class="expected">
                   <strong>Réponse attendue</strong>
-                  <p class="expected-answer">{@correction["expected"]}</p>
+                  <p class="expected-answer">{keep_punctuation_with_word(@correction["expected"])}</p>
                 </div>
               </div>
             </div>
@@ -215,4 +257,31 @@ defmodule CaptainHomeworkWeb.FlashcardComponents do
 
   defp slot_value(answer, slot) when is_map(answer), do: answer[slot] || ""
   defp slot_value(_, _), do: ""
+
+  defp keep_punctuation_with_word(nil), do: ""
+
+  defp keep_punctuation_with_word(text) do
+    text = Regex.replace(~r/\s+([?!;:»])/u, text, "\u00A0\\1")
+    Regex.replace(~r/«\s+/u, text, "«\u00A0")
+  end
+
+  defp question_content(question) do
+    prompt = question["prompt"]
+    text = question["text"] || ""
+
+    heading =
+      prompt |> String.trim() |> String.downcase() |> String.trim_trailing(":") |> String.trim()
+
+    cond do
+      Flashcards.answer_repeated_in_text?(question) ->
+        {prompt, ""}
+
+      question["type"] == "definition" and heading in ["definition", "définition"] and
+          String.trim(text) != "" ->
+        {text, ""}
+
+      true ->
+        {prompt, text}
+    end
+  end
 end

@@ -1,6 +1,7 @@
 defmodule CaptainHomework.AI.ResourceImages do
   @moduledoc false
   alias CaptainHomework.Uploads
+  alias CaptainHomework.Exams.Illustrations
 
   @max_images 24
   @max_bytes 24 * 1024 * 1024
@@ -21,7 +22,7 @@ defmodule CaptainHomework.AI.ResourceImages do
   def transmission_groups(sources) do
     info =
       Map.new(Enum.uniq_by(sources, & &1.storage_key), fn page ->
-        data = File.read!(Uploads.path(page.storage_key))
+        data = Map.get(page, :data) || File.read!(Uploads.path(page.storage_key))
         {page.storage_key, Map.put(describe(data), :data, data)}
       end)
 
@@ -36,10 +37,14 @@ defmodule CaptainHomework.AI.ResourceImages do
     match?({:error, _}, select(sources, examples, :all))
   end
 
-  def select(sources, examples, selected_page_ids, info \\ nil) do
+  def select(sources, examples, selected_page_ids, info \\ nil, opts \\ []) do
     info = info || metadata(sources ++ examples)
 
     with {:ok, mandatory, optional} <- candidates(sources, selected_page_ids, info) do
+      # Whole pages retain captions, legends and context. Extracted figures are
+      # opt-in when selection is used for the planning context.
+      optional = if Keyword.get(opts, :include_figures, true), do: optional, else: []
+
       cond do
         not available?(mandatory ++ examples, info) ->
           {:error,
@@ -70,7 +75,9 @@ defmodule CaptainHomework.AI.ResourceImages do
   defp candidates(sources, :all, _info), do: {:ok, sources, []}
 
   defp candidates(sources, ids, info) when is_list(ids) do
-    pages_by_id = sources |> Enum.filter(&(&1.kind == "resource")) |> Map.new(&{&1.id, &1})
+    pages_by_id =
+      sources |> Enum.filter(&Illustrations.resource_content_page?/1) |> Map.new(&{&1.id, &1})
+
     ids = Enum.uniq(ids)
 
     page_hashes =
@@ -87,7 +94,8 @@ defmodule CaptainHomework.AI.ResourceImages do
         |> Enum.flat_map(fn page ->
           Enum.filter(
             sources,
-            &(&1.kind == "illustration" and associated?(&1, page, info, page_hashes))
+            &(&1.kind == "illustration" and not Illustrations.extracted?(&1) and
+                not Illustrations.extracted?(page) and associated?(&1, page, info, page_hashes))
           )
         end)
         |> Enum.uniq_by(& &1.id)

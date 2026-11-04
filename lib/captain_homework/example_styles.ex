@@ -3,7 +3,7 @@ defmodule CaptainHomework.ExampleStyles do
   alias CaptainHomework.{AI, Repo, Uploads, ProcessingProgress}
   alias CaptainHomework.Study.Page
 
-  @types ~w(definition mcq cloze reading long diagram)
+  @types ~w(definition mcq cloze reading long diagram ordering)
   @choices %{
     "instruction_style" => ~w(concise detailed mixed),
     "grouping" => ~w(by_type by_exercise mixed),

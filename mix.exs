@@ -45,6 +45,7 @@ defmodule CaptainHomework.MixProject do
       {:ecto_sql, "~> 3.13"},
       {:ecto_sqlite3, "~> 0.24.1"},
       {:req, "~> 0.7"},
+      {:mint_web_socket, "~> 1.0"},
       {:phoenix_html, "~> 4.1"},
       {:phoenix_live_reload, "~> 1.2", only: :dev},
       {:tidewave, "~> 0.9", only: :dev},

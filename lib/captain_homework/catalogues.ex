@@ -84,7 +84,10 @@ defmodule CaptainHomework.Catalogues do
     do:
       Repo.all(
         from p in Page,
-          where: p.resource_id == ^id and p.kind == "resource",
+          where:
+            p.resource_id == ^id and
+              (p.kind == "resource" or
+                 (p.kind == "illustration" and not is_nil(p.extracted_from_id))),
           order_by: [p.position, p.id]
       )
 
@@ -116,7 +119,10 @@ defmodule CaptainHomework.Catalogues do
 
     visual_ids =
       pages
-      |> Enum.filter(&(&1.kind == "resource" and String.starts_with?(&1.content_type, "image/")))
+      |> Enum.filter(
+        &(Illustrations.resource_content_page?(&1) and
+            String.starts_with?(&1.content_type, "image/"))
+      )
       |> MapSet.new(& &1.id)
 
     valid? =
@@ -238,8 +244,11 @@ defmodule CaptainHomework.Catalogues do
       Enum.find(visual, fn bundle ->
         ids = bundle |> Enum.flat_map(& &1["visual_page_ids"]) |> Enum.uniq()
 
-        byte_size(Jason.encode!(bundle)) <= 40_000 and length(ids) <= 8 and
-          match?({:ok, _, _}, ResourceImages.select(images, examples, ids, image_metadata))
+        byte_size(Jason.encode!(bundle)) <= resource_budget(count) and length(ids) <= 8 and
+          match?(
+            {:ok, _, _},
+            ResourceImages.select(images, examples, ids, image_metadata, include_figures: false)
+          )
       end)
 
     bundles =
@@ -259,11 +268,20 @@ defmodule CaptainHomework.Catalogues do
 
         exercises = Enum.count(selected ++ added, &(&1["kind"] == "exercise"))
 
-        if added != [] and exercises <= min(count * 2, 40) and bytes + size <= 40_000 and
-             length(next_ids) <= 8 and
+        course? =
+          Enum.any?(bundle, fn entry ->
+            Enum.any?(entry["source_page_ids"], &MapSet.member?(lesson_ids, &1))
+          end)
+
+        resource_size = if course?, do: 0, else: size
+
+        if added != [] and (course? or exercises <= count) and
+             bytes + resource_size <= resource_budget(count) and length(next_ids) <= 8 and
              Enum.all?(required_ids, &MapSet.member?(visual_ids, &1)) do
-          case ResourceImages.select(images, examples, next_ids, image_metadata) do
-            {:ok, _, _} -> {selected ++ added, next_ids, bytes + size}
+          case ResourceImages.select(images, examples, next_ids, image_metadata,
+                 include_figures: false
+               ) do
+            {:ok, _, _} -> {selected ++ added, next_ids, bytes + resource_size}
             _ -> acc
           end
         else
@@ -276,7 +294,9 @@ defmodule CaptainHomework.Catalogues do
        "Aucun exercice autonome disponible dans le catalogue. Vérifie les documents et leurs supports."}
     else
       with {:ok, images, examples} <-
-             ResourceImages.select(images, examples, page_ids, image_metadata) do
+             ResourceImages.select(images, examples, page_ids, image_metadata,
+               include_figures: false
+             ) do
         source_kinds =
           selected
           |> Enum.flat_map(& &1["source_page_ids"])
@@ -294,6 +314,10 @@ defmodule CaptainHomework.Catalogues do
       end
     end
   end
+
+  # A context budget, not a quota of questions or documents. Course entries are
+  # always retained; resource exercises keep all their dependent facts together.
+  defp resource_budget(count), do: max(8_000, min(count * 1_200, 24_000))
 
   defp interleave([], right), do: right
   defp interleave(left, []), do: left

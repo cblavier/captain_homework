@@ -14,6 +14,7 @@ defmodule CaptainHomeworkWeb.ExamImageController do
       asset =
         exam.questions
         |> Enum.flat_map(&Map.get(&1, "images", []))
+        |> Kernel.++(CaptainHomework.Exams.PhotoAnswers.assets(exam))
         |> Enum.find(&(&1["id"] == id))
 
       if asset && File.regular?(Uploads.path(asset["storage_key"])) do

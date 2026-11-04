@@ -50,12 +50,12 @@ export const FlashcardStack = {
     // The server event arrives after the DOM patch: the real next question is
     // already beneath the snapshot, with its flip transition suppressed.
     const outgoing = copy.animate([
-      {transform: "translateX(0) rotate(0deg)", opacity: 1},
-      {transform: "translateX(-115%) rotate(-8deg)", opacity: 0}
+      {transform: "translateX(0)", opacity: 1},
+      {transform: "translateX(-115%)", opacity: 0}
     ], {duration: 550, easing: "cubic-bezier(.4,0,.2,1)", fill: "forwards"})
     const incoming = this.session.querySelector("#flashcard-inner").animate([
-      {transform: "translateY(12px) scale(.97)"},
-      {transform: "translateY(0) scale(1)"}
+      {transform: "translate(8px, 6px)"},
+      {transform: "translate(0, 0)"}
     ], {duration: 550, easing: "cubic-bezier(.2,.7,.2,1)"})
     this.animations = [outgoing, incoming]
     return Promise.all(this.animations.map(animation => animation.finished))

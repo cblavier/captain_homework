@@ -15,13 +15,36 @@ defmodule CaptainHomework.LanguageTest do
     )
   end
 
-  test "exact Unicode excerpts and repeated occurrences preserve the original response" do
+  test "unique contextual Unicode excerpts preserve the original response" do
     text = "Élodie voit un chat. Les chat jouent."
-    [correction] = Language.validate(text, [error(%{"occurrence" => 2})])
+
+    [correction] =
+      Language.validate(text, [error(%{"original" => "Les chat", "replacement" => "Les chats"})])
+
     [row] = Language.rows(text, [correction])
     assert Enum.map_join(row.segments, & &1.text) == text
-    assert Enum.find(row.segments, & &1.error).error["replacement"] == "chats"
-    assert hd(row.segments).text == "Élodie voit un chat. Les "
+    assert Enum.find(row.segments, & &1.error).error["replacement"] == "Les chats"
+    assert hd(row.segments).text == "Élodie voit un chat. "
+  end
+
+  test "repeated words require context instead of trusting the model occurrence" do
+    text = "2 droites peuvent êtres prolongées sans besoin de les prolongées."
+    ambiguous = error(%{"original" => "prolongées", "replacement" => "prolonger"})
+
+    assert Language.validate(text, [ambiguous]) == []
+    assert Language.validate(text, [Map.put(ambiguous, "occurrence", 2)]) == []
+
+    contextual = %{
+      ambiguous
+      | "original" => "de les prolongées",
+        "replacement" => "de les prolonger"
+    }
+
+    [correction] = Language.validate(text, [contextual])
+    [row] = Language.rows(text, [correction])
+    assert hd(row.segments).text == "2 droites peuvent êtres prolongées sans besoin "
+    assert Enum.map_join(row.segments, & &1.text) == text
+    assert Enum.find(row.segments, & &1.error).error["replacement"] == "de les prolonger"
   end
 
   test "invalid and overlapping model annotations are discarded without altering text" do

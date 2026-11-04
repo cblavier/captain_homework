@@ -6,6 +6,8 @@ defmodule CaptainHomework.Study.Profile do
     field :name, :string
     field :disabled_subjects, {:array, :string}, default: []
     field :environment_key, :string
+    field :school_name, :string, virtual: true
+    field :class_name, :string, virtual: true
     field :avatar, :string, virtual: true
     field :theme, :string, virtual: true, default: "blue"
     timestamps(type: :utc_datetime_usec)

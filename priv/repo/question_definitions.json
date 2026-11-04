@@ -1,0 +1,646 @@
+[
+  {
+    "name": "Analyse de document",
+    "subjects": [
+      "histoire-geo",
+      "physique-chimie",
+      "svt",
+      "technologie"
+    ],
+    "modes": [
+      "classic"
+    ],
+    "response_kind": "long_text",
+    "instruction_kind": "dynamic",
+    "instruction": "Analyser un document fourni et justifier la réponse avec ses informations.",
+    "content_kind": "document",
+    "content_presence": "required",
+    "help_classic": null,
+    "help_flashcard": null,
+    "work_duration": "long",
+    "example": {
+      "prompt": "Que nous apprend ce document sur la vie au village ?"
+    }
+  },
+  {
+    "name": "Analyse d’expérience",
+    "subjects": [
+      "physique-chimie",
+      "svt"
+    ],
+    "modes": [
+      "classic"
+    ],
+    "response_kind": "long_text",
+    "instruction_kind": "dynamic",
+    "instruction": "Interpréter un protocole et des résultats fournis pour en tirer une conclusion.",
+    "content_kind": "document",
+    "content_presence": "required",
+    "help_classic": null,
+    "help_flashcard": null,
+    "work_duration": "long",
+    "example": {}
+  },
+  {
+    "name": "Analyse grammaticale",
+    "subjects": [
+      "francais",
+      "latin"
+    ],
+    "modes": [
+      "classic"
+    ],
+    "response_kind": "long_text",
+    "instruction_kind": "dynamic",
+    "instruction": "Identifier et expliquer les éléments grammaticaux d’une phrase fournie.",
+    "content_kind": "text",
+    "content_presence": "required",
+    "help_classic": null,
+    "help_flashcard": null,
+    "work_duration": "medium",
+    "example": {}
+  },
+  {
+    "name": "Association",
+    "subjects": [
+      "anglais",
+      "espagnol",
+      "technologie"
+    ],
+    "modes": [
+      "classic"
+    ],
+    "response_kind": "cloze",
+    "instruction_kind": "dynamic",
+    "instruction": "Associer les éléments de deux listes explicitement fournies.",
+    "content_kind": "text",
+    "content_presence": "required",
+    "help_classic": null,
+    "help_flashcard": null,
+    "work_duration": "medium",
+    "example": {}
+  },
+  {
+    "name": "Calcul direct",
+    "subjects": [
+      "mathematiques"
+    ],
+    "modes": [
+      "classic",
+      "flashcard"
+    ],
+    "response_kind": "short_text",
+    "instruction_kind": "dynamic",
+    "instruction": "Effectuer un calcul simple et donner son résultat.",
+    "content_kind": "text",
+    "content_presence": "required",
+    "help_classic": null,
+    "help_flashcard": null,
+    "work_duration": "quick",
+    "example": {}
+  },
+  {
+    "name": "Calcul détaillé",
+    "subjects": [
+      "mathematiques"
+    ],
+    "modes": [
+      "classic"
+    ],
+    "response_kind": "long_text",
+    "instruction_kind": "dynamic",
+    "instruction": "Effectuer un calcul en présentant les étapes utiles.",
+    "content_kind": "text",
+    "content_presence": "required",
+    "help_classic": null,
+    "help_flashcard": null,
+    "work_duration": "medium",
+    "example": {}
+  },
+  {
+    "name": "Carte à compléter",
+    "subjects": [
+      "histoire-geo"
+    ],
+    "modes": [
+      "classic"
+    ],
+    "response_kind": "legends",
+    "instruction_kind": "fixed",
+    "instruction": "Complète les repères de la carte.",
+    "content_kind": "image",
+    "content_presence": "required",
+    "help_classic": null,
+    "help_flashcard": null,
+    "work_duration": "medium",
+    "example": {}
+  },
+  {
+    "name": "Classement",
+    "subjects": [
+      "svt"
+    ],
+    "modes": [
+      "classic"
+    ],
+    "response_kind": "long_text",
+    "instruction_kind": "dynamic",
+    "instruction": "Classer les éléments fournis selon les critères demandés.",
+    "content_kind": "text",
+    "content_presence": "required",
+    "help_classic": null,
+    "help_flashcard": null,
+    "work_duration": "medium",
+    "example": {}
+  },
+  {
+    "name": "Classement chronologique",
+    "subjects": [
+      "histoire-geo"
+    ],
+    "modes": [
+      "classic",
+      "flashcard"
+    ],
+    "response_kind": "ordering",
+    "instruction_kind": "fixed",
+    "instruction": "Classe ces événements du plus ancien au plus récent.",
+    "content_kind": "text",
+    "content_presence": "required",
+    "help_classic": null,
+    "help_flashcard": null,
+    "work_duration": "medium",
+    "example": {
+      "text": "1. Naissance de l’écriture\n2. Maîtrise du feu\n3. Début de l’agriculture"
+    }
+  },
+  {
+    "name": "Compréhension de texte",
+    "subjects": [
+      "anglais",
+      "espagnol",
+      "francais",
+      "latin"
+    ],
+    "modes": [
+      "classic"
+    ],
+    "response_kind": "long_text",
+    "instruction_kind": "dynamic",
+    "instruction": "Lire un texte fourni et répondre aux questions qui portent sur son contenu.",
+    "content_kind": "document",
+    "content_presence": "required",
+    "help_classic": null,
+    "help_flashcard": null,
+    "work_duration": "long",
+    "example": {}
+  },
+  {
+    "name": "Compréhension orale",
+    "subjects": [
+      "anglais",
+      "espagnol"
+    ],
+    "modes": [
+      "classic",
+      "flashcard"
+    ],
+    "response_kind": "short_text",
+    "instruction_kind": "dynamic",
+    "instruction": null,
+    "content_kind": "audio",
+    "content_presence": "required",
+    "help_classic": "Réponds en {langue} en une phrase.",
+    "help_flashcard": "Réponds en {langue} en une phrase.",
+    "work_duration": "medium",
+    "example": {
+      "audio": "english",
+      "prompt": "Listen to the recording. Where does Emma go every Saturday?"
+    }
+  },
+  {
+    "name": "Conjugaison",
+    "subjects": [
+      "anglais",
+      "espagnol",
+      "francais",
+      "latin"
+    ],
+    "modes": [
+      "classic"
+    ],
+    "response_kind": "cloze",
+    "instruction_kind": "dynamic",
+    "instruction": "Compléter des formes verbales selon la personne et le temps demandés.",
+    "content_kind": "text",
+    "content_presence": "required",
+    "help_classic": null,
+    "help_flashcard": null,
+    "work_duration": "medium",
+    "example": {}
+  },
+  {
+    "name": "Dessin de géométrie",
+    "subjects": [
+      "mathematiques"
+    ],
+    "modes": [
+      "classic"
+    ],
+    "response_kind": "photo",
+    "instruction_kind": "dynamic",
+    "instruction": null,
+    "content_kind": "text",
+    "content_presence": "none",
+    "help_classic": "Trace la figure sur papier puis prends-la en photo.",
+    "help_flashcard": null,
+    "work_duration": "long",
+    "example": {
+      "prompt": "Trace un triangle ABC rectangle en B, avec AB = 4 cm et BC = 3 cm."
+    }
+  },
+  {
+    "name": "Définition",
+    "subjects": [
+      "francais",
+      "histoire-geo",
+      "latin",
+      "physique-chimie",
+      "svt",
+      "technologie"
+    ],
+    "modes": [
+      "classic",
+      "flashcard"
+    ],
+    "response_kind": "short_text",
+    "instruction_kind": "fixed",
+    "instruction": "Définis la notion suivante.",
+    "content_kind": "text",
+    "content_presence": "required",
+    "help_classic": null,
+    "help_flashcard": null,
+    "work_duration": "quick",
+    "example": {
+      "text": "La Préhistoire"
+    }
+  },
+  {
+    "name": "Démonstration",
+    "subjects": [
+      "mathematiques"
+    ],
+    "modes": [
+      "classic"
+    ],
+    "response_kind": "long_text",
+    "instruction_kind": "dynamic",
+    "instruction": "Justifier une propriété en construisant un raisonnement à partir des données et du cours.",
+    "content_kind": "text",
+    "content_presence": "required",
+    "help_classic": null,
+    "help_flashcard": null,
+    "work_duration": "long",
+    "example": {}
+  },
+  {
+    "name": "Exercice d’application",
+    "subjects": [
+      "mathematiques",
+      "physique-chimie",
+      "technologie"
+    ],
+    "modes": [
+      "classic"
+    ],
+    "response_kind": "long_text",
+    "instruction_kind": "dynamic",
+    "instruction": "Appliquer une méthode du cours à une situation donnée.",
+    "content_kind": "text",
+    "content_presence": "required",
+    "help_classic": null,
+    "help_flashcard": null,
+    "work_duration": "medium",
+    "example": {}
+  },
+  {
+    "name": "Expression écrite",
+    "subjects": [
+      "anglais",
+      "espagnol"
+    ],
+    "modes": [
+      "classic"
+    ],
+    "response_kind": "long_text",
+    "instruction_kind": "dynamic",
+    "instruction": "Rédiger un court texte en {langue} à partir d’une consigne.",
+    "content_kind": "text",
+    "content_presence": "required",
+    "help_classic": null,
+    "help_flashcard": null,
+    "work_duration": "long",
+    "example": {}
+  },
+  {
+    "name": "Lecture de graphique ou tableau",
+    "subjects": [
+      "mathematiques",
+      "physique-chimie"
+    ],
+    "modes": [
+      "classic"
+    ],
+    "response_kind": "long_text",
+    "instruction_kind": "dynamic",
+    "instruction": "Lire et interpréter les informations d’un graphique ou tableau fourni.",
+    "content_kind": "document",
+    "content_presence": "required",
+    "help_classic": null,
+    "help_flashcard": null,
+    "work_duration": "medium",
+    "example": {}
+  },
+  {
+    "name": "Problème",
+    "subjects": [
+      "mathematiques",
+      "physique-chimie",
+      "technologie"
+    ],
+    "modes": [
+      "classic"
+    ],
+    "response_kind": "long_text",
+    "instruction_kind": "dynamic",
+    "instruction": "Résoudre une situation en plusieurs étapes en présentant le raisonnement.",
+    "content_kind": "text",
+    "content_presence": "required",
+    "help_classic": null,
+    "help_flashcard": null,
+    "work_duration": "long",
+    "example": {}
+  },
+  {
+    "name": "Programmation",
+    "subjects": [
+      "technologie"
+    ],
+    "modes": [
+      "classic"
+    ],
+    "response_kind": "long_text",
+    "instruction_kind": "dynamic",
+    "instruction": "Compléter, écrire ou corriger un court programme à partir des consignes fournies.",
+    "content_kind": "text",
+    "content_presence": "required",
+    "help_classic": null,
+    "help_flashcard": null,
+    "work_duration": "long",
+    "example": {}
+  },
+  {
+    "name": "Prononciation",
+    "subjects": [
+      "anglais",
+      "espagnol"
+    ],
+    "modes": [
+      "classic",
+      "flashcard"
+    ],
+    "response_kind": "recording",
+    "instruction_kind": "fixed",
+    "instruction": "Lis à voix haute le texte suivant.",
+    "content_kind": "text",
+    "content_presence": "required",
+    "help_classic": "Appuie sur le micro puis prononce la phrase.",
+    "help_flashcard": "Appuie sur le micro puis prononce la phrase.",
+    "work_duration": "quick",
+    "example": {
+      "text": "The weather is lovely today."
+    }
+  },
+  {
+    "name": "QCM",
+    "subjects": [
+      "anglais",
+      "espagnol",
+      "francais",
+      "histoire-geo",
+      "latin",
+      "mathematiques",
+      "physique-chimie",
+      "svt",
+      "technologie"
+    ],
+    "modes": [
+      "classic",
+      "flashcard"
+    ],
+    "response_kind": "single_choice",
+    "instruction_kind": "dynamic",
+    "instruction": "Choisir une réponse parmi plusieurs propositions.",
+    "content_kind": "text",
+    "content_presence": "optional",
+    "help_classic": null,
+    "help_flashcard": null,
+    "work_duration": "quick",
+    "example": {
+      "prompt": "Quelles grottes françaises sont célèbres pour l’art pariétal ?"
+    }
+  },
+  {
+    "name": "Rédaction",
+    "subjects": [
+      "francais",
+      "histoire-geo"
+    ],
+    "modes": [
+      "classic"
+    ],
+    "response_kind": "long_text",
+    "instruction_kind": "dynamic",
+    "instruction": "Rédiger une réponse organisée répondant à la consigne.",
+    "content_kind": "text",
+    "content_presence": "none",
+    "help_classic": null,
+    "help_flashcard": null,
+    "work_duration": "long",
+    "example": {
+      "prompt": "Présente les principales étapes de la Préhistoire."
+    }
+  },
+  {
+    "name": "Réponse courte expliquée",
+    "subjects": [
+      "histoire-geo",
+      "svt"
+    ],
+    "modes": [
+      "classic"
+    ],
+    "response_kind": "long_text",
+    "instruction_kind": "dynamic",
+    "instruction": "Répondre en une ou deux phrases avec une explication brève.",
+    "content_kind": "text",
+    "content_presence": "none",
+    "help_classic": null,
+    "help_flashcard": null,
+    "work_duration": "medium",
+    "example": {
+      "prompt": "Pourquoi les premiers humains migrent-ils hors d’Afrique ?"
+    }
+  },
+  {
+    "name": "Réécriture",
+    "subjects": [
+      "francais"
+    ],
+    "modes": [
+      "classic"
+    ],
+    "response_kind": "long_text",
+    "instruction_kind": "dynamic",
+    "instruction": "Réécrire un passage en respectant les transformations demandées.",
+    "content_kind": "text",
+    "content_presence": "required",
+    "help_classic": null,
+    "help_flashcard": null,
+    "work_duration": "medium",
+    "example": {}
+  },
+  {
+    "name": "Schéma à compléter",
+    "subjects": [
+      "physique-chimie",
+      "svt",
+      "technologie"
+    ],
+    "modes": [
+      "classic"
+    ],
+    "response_kind": "legends",
+    "instruction_kind": "dynamic",
+    "instruction": "Nommer les éléments numérotés d’un véritable schéma fourni.",
+    "content_kind": "image",
+    "content_presence": "required",
+    "help_classic": null,
+    "help_flashcard": null,
+    "work_duration": "medium",
+    "example": {}
+  },
+  {
+    "name": "Texte à trous",
+    "subjects": [
+      "anglais",
+      "espagnol",
+      "latin"
+    ],
+    "modes": [
+      "classic"
+    ],
+    "response_kind": "cloze",
+    "instruction_kind": "dynamic",
+    "instruction": "Compléter les mots ou valeurs manquants.",
+    "content_kind": "text",
+    "content_presence": "required",
+    "help_classic": null,
+    "help_flashcard": null,
+    "work_duration": "medium",
+    "example": {}
+  },
+  {
+    "name": "Traduction",
+    "subjects": [
+      "anglais",
+      "espagnol",
+      "latin"
+    ],
+    "modes": [
+      "classic"
+    ],
+    "response_kind": "long_text",
+    "instruction_kind": "dynamic",
+    "instruction": "Traduire le passage fourni dans la langue demandée.",
+    "content_kind": "text",
+    "content_presence": "required",
+    "help_classic": null,
+    "help_flashcard": null,
+    "work_duration": "medium",
+    "example": {}
+  },
+  {
+    "name": "Traduction vers le français",
+    "subjects": [
+      "anglais",
+      "espagnol",
+      "latin"
+    ],
+    "modes": [
+      "classic",
+      "flashcard"
+    ],
+    "response_kind": "short_text",
+    "instruction_kind": "fixed",
+    "instruction": "Traduis vers le français.",
+    "content_kind": "text",
+    "content_presence": "required",
+    "help_classic": null,
+    "help_flashcard": "Saisis ta traduction.",
+    "work_duration": "quick",
+    "example": {
+      "text": "Skeleton"
+    }
+  },
+  {
+    "name": "Traduction vers l’anglais",
+    "subjects": [
+      "anglais"
+    ],
+    "modes": [
+      "classic",
+      "flashcard"
+    ],
+    "response_kind": "short_text",
+    "instruction_kind": "fixed",
+    "instruction": "Traduis vers l’anglais.",
+    "content_kind": "text",
+    "content_presence": "required",
+    "help_classic": null,
+    "help_flashcard": "Saisis ta traduction.",
+    "work_duration": "quick",
+    "example": {
+      "text": "Squelette"
+    }
+  },
+  {
+    "name": "Réponse courte",
+    "subjects": [
+      "anglais",
+      "espagnol",
+      "francais",
+      "histoire-geo",
+      "latin",
+      "mathematiques",
+      "physique-chimie",
+      "svt",
+      "technologie"
+    ],
+    "modes": [
+      "classic",
+      "flashcard"
+    ],
+    "response_kind": "short_text",
+    "instruction_kind": "dynamic",
+    "instruction": null,
+    "content_kind": "text",
+    "content_presence": "optional",
+    "help_classic": null,
+    "help_flashcard": null,
+    "work_duration": "quick",
+    "example": {
+      "prompt": "À quelle date les humains maîtrisent-ils le feu ?"
+    }
+  }
+]

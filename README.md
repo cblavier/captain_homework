@@ -10,6 +10,13 @@ Les ressources complémentaires peuvent être des PDF, des images ou des liens v
 
 Les réponses sont sauvegardées pendant le contrôle. La correction fournit une note sur 20 et un retour par question. Les exercices précédemment mal réussis peuvent être repris lors des prochaines révisions.
 
+La compréhension orale est disponible en contrôle classique et en flashcards : un court monologue
+est créé dans la langue étudiée, puis lu par une voix de synthèse naturelle. La voix est choisie
+selon le locuteur du texte (féminine, masculine ou neutre quand le genre n’est pas indiqué).
+L’élève peut réécouter l’extrait et répond par écrit ; la transcription reste côté serveur pour la
+correction. Les fichiers sont conservés avec le contrôle, copiés lorsqu’on le refait et supprimés
+avec lui. Un échec de synthèse laisse les questions prêtes disponibles et la génération reprenable.
+
 ## Motivations
 
 - Aider les enfants à réviser à partir de leurs propres cours.
@@ -24,20 +31,21 @@ L’interface reprend les conventions de [Captain Notes](https://github.com/cbla
 - Elixir, Phoenix LiveView et SQLite.
 - OpenAI pour la reconnaissance des documents, la génération des contrôles et leur correction.
 - Poppler : une suite d’outils pour extraire le texte et les images des PDF.
+- ImageMagick pour la compatibilité des illustrations recadrées des anciens contrôles.
 - Code massivement généré par intelligence artificielle avec OpenAI Codex.
 - Prévu pour tourner avec Docker en production.
 
 ## Lancer le projet en local
 
-Prérequis : Elixir et Erlang/OTP (versions locales dans [.tool-versions](.tool-versions)), ainsi que Poppler. L’image Docker utilise Elixir 1.19.4 et OTP 28.
+Prérequis : Elixir et Erlang/OTP (versions locales dans [.tool-versions](.tool-versions)), ainsi que Poppler et ImageMagick. L’image Docker utilise Elixir 1.19.4 et OTP 28.
 
-Sur macOS, installer Poppler :
+Sur macOS, installer les outils de traitement des documents :
 
 ```sh
-brew install poppler
+brew install poppler imagemagick
 ```
 
-Sur Debian ou Ubuntu, le paquet correspondant est `poppler-utils`.
+Sur Debian ou Ubuntu, les paquets correspondants sont `poppler-utils` et `imagemagick`.
 
 ```sh
 git clone https://github.com/cblavier/captain_homework.git
@@ -49,8 +57,11 @@ Compléter le fichier `.env` :
 
 - `OPENAI_API_KEY` : clé API OpenAI.
 - `OPENAI_MODEL` : modèle utilisé pour l’OCR, les ressources, la génération et la correction des contrôles classiques, `gpt-5.4` par défaut.
+- `OPENAI_ILLUSTRATION_MODEL` : modèle dédié à l’extraction des illustrations, `gpt-6-astra` par défaut, avec un raisonnement `medium` et le détail d’image `original`. Le modèle choisi doit accepter ces réglages et les sorties JSON structurées.
 - `OPENAI_FLASHCARD_MODEL` : modèle dédié à la correction après chaque flashcard, `gpt-5.4-mini` par défaut, avec le raisonnement désactivé (`none`) pour réduire l’attente. Le modèle choisi doit accepter ce réglage et les sorties JSON structurées.
+- `OPENAI_SPEECH_MODEL` : modèle Realtime de synthèse vocale, `gpt-realtime-2.1-mini` par défaut.
 - `HOMEWORK_CHILD_n_FIRST_NAME` : prénom de chaque enfant.
+- `HOMEWORK_CHILD_n_SCHOOL_NAME` et `HOMEWORK_CHILD_n_CLASS_NAME` : établissement et classe facultatifs, affichés dans l’en-tête sans connexion à Pronote. Par exemple : `Collège Jean Monnet` et `4A`.
 - `HOMEWORK_CHILD_n_AVATAR_BASE64` : avatar facultatif en PNG, JPEG ou WebP encodé en base64.
 - `PRONOTE_CHILD_n_THEME` : thème `blue` ou `green`, avec le même numéro que l’enfant. Le nom de variable est partagé avec Captain Notes.
 - `HOMEWORK_PASSWORD` : mot de passe familial facultatif.
@@ -93,19 +104,27 @@ L’onglet **Ressources** accepte les PDF, JPEG, PNG et WebP, les URL publiques 
 
 Le texte reconnu peut être corrigé ; un import interrompu peut reprendre sans refaire les pages déjà traitées. Les imports incomplets doivent être terminés ou retirés avant génération. Un catalogue pédagogique est réutilisé tant que le contenu et les paramètres d’analyse restent inchangés.
 
+Les nouveaux contrôles utilisent les ressources telles qu’elles sont chargées : aucun recadrage automatique ni appel de réparation du cadrage n’est effectué. Le cadrage des ressources est préparé manuellement en amont. La vérification pédagogique examine les images entières et conserve les protections contre les paraphrases et les réponses dévoilées. Les descriptions d’analyse restent internes ; les textes sources utiles à la compréhension restent autorisés. Les contrôles déjà enregistrés conservent leurs illustrations ; leur génération n’est pas relancée automatiquement.
+
 Les illustrations retenues restent accessibles dans le contrôle après suppression de la ressource. Les vidéos et liens cités ne sont pas consultés automatiquement.
 
 Les documents et réponses nécessaires sont transmis à OpenAI ; la base et les fichiers restent stockés dans l’application.
 
 ### Génération et correction des contrôles
 
-La création permet de choisir les types de questions et d’ajouter des consignes personnalisées prioritaires. Par défaut, les contrôles classiques visent 40 % de réponses directes, 40 % courtes et 20 % développées, avec un équilibre entre connaissances et documents lorsque les sources le permettent. Les contrôles d’exemple guident uniquement la forme ; les cours et ressources fournissent le contenu pédagogique.
+La création permet de choisir les types de questions et d’ajouter des consignes personnalisées prioritaires. La répartition des questions dépend des types sélectionnés, de leur durée de travail et du contenu disponible, sans quota fixe de rédactions ni de questions documentaires. Les contrôles d’exemple guident uniquement la forme ; les cours et ressources fournissent le contenu pédagogique.
 
 Le mode **Flashcard** utilise toutes les pages de cours, sans exemples ni ressources externes, avec uniquement des questions rapides. Chaque carte vaut un point, avec des points partiels par quarts, et révèle sa correction après validation. Le résultat final est ramené sur 20.
 
-La génération sauvegarde une première version, puis un audit indépendant vérifie les questions, leurs sources et leurs supports. Seules les questions rejetées sont réécrites. Un contrôle incomplet reste **À compléter** : la reprise conserve le travail prêt et les instructions. La génération continue après fermeture de la page ; une tâche interrompue peut être reprise et une tâche bloquée expire après dix minutes.
+La génération sauvegarde une première version, puis un audit indépendant vérifie les questions, leurs sources et leurs supports. Une différence de classification de l’effort, à elle seule, met à jour les métadonnées de la question et du plan ; les défauts pédagogiques restent soumis à réparation. Les réparations conservent les questions validées et transmettent leurs énoncés visibles, les sources utiles aux questions rejetées et les images nécessaires. Seules les questions rejetées sont réécrites. Un contrôle incomplet reste **À compléter** : la reprise conserve le travail prêt et les instructions. La génération continue après fermeture de la page ; une tâche interrompue peut être reprise et une tâche bloquée expire après dix minutes.
 
-La table `ai_calls` conserve les durées, statuts et consommations de tokens, sans prompts ni réponses. Les contrôles non rendus peuvent être supprimés ; supprimer une leçon retire aussi ses documents et contrôles après confirmation. L’OCR et la correction restent des propositions de l’IA, à vérifier.
+Pendant la génération, l’écran affiche l’étape de l’appel en cours, le temps écoulé et le nombre de questions à ajuster.
+
+Un document partagé est conservé séparément du texte propre à chaque question. Il apparaît une seule fois avant les questions associées, sans remplacer leurs consignes ni leur contenu dynamique, y compris lors des réparations et des reprises de questions.
+
+Le contexte conserve les connaissances de toutes les pages de cours. Les exercices des ressources sont sélectionnés avec leurs faits et supports associés dans un budget de contexte adapté au nombre de questions. Les pages visuelles sélectionnées sont transmises en entier pour préserver les légendes ; leurs figures extraites ne sont pas ajoutées automatiquement en doublon.
+
+La table `ai_calls` conserve les durées, statuts et consommations de tokens, sans prompts ni réponses. Les contrôles non rendus ou terminés peuvent être supprimés après confirmation, avec leurs résultats et fichiers associés. Une leçon ne peut être supprimée que lorsqu’elle est vide. L’OCR et la correction restent des propositions de l’IA, à vérifier.
 
 ## Construire et lancer en production avec Docker
 
@@ -175,3 +194,14 @@ Captain Homework est distribué sous [licence MIT](LICENSE). Elle autorise l’u
 Les paramètres de chaque matière permettent de gérer une liste de types de questions propre à chaque enfant. Les six types initiaux peuvent être supprimés et de nouveaux types ajoutés avec un nom, une consigne et un format de réponse. Cette liste alimente les cases à cocher à la création d’un contrôle ; les consignes sélectionnées sont conservées avec celui-ci. Supprimer un type ne modifie pas les contrôles existants.
 
 Dans les paramètres, le thème Jour / Nuit / Système est conservé sur l’appareil. Le mode Système suit automatiquement l’apparence du système ; le mode sombre conserve la couleur de chaque enfant, sans modifier les images des documents.
+
+### Synthèse vocale
+
+`CaptainHomework.AI.Speech` utilise l’API Realtime par WebSocket, côté serveur, avec
+`gpt-realtime-2.1-mini`. La connexion est limitée à deux minutes et toujours fermée, sans
+nouvelle tentative payante automatique. Le flux PCM mono à 24 kHz est enregistré en WAV,
+sans convertisseur externe. Un extrait n’est accepté qu’après une réponse complète et une
+vérification de sa transcription ; les extraits tronqués ou reformulés sont rejetés.
+Les anciens MP3 restent lisibles et copiables. Les clés API restent côté serveur.
+
+Référence : [conversations Realtime OpenAI](https://developers.openai.com/api/docs/guides/realtime-conversations).

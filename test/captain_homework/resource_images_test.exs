@@ -68,6 +68,30 @@ defmodule CaptainHomework.ResourceImagesTest do
     assert {:error, _} = ResourceImages.select(sources, [], ["unknown"])
   end
 
+  test "planning keeps full pages with legends without adding their extracted crops", %{dir: dir} do
+    page = image(dir, "page", "resource", "page-01.png")
+    crop = image(dir, "crop", "illustration", "page-001-figure-01.png")
+
+    assert {:ok, [^page], []} =
+             ResourceImages.select([page, crop], [], [page.id], nil, include_figures: false)
+
+    assert [%{image: ^page, data: data}] = ResourceImages.transmission_groups([page])
+    assert data == File.read!(Path.join(dir, page.storage_key))
+  end
+
+  test "independent crops can be selected after their original is deleted", %{dir: dir} do
+    page = image(dir, "page", "resource", "page-01.png")
+
+    crop =
+      image(dir, "crop", "illustration", "page-01-extrait-1.png")
+      |> Map.put(:extracted_from_id, Ecto.UUID.generate())
+
+    assert {:ok, [^page], []} = ResourceImages.select([page, crop], [], [page.id])
+
+    assert {:ok, [^crop], []} =
+             ResourceImages.select([crop], [], [crop.id], nil, include_figures: false)
+  end
+
   test "HTML images with colliding basenames associate only with their matching content", %{
     dir: dir
   } do

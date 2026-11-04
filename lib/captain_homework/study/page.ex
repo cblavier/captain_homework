@@ -12,6 +12,7 @@ defmodule CaptainHomework.Study.Page do
     field :catalogue, :map
     field :catalogue_hash, :string
     field :kind, :string, default: "lesson"
+    field :extracted_from_id, :binary_id
     field :position, :integer, default: 0
     field :filename, :string
     field :storage_key, :string

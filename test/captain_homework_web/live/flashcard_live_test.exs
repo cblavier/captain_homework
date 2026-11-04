@@ -60,6 +60,70 @@ defmodule CaptainHomeworkWeb.FlashcardLiveTest do
     refute has_element?(view, ".flashcard-stack-card")
   end
 
+  test "answers repeated in text are only displayed in the correction", %{conn: conn} do
+    l = lesson(profile())
+
+    for {type, prompt, answer, text, options} <- [
+          {"definition", "Définis la Préhistoire.", "Avant l’écriture.", "  Avant l'écriture ! ",
+           []},
+          {"mcq", "Quelles grottes sont célèbres pour l’art pariétal ?", "Lascaux et Chauvet",
+           "LASCAUX  ET CHAUVET.", ["Lascaux et Chauvet", "Versailles et Chambord"]}
+        ] do
+      q =
+        question("q1", type)
+        |> Map.merge(%{
+          "prompt" => prompt,
+          "answer" => answer,
+          "text" => text,
+          "options" => options
+        })
+
+      e = exam(l, [q]) |> Ecto.Changeset.change(format: "flashcard") |> Repo.update!()
+      {:ok, view, _} = live(conn, "/alice/controles/#{e.id}")
+      assert has_element?(view, "#flashcard-question", String.replace(prompt, " ?", "\u00A0?"))
+      refute has_element?(view, ".flashcard-front .reading-text")
+      refute has_element?(view, "#flashcard-correction")
+
+      if type == "mcq", do: assert(has_element?(view, "#flashcard-option-0[value='#{answer}']"))
+
+      {:ok, _} = Exams.Flashcards.submit(l.profile_id, e.id, "q1", answer, sync: true)
+      send(view.pid, :refresh_exam)
+      assert has_element?(view, "#flashcard-correction .expected-answer", answer)
+    end
+  end
+
+  test "a generic definition heading is replaced by the actual question", %{conn: conn} do
+    l = lesson(profile())
+
+    for heading <- ["definition", "Définition :"] do
+      q =
+        question("q1", "definition")
+        |> Map.merge(%{
+          "prompt" => heading,
+          "text" => "Pourquoi les premiers humains migrent-ils ?"
+        })
+
+      e = exam(l, [q]) |> Ecto.Changeset.change(format: "flashcard") |> Repo.update!()
+      {:ok, view, _} = live(conn, "/alice/controles/#{e.id}")
+      assert has_element?(view, "#flashcard-question", String.replace(q["text"], " ?", "\u00A0?"))
+      refute has_element?(view, ".flashcard-front .reading-text")
+    end
+  end
+
+  test "a meaningful prompt keeps its supporting text regardless of wording", %{conn: conn} do
+    l = lesson(profile())
+
+    for text <- ["Un extrait du cours utile.", "Écris le mot français", "Écris le mot anglais."] do
+      q = question("q1", "definition") |> Map.put("text", text)
+
+      e = exam(l, [q]) |> Ecto.Changeset.change(format: "flashcard") |> Repo.update!()
+
+      {:ok, view, _} = live(conn, "/alice/controles/#{e.id}")
+      assert has_element?(view, "#flashcard-question", q["prompt"])
+      assert has_element?(view, ".flashcard-front .reading-text", text)
+    end
+  end
+
   test "format defaults to classic and flashcard disables intermediate and long types", %{
     conn: conn
   } do
@@ -70,10 +134,10 @@ defmodule CaptainHomeworkWeb.FlashcardLiveTest do
     assert has_element?(view, "#exam-format-flashcard[checked]")
     assert has_element?(view, "#flashcard-help")
 
-    for type <- CaptainHomework.SubjectQuestionTypes.list(l.profile_id, l.subject) do
-      selector = "#question-type-#{type["id"]}"
+    for type <- CaptainHomework.QuestionDefinitions.available(l.subject) do
+      selector = "#question-type-#{type.id}"
 
-      if type["work_duration"] == "quick" do
+      if "flashcard" in type.modes do
         assert has_element?(view, selector <> "[checked]:not([disabled])")
       else
         assert has_element?(view, selector <> "[disabled]:not([checked])")
@@ -90,6 +154,12 @@ defmodule CaptainHomeworkWeb.FlashcardLiveTest do
     Phoenix.PubSub.subscribe(CaptainHomework.PubSub, "exam:#{e.id}")
     {:ok, view, _} = live(conn, "/alice/controles/#{e.id}")
     assert has_element?(view, "#flashcard-q1")
+
+    assert has_element?(
+             view,
+             "#flashcard-response[autocomplete=off][autocorrect=off][autocapitalize=off][spellcheck=false][writingsuggestions=false]"
+           )
+
     assert has_element?(view, ".page-shell-immersive #flashcard-player")
     assert has_element?(view, "#close-flashcards[href='/alice/lecons/#{e.lesson_id}']")
 
@@ -191,6 +261,11 @@ defmodule CaptainHomeworkWeb.FlashcardLiveTest do
     Exams.Flashcards.advance(l.profile_id, e.id, "qcm")
     send(view.pid, :refresh_exam)
     assert has_element?(view, "#flashcard-slot-0[name='answers[holes][1]']")
+
+    assert has_element?(
+             view,
+             "#flashcard-slot-0[autocomplete=off][autocorrect=off][autocapitalize=off][spellcheck=false][writingsuggestions=false]"
+           )
   end
 
   defp await_correction(exam, id) do

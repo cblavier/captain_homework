@@ -15,7 +15,9 @@ defmodule CaptainHomework.Exams.Sources do
         from p in Page,
           join: l in assoc(p, :lesson),
           where:
-            p.id in ^ids and l.profile_id == ^profile_id and p.kind in ["lesson", "resource"],
+            p.id in ^ids and l.profile_id == ^profile_id and
+              (p.kind in ["lesson", "resource"] or
+                 (p.kind == "illustration" and not is_nil(p.extracted_from_id))),
           preload: [:lesson, :resource]
       )
       |> Map.new(&{&1.id, &1})
@@ -74,7 +76,8 @@ defmodule CaptainHomework.Exams.Sources do
   end
 
   defp source(page, _page_numbers) do
-    title = if page.resource, do: page.resource.filename, else: page.filename
+    title =
+      if page.resource, do: page.resource.title || page.resource.filename, else: page.filename
 
     %{
       label: "Document : #{title} — #{page.filename}",

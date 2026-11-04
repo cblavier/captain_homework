@@ -38,7 +38,9 @@ defmodule CaptainHomework.GenerationTest do
       {:ok, [mcq]}
     ])
 
-    assert {:ok, partial} = Exams.generate(p.id, l.id, 1, "", question_types: ["mcq"])
+    assert {:ok, partial} =
+             Exams.generate(p.id, l.id, 1, "", question_types: question_type_ids(["mcq"]))
+
     assert partial.status == "generation_partial"
     assert partial.questions == []
     assert partial.question_types == ["mcq"]
@@ -67,7 +69,10 @@ defmodule CaptainHomework.GenerationTest do
 
     mcq = q("new") |> Map.merge(%{"type" => "mcq", "options" => ["A", "B"], "answer" => "A"})
     sequence([{:ok, [mcq]}])
-    assert {:ok, generated} = Exams.generate(p.id, l.id, 1, "", question_types: ["mcq"])
+
+    assert {:ok, generated} =
+             Exams.generate(p.id, l.id, 1, "", question_types: question_type_ids(["mcq"]))
+
     assert Enum.map(generated.questions, & &1["type"]) == ["mcq"]
     assert [%{kept: []}] = calls()
   end
@@ -110,7 +115,7 @@ defmodule CaptainHomework.GenerationTest do
     assert feedback =~ "réponse identique"
     assert kept["prompt"] == "Question kept"
     assert_receive {:progress, "0 questions prêtes sur 2 · préparation…"}
-    assert_receive {:progress, "1 questions prêtes sur 2 · ajustement de 1 questions…"}
+    assert_receive {:progress, "1 questions prêtes sur 2 · ajustement de 1 question…"}
   end
 
   test "two repairs then a simple fallback, followed by persistent partial recovery", %{

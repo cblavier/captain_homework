@@ -1,8 +1,56 @@
 defmodule CaptainHomework.Exams do
   import Ecto.Query
-  alias CaptainHomework.{Repo, Study, AI}
+  alias CaptainHomework.{Repo, Study, AI, QuestionDefinitions}
   alias CaptainHomework.Study.Exam
   alias CaptainHomework.Exams.Illustrations
+
+  def redo(profile_id, exam_id) do
+    exam = Study.get_exam!(profile_id, exam_id)
+
+    if exam.status == "completed" do
+      questions = Illustrations.copy_questions(exam.questions)
+
+      try do
+        result =
+          Repo.transaction(fn ->
+            copy =
+              Repo.insert!(%Exam{
+                lesson_id: exam.lesson_id,
+                format: exam.format,
+                instructions: exam.instructions,
+                question_types: exam.question_types,
+                questions: questions
+              })
+
+            references =
+              Repo.all(from r in Study.ExamQuestionDefinition, where: r.exam_id == ^exam.id)
+
+            for reference <- references do
+              Repo.insert!(%Study.ExamQuestionDefinition{
+                exam_id: copy.id,
+                definition_id: reference.definition_id,
+                snapshot: reference.snapshot
+              })
+            end
+
+            copy
+          end)
+
+        if match?({:error, _}, result),
+          do: Illustrations.delete_exam_images(%{questions: questions})
+
+        result
+      rescue
+        error ->
+          Illustrations.delete_exam_images(%{questions: questions})
+          reraise error, __STACKTRACE__
+      end
+    else
+      {:error, :not_completed}
+    end
+  rescue
+    File.CopyError -> {:error, :illustration_unavailable}
+  end
 
   def retry_questions(exams, count) do
     exams
@@ -23,12 +71,22 @@ defmodule CaptainHomework.Exams do
     format = Keyword.get(opts, :format, "classic")
     instructions = instructions |> String.trim() |> String.slice(0, 8000)
     lesson = Study.get_lesson!(profile_id, lesson_id) |> generation_lesson(format)
-    available = CaptainHomework.SubjectQuestionTypes.list(profile_id, lesson.subject)
-    requested_types = Keyword.get(opts, :question_types, Enum.map(available, & &1["id"]))
+    available = QuestionDefinitions.available(lesson.subject)
+
+    requested_types =
+      Keyword.get(
+        opts,
+        :question_types,
+        available
+        |> Enum.filter(
+          &(QuestionDefinitions.mode_allowed?(&1, format) and
+              QuestionDefinitions.generation_supported?(&1))
+        )
+        |> Enum.map(& &1.id)
+      )
 
     selected =
-      case CaptainHomework.SubjectQuestionTypes.resolve(
-             profile_id,
+      case QuestionDefinitions.resolve(
              lesson.subject,
              requested_types
            ) do
@@ -36,13 +94,10 @@ defmodule CaptainHomework.Exams do
         {:error, _} -> []
       end
 
-    selected =
-      if format == "flashcard",
-        do: Enum.filter(selected, &(&1["work_duration"] == "quick")),
-        else: selected
+    selected = Enum.filter(selected, &QuestionDefinitions.mode_allowed?(&1, format))
+    unsupported? = Enum.any?(selected, &(not QuestionDefinitions.generation_supported?(&1)))
 
-    types = CaptainHomework.SubjectQuestionTypes.formats(selected)
-    custom_types? = Enum.any?(selected, &(&1["id"] not in CaptainHomework.QuestionTypes.ids()))
+    types = QuestionDefinitions.formats(selected)
     pages = Illustrations.content_pages(lesson)
     examples = Enum.filter(lesson.pages, &(&1.kind == "example"))
 
@@ -56,22 +111,28 @@ defmodule CaptainHomework.Exams do
       )
 
     retries =
-      if instructions != "" or format == "flashcard" or custom_types? or
+      if instructions != "" or format == "flashcard" or
            Illustrations.priority_exercises?(lesson) do
         []
       else
-        retry_questions(previous_exams, count)
+        permitted_ids = MapSet.new(selected, & &1.id)
+
+        previous_exams
+        |> Enum.filter(fn previous ->
+          references = QuestionDefinitions.for_exam(previous)
+          references != [] and Enum.all?(references, &MapSet.member?(permitted_ids, &1.id))
+        end)
+        |> retry_questions(count)
         |> Enum.filter(&(AI.question_errors(&1) == [] and &1["type"] in types))
       end
-
-    instructions =
-      if custom_types?,
-        do: instructions <> "\n\n" <> CaptainHomework.SubjectQuestionTypes.instructions(selected),
-        else: instructions
 
     cond do
       format not in ["classic", "flashcard"] ->
         {:error, "Choisis un format de contrôle valide."}
+
+      unsupported? ->
+        {:error,
+         "Ces types sont configurables dans le catalogue, mais leur génération n’est pas encore disponible."}
 
       types == [] ->
         {:error, "Choisis au moins un type de question valide."}
@@ -88,21 +149,26 @@ defmodule CaptainHomework.Exams do
 
       true ->
         with {:ok, draft} <-
-               Repo.insert(%Exam{
-                 lesson_id: lesson.id,
-                 format: format,
-                 instructions: instructions,
-                 question_types: types,
-                 questions:
-                   Enum.map(
-                     retries,
-                     &prepare_retry/1
-                   ),
-                 status: "generating",
-                 generation_target: count,
-                 generation_examples: Enum.map(examples, & &1.id),
-                 generation_started_at: DateTime.utc_now()
-               }) do
+               Repo.transaction(fn ->
+                 exam =
+                   Repo.insert!(%Exam{
+                     lesson_id: lesson.id,
+                     format: format,
+                     instructions: instructions,
+                     question_types: types,
+                     questions:
+                       Enum.map(
+                         retries,
+                         &prepare_retry/1
+                       ),
+                     status: "generating",
+                     generation_target: count,
+                     generation_examples: Enum.map(examples, & &1.id),
+                     generation_started_at: DateTime.utc_now()
+                   })
+
+                 QuestionDefinitions.attach!(exam, selected)
+               end) do
           dispatch_generation(draft, lesson, pages, examples, opts)
         end
     end
@@ -134,7 +200,7 @@ defmodule CaptainHomework.Exams do
 
     case Repo.update_all(
            from(e in Exam, where: e.id == ^exam.id and e.status == "generation_partial"),
-           set: [status: "generating", generation_started_at: now, updated_at: now]
+           set: [status: "generating", generation_started_at: now, updated_at: now, error: nil]
          ) do
       {1, _} ->
         lesson = Study.get_lesson!(profile_id, exam.lesson_id) |> generation_lesson(exam.format)
@@ -176,7 +242,9 @@ defmodule CaptainHomework.Exams do
 
     case Repo.update_all(
            from(e in Exam,
-             where: e.id == ^exam.id and e.status == "in_progress" and e.format == "classic"
+             where:
+               e.id == ^exam.id and e.status == "in_progress" and e.format == "classic" and
+                 e.updated_at == ^exam.updated_at
            ),
            set: [
              status: "grading",
@@ -288,7 +356,7 @@ defmodule CaptainHomework.Exams do
                ),
              "expected" => q["answer"],
              "language_errors" =>
-               if(q["type"] == "mcq",
+               if(q["type"] in ["mcq", "photo"],
                  do: [],
                  else:
                    CaptainHomework.Exams.Language.validate(

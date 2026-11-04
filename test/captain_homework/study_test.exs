@@ -11,8 +11,8 @@ defmodule CaptainHomework.StudyTest do
              "Histoire-Géographie",
              "Latin",
              "Mathématiques",
-             "Physique-Chimie",
-             "SVT",
+             "Physique - Chimie",
+             "Science de la Vie de la Terre",
              "Technologie"
            ]
   end
