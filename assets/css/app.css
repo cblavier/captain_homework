@@ -212,9 +212,11 @@
 .resource-url-link { display: inline-block; margin-left: auto; padding: 0; background: none; color: var(--day-ink); font-size: .875rem; text-align: right; text-decoration: underline; text-underline-offset: 3px; }
 .resource-url-link:hover { text-decoration-thickness: 2px; }
 .resource-list { display: grid; gap: 1.5rem; }
-.panel.resource-card { padding: 1rem 1rem .5rem; min-width: 0; }
+.panel.resource-card { padding: 1rem; min-width: 0; }
 .resource-card .section-heading { margin-top: 0; }
 .resource-card > .section-heading { margin-bottom: .75rem; }
+.resource-card > .section-heading > .form-actions { margin: 0; flex-shrink: 0; }
+.resource-card > .section-heading .icon-button { width: 2rem; min-width: 2rem; height: 2rem; padding: 0; }
 .resource-card .resource-import-status { font-size: 1.125rem; font-weight: 600; color: var(--ink); }
 .resource-card-bottom { display: grid; grid-template-columns: minmax(0, 1fr) 2rem; align-items: start; }
 .resource-card-bottom > .resource-content { grid-area: 1 / 1 / 2 / -1; margin-top: 0; }
