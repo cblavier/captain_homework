@@ -4,6 +4,8 @@ defmodule CaptainHomework.Study.Exam do
   @foreign_key_type :binary_id
   schema "exams" do
     belongs_to :lesson, CaptainHomework.Study.Lesson
+    belongs_to :exam_share, CaptainHomework.Study.ExamShare
+    field :shared_visitor_hash, :binary
     field :format, :string, default: "classic"
     field :card_index, :integer, default: 0
 
@@ -16,6 +18,7 @@ defmodule CaptainHomework.Study.Exam do
     field :generation_target, :integer
     field :generation_examples, CaptainHomework.Study.JSONList, default: []
     field :generation_errors, CaptainHomework.Study.JSONList, default: []
+    field :generation_history, CaptainHomework.Study.JSONList, default: []
     field :generation_started_at, :utc_datetime_usec
     field :questions, CaptainHomework.Study.JSONList, default: []
     field :answers, :map, default: %{}

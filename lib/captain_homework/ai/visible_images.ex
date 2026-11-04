@@ -18,7 +18,8 @@ defmodule CaptainHomework.AI.VisibleImages do
       regions = Map.get(node, "image_regions", [])
 
       with :ok <- ImageCrops.validate(ids, regions),
-           {:ok, visible_ids, images} <- prepare_images(ids, regions, sources, images) do
+           {:ok, visible_ids, images} <-
+             prepare_images(ids, regions, snapshot_sources(node, sources), images) do
         visible = node |> Map.put("image_ids", visible_ids) |> Map.delete("image_regions")
         {:cont, {:ok, nodes ++ [visible], images}}
       else
@@ -30,7 +31,7 @@ defmodule CaptainHomework.AI.VisibleImages do
   defp prepare_images(ids, regions, sources, images) do
     Enum.reduce_while(ids, {:ok, [], images}, fn source_id, {:ok, ids, images} ->
       region = Enum.find(regions, &(&1["image_id"] == source_id))
-      id = visible_id(source_id, region)
+      id = visible_id(source_id, region, sources[source_id])
 
       case Map.fetch(images, id) do
         {:ok, _} ->
@@ -53,6 +54,27 @@ defmodule CaptainHomework.AI.VisibleImages do
     end)
   end
 
+  defp snapshot_sources(question, sources) do
+    Enum.reduce(Map.get(question, "image_ids", []), sources, fn id, sources ->
+      case CaptainHomework.Exams.Illustrations.snapshot_asset(question, id) do
+        nil ->
+          sources
+
+        asset ->
+          Map.put(sources, id, %{
+            id: id,
+            storage_key: asset["storage_key"],
+            content_type: asset["content_type"],
+            resource_id: "retained-question",
+            kind: "illustration",
+            filename: "illustration-conservee",
+            snapshot?: true,
+            snapshot_crop: asset["crop"]
+          })
+      end
+    end)
+  end
+
   defp budget(images) do
     unique = images |> Map.values() |> Enum.uniq_by(&:crypto.hash(:sha256, &1.data))
     bytes = Enum.reduce(unique, 0, &(byte_size(&1.data) + &2))
@@ -64,9 +86,20 @@ defmodule CaptainHomework.AI.VisibleImages do
          "Les extraits du contrôle dépassent 24 images ou 24 Mo. Réduis le nombre de questions documentaires."}
   end
 
-  defp visible_id(id, nil), do: id
+  defp visible_id(id, region, %{snapshot?: true} = page) do
+    case File.read(Uploads.path(page.storage_key)) do
+      {:ok, bytes} ->
+        hash = :crypto.hash(:sha256, bytes) |> Base.encode16(case: :lower)
+        visible_id(id, region, nil) <> "-snapshot-" <> binary_part(hash, 0, 16)
 
-  defp visible_id(id, region) do
+      {:error, _} ->
+        visible_id(id, region, nil)
+    end
+  end
+
+  defp visible_id(id, nil, _), do: id
+
+  defp visible_id(id, region, _) do
     coordinates = Enum.map(~w(x y width height), &region[&1])
 
     hash =
@@ -77,12 +110,13 @@ defmodule CaptainHomework.AI.VisibleImages do
 
   defp prepare_image(nil, _, _), do: {:error, "Image source indisponible pour le recadrage."}
 
-  defp prepare_image(page, nil, _) do
-    case File.read(Uploads.path(page.storage_key)) do
-      {:ok, data} -> {:ok, Map.put(page, :data, data)}
-      _ -> {:error, "Image source indisponible pour la vérification."}
-    end
+  defp prepare_image(%{snapshot?: true, snapshot_crop: crop} = page, region, id) do
+    if crop == region,
+      do: read_image(page, id),
+      else: {:error, "Le cadrage demandé ne correspond pas à l’illustration conservée."}
   end
+
+  defp prepare_image(page, nil, id), do: read_image(page, id)
 
   defp prepare_image(page, region, id) do
     with {:ok, data} <- ImageCrops.render(Uploads.path(page.storage_key), region) do
@@ -96,6 +130,13 @@ defmodule CaptainHomework.AI.VisibleImages do
          kind: page.kind,
          filename: "extrait-#{page.filename}"
        }}
+    end
+  end
+
+  defp read_image(page, id) do
+    case File.read(Uploads.path(page.storage_key)) do
+      {:ok, data} -> {:ok, page |> Map.put(:data, data) |> Map.put(:id, id)}
+      _ -> {:error, "Image source indisponible pour la vérification."}
     end
   end
 end

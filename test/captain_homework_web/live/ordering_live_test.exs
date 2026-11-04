@@ -140,7 +140,7 @@ defmodule CaptainHomeworkWeb.OrderingLiveTest do
       assert has_element?(view, "#preview-ordering input[value='2']")
       assert has_element?(view, "#preview-ordering-choice-2", "Maîtrise du feu")
       refute has_element?(view, "#preview-answer")
-      refute has_element?(view, "#preview-support")
+      refute has_element?(view, "#question-type-preview .question-content .reading-text")
     end
 
     view

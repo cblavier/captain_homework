@@ -57,6 +57,8 @@ defmodule CaptainHomeworkWeb.BackgroundGenerationTest do
     refute has_element?(refreshed, "#generation-errors")
     assert has_element?(refreshed, "#generation-stage", "Préparation des questions …")
     assert has_element?(refreshed, "#generation-elapsed", "Temps écoulé")
+    assert has_element?(refreshed, "#generation-question-1[data-status=writing]")
+    assert has_element?(refreshed, "#generation-question-10[data-status=writing]")
     Phoenix.PubSub.subscribe(CaptainHomework.PubSub, "exam:#{exam.id}")
     Phoenix.PubSub.subscribe(CaptainHomework.PubSub, "exam_generation")
     questions = for n <- 1..10, do: question("q#{n}") |> Map.put("prompt", "Question #{n}")
@@ -67,6 +69,11 @@ defmodule CaptainHomeworkWeb.BackgroundGenerationTest do
     assert id == exam.id
     assert length(ready.questions) == 10
     assert has_element?(refreshed, "#exam-answers")
+    refute has_element?(refreshed, "#generation-status")
+    refute has_element?(refreshed, "#generation-question-1")
+    refreshed |> element("#generation-duration") |> render_click()
+    assert has_element?(refreshed, "#generation-question-1[data-status=ready]")
+    assert has_element?(refreshed, "#generation-question-10[data-status=ready]")
     _ = :sys.get_state(GenerationJobs)
   end
 

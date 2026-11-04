@@ -1,7 +1,7 @@
 defmodule CaptainHomework.Exams.AuditCache do
   @moduledoc "Reuses semantic reviews while checking changed context for exposed answers."
   # Bump when audit rules change so persisted verdicts are checked again.
-  @revision 4
+  @revision 5
   @content ~w(type prompt text audio_script options slots diagram answer rubric points image_ids image_regions support_text support_title response_effort answer_basis source_page_ids)
   @visible ~w(plan_id prompt text audio_script options slots diagram image_ids image_regions support_text)
 

@@ -176,7 +176,7 @@ defmodule CaptainHomework.Study do
     Repo.all(
       from e in Exam,
         join: l in assoc(e, :lesson),
-        where: l.profile_id == ^profile_id,
+        where: l.profile_id == ^profile_id and is_nil(e.exam_share_id),
         group_by: l.subject,
         select: {l.subject, count(e.id)}
     )
@@ -194,13 +194,16 @@ defmodule CaptainHomework.Study do
     )
   end
 
+  def get_exam!({:shared, _, _} = scope, id),
+    do: CaptainHomework.ExamShares.get_exam!(scope, id)
+
   def get_exam!(profile_id, id) do
     if not valid_id?(id), do: raise(Ecto.NoResultsError, queryable: Exam)
 
     Repo.one!(
       from e in Exam,
         join: l in assoc(e, :lesson),
-        where: e.id == ^id and l.profile_id == ^profile_id,
+        where: e.id == ^id and l.profile_id == ^profile_id and is_nil(e.exam_share_id),
         preload: [lesson: l]
     )
   end
@@ -210,6 +213,7 @@ defmodule CaptainHomework.Study do
 
   def delete_exam(profile_id, id) do
     exam = get_exam!(profile_id, id)
+    shared_attempts = CaptainHomework.ExamShares.attempts_for_exam(exam.id)
 
     {count, _} =
       Repo.delete_all(
@@ -222,6 +226,7 @@ defmodule CaptainHomework.Study do
     if count == 1 do
       CaptainHomework.Exams.Illustrations.delete_exam_images(exam)
       CaptainHomework.Exams.PhotoAnswers.delete_files(exam)
+      Enum.each(shared_attempts, &CaptainHomework.Exams.PhotoAnswers.delete_files/1)
       {:ok, exam}
     else
       {:error, :already_submitted}

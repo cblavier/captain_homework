@@ -22,6 +22,20 @@ defmodule CaptainHomeworkWeb.Router do
 
   get "/health", CaptainHomeworkWeb.SessionController, :health
 
+  pipeline :shared do
+    plug CaptainHomeworkWeb.SharedAccess
+  end
+
+  scope "/partage", CaptainHomeworkWeb do
+    pipe_through [:browser, :shared]
+    get "/:token/images/:id", SharedExamAssetController, :image
+    get "/:token/audio/:id", SharedExamAssetController, :audio
+
+    live_session :shared_exam do
+      live "/:token", SharedExamLive, :exam
+    end
+  end
+
   scope "/", CaptainHomeworkWeb do
     pipe_through :browser
     get "/connexion", SessionController, :login

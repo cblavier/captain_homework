@@ -128,10 +128,10 @@ defmodule CaptainHomeworkWeb.SubjectSettingsLiveTest do
     {:ok, _} = QuestionDefinitions.seed!()
 
     for {name, selector} <- [
-          {"Analyse de document", "#preview-document"},
-          {"Carte à compléter", "#preview-image img"},
+          {"Analyse de document", "#question-type-preview .reading-text"},
+          {"Carte à compléter", "#question-type-preview .question-illustrations img"},
           {"Compréhension orale",
-           "#preview-audio audio[src='/audio/question-examples/english.mp3']"},
+           "#question-audio-preview[src='/audio/question-examples/english.mp3']"},
           {"Prononciation", "#preview-voice[phx-hook='QuestionPreviewRecorder']"},
           {"Dessin de géométrie", "#preview-photo-input[type=file]"}
         ] do
@@ -142,7 +142,7 @@ defmodule CaptainHomeworkWeb.SubjectSettingsLiveTest do
       if name == "Dessin de géométrie" do
         assert has_element?(view, "#preview-webcam[phx-hook=WebcamCapture] [data-camera-open]")
 
-        refute has_element?(view, "#preview-support")
+        refute has_element?(view, "#question-type-preview .question-content .reading-text")
         view |> form("#type-preview-mode", %{mode: "flashcard"}) |> render_change()
         assert has_element?(view, "#preview-unavailable")
       end
@@ -194,6 +194,6 @@ defmodule CaptainHomeworkWeb.SubjectSettingsLiveTest do
     |> form("#type-example", example: %{document: "Première ligne\nDeuxième ligne"})
     |> render_change()
 
-    assert has_element?(view, "#preview-document .document-body", "Première ligne")
+    assert has_element?(view, "#question-type-preview .reading-text", "Première ligne")
   end
 end

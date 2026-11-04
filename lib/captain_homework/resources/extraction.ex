@@ -4,9 +4,6 @@ defmodule CaptainHomework.Resources.Extraction do
   alias CaptainHomework.{AI, ImageCrops, Repo, Uploads}
   alias CaptainHomework.Study.{Page, Resource}
 
-  @max_count 10
-  def max_count, do: @max_count
-
   def source(profile_id, lesson_id, page_id) do
     page =
       Repo.one(
@@ -28,7 +25,7 @@ defmodule CaptainHomework.Resources.Extraction do
   end
 
   def extract(profile_id, lesson_id, page_id, count, instructions)
-      when is_integer(count) and count in 1..@max_count and is_binary(instructions) do
+      when is_integer(count) and count > 0 and is_binary(instructions) do
     with true <- String.length(instructions) <= 4000,
          {:ok, page} <- source(profile_id, lesson_id, page_id),
          {:ok, data, type} <- read_image(page),
@@ -45,7 +42,7 @@ defmodule CaptainHomework.Resources.Extraction do
   end
 
   def extract(_, _, _, _, _),
-    do: {:error, "Choisis entre 1 et #{@max_count} illustrations à extraire."}
+    do: {:error, "Choisis au moins une illustration à extraire."}
 
   defp read_image(page) do
     with {:ok, %{type: :regular, size: size}} when size <= 12_000_000 <-

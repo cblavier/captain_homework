@@ -1,7 +1,7 @@
 defmodule CaptainHomeworkWeb.FlashcardComponents do
   use Phoenix.Component
   import CaptainHomeworkWeb.CoreComponents
-  import CaptainHomeworkWeb.SymbolComponents
+  import CaptainHomeworkWeb.QuestionComponents
   alias CaptainHomework.Exams.Flashcards
 
   def flashcard_active?(%{format: "flashcard", status: status}),
@@ -13,21 +13,19 @@ defmodule CaptainHomeworkWeb.FlashcardComponents do
   attr :exam, :map, required: true
   attr :answers, :map, required: true
   attr :subject, :string, required: true
-  attr :close_path, :string, required: true
+  attr :close_path, :string, default: nil
   attr :error, :string, default: nil
+  slot :footer
 
   def flashcard(assigns) do
     question = Flashcards.current(assigns.exam)
     correction = assigns.exam.corrections[question["id"]]
-    {prompt, text} = question_content(question)
 
     remaining = length(assigns.exam.questions) - assigns.exam.card_index - 1
 
     assigns =
       assign(assigns,
         question: question,
-        prompt: keep_punctuation_with_word(prompt),
-        text: text,
         correction: correction,
         remaining: remaining,
         flipped: not is_nil(correction),
@@ -38,8 +36,9 @@ defmodule CaptainHomeworkWeb.FlashcardComponents do
     ~H"""
     <section id="flashcard-session" aria-label="Révision par flashcards">
       <div id="flashcard-viewport" phx-hook="FlashcardViewport" phx-update="ignore" hidden />
-      <header class="flashcard-header">
+      <header class={["flashcard-header", !@close_path && "flashcard-header-shared"]}>
         <.link
+          :if={@close_path}
           navigate={@close_path}
           id="close-flashcards"
           class="icon-button"
@@ -82,17 +81,13 @@ defmodule CaptainHomeworkWeb.FlashcardComponents do
             inert={@flipped}
           >
             <div class="flashcard-content">
-              <.flashcard_heading id="flashcard-question" subject={@subject} prompt={@prompt} />
-              <p
-                :if={@question["help"] not in [nil, ""]}
-                id={"question-help-#{@question["id"]}"}
-                class="preview-help"
-              >
-                {@question["help"]}
-              </p>
-              <.question_audio question={@question} exam={@exam} profile={@profile} />
-              <.question_text :if={@text != ""} text={@text} />
-              <.diagram :if={@question["type"] == "diagram"} question={@question} />
+              <.question_content
+                question={@question}
+                mode="flashcard"
+                subject={@subject}
+                exam={@exam}
+                profile={@profile}
+              />
               <.form
                 for={@form}
                 id="flashcard-answer"
@@ -104,73 +99,12 @@ defmodule CaptainHomeworkWeb.FlashcardComponents do
               >
                 <input type="hidden" name="question_id" value={@question["id"]} />
                 <fieldset disabled={@grading or @flipped}>
-                  <.ordering_input
-                    :if={@question["type"] == "ordering"}
-                    id={"ordering-#{@question["id"]}"}
-                    question_id={@question["id"]}
-                    name={"answers[#{@question["id"]}]"}
-                    options={@question["options"]}
+                  <.question_response
+                    question={@question}
+                    mode="flashcard"
                     value={@answers[@question["id"]]}
                     disabled={@grading or @flipped}
                   />
-                  <div :if={@question["type"] == "mcq"} class="options">
-                    <label
-                      :for={{option, index} <- Enum.with_index(@question["options"])}
-                      class={["option", @answers[@question["id"]] == option && "selected"]}
-                    >
-                      <input
-                        type="radio"
-                        id={"flashcard-option-#{index}"}
-                        name={"answers[#{@question["id"]}]"}
-                        value={option}
-                        checked={@answers[@question["id"]] == option}
-                      />
-                      <span>{option}</span>
-                    </label>
-                  </div>
-                  <.symbol_answer
-                    :if={@question["type"] not in ["mcq", "ordering"]}
-                    id={"flashcard-symbols-#{@question["id"]}"}
-                    context={@prompt <> "\n" <> @text}
-                    disabled={@grading or @flipped}
-                  >
-                    <div :if={@question["type"] in ["cloze", "diagram"]} class="slot-inputs">
-                      <div :for={{slot, index} <- Enum.with_index(@question["slots"])}>
-                        <label for={"flashcard-slot-#{index}"}>{slot}</label>
-                        <.input
-                          wrapper={false}
-                          id={"flashcard-slot-#{index}"}
-                          autocorrect="off"
-                          autocapitalize="off"
-                          spellcheck="false"
-                          writingsuggestions="false"
-                          name={"answers[#{@question["id"]}][#{slot}]"}
-                          value={slot_value(@answers[@question["id"]], slot)}
-                          maxlength="2000"
-                          autocomplete="off"
-                          phx-debounce="300"
-                        />
-                      </div>
-                    </div>
-                    <div :if={@question["type"] not in ["mcq", "cloze", "diagram", "ordering"]}>
-                      <label class="sr-only" for="flashcard-response">Ta réponse</label>
-                      <.input
-                        wrapper={false}
-                        type="textarea"
-                        id="flashcard-response"
-                        autocorrect="off"
-                        autocomplete="off"
-                        autocapitalize="off"
-                        spellcheck="false"
-                        writingsuggestions="false"
-                        name={"answers[#{@question["id"]}]"}
-                        rows="3"
-                        maxlength="12000"
-                        phx-debounce="300"
-                        value={@answers[@question["id"]] || ""}
-                      />
-                    </div>
-                  </.symbol_answer>
                 </fieldset>
               </.form>
             </div>
@@ -179,7 +113,7 @@ defmodule CaptainHomeworkWeb.FlashcardComponents do
               <button
                 :if={!@flipped}
                 id="validate-card"
-                class="button primary"
+                class="button primary question-submit"
                 type="submit"
                 form="flashcard-answer"
                 disabled={@grading}
@@ -251,37 +185,15 @@ defmodule CaptainHomeworkWeb.FlashcardComponents do
           aria-hidden="true"
         />
       </div>
+      {render_slot(@footer)}
     </section>
     """
   end
-
-  defp slot_value(answer, slot) when is_map(answer), do: answer[slot] || ""
-  defp slot_value(_, _), do: ""
 
   defp keep_punctuation_with_word(nil), do: ""
 
   defp keep_punctuation_with_word(text) do
     text = Regex.replace(~r/\s+([?!;:»])/u, text, "\u00A0\\1")
     Regex.replace(~r/«\s+/u, text, "«\u00A0")
-  end
-
-  defp question_content(question) do
-    prompt = question["prompt"]
-    text = question["text"] || ""
-
-    heading =
-      prompt |> String.trim() |> String.downcase() |> String.trim_trailing(":") |> String.trim()
-
-    cond do
-      Flashcards.answer_repeated_in_text?(question) ->
-        {prompt, ""}
-
-      question["type"] == "definition" and heading in ["definition", "définition"] and
-          String.trim(text) != "" ->
-        {text, ""}
-
-      true ->
-        {prompt, text}
-    end
   end
 end

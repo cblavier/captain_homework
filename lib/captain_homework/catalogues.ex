@@ -160,9 +160,42 @@ defmodule CaptainHomework.Catalogues do
       |> Enum.uniq()
 
     with {:ok, entries} <- collect(sources),
+         entries <- include_visual_supports(entries, pages),
          {:ok, entries, use_examples?} <- select_requested_content(entries, pages, instructions) do
       select(entries, lesson, examples, count, instructions, retries, use_examples?)
     end
+  end
+
+  # A cropped figure can support a question about the course without containing
+  # an exercise or teaching a fact itself. Keep this separate from knowledge,
+  # including for cached catalogues that classified standalone figures unusable.
+  defp include_visual_supports(entries, pages) do
+    indexed =
+      entries
+      |> Enum.filter(& &1["usable"])
+      |> Enum.flat_map(& &1["visual_page_ids"])
+      |> MapSet.new()
+
+    figures =
+      for page <- pages,
+          Illustrations.extracted?(page),
+          page.status == "ready",
+          String.starts_with?(page.content_type, "image/"),
+          not MapSet.member?(indexed, page.id) do
+        %{
+          "kind" => "visual",
+          "title" => page.filename,
+          "content" =>
+            "Support visuel à associer aux connaissances du cours, sans exercice imposé.\n" <>
+              page.text,
+          "keywords" => [],
+          "usable" => true,
+          "source_page_ids" => [page.id],
+          "visual_page_ids" => [page.id]
+        }
+      end
+
+    entries ++ figures
   end
 
   defp select_requested_content(entries, pages, instructions) do
@@ -226,7 +259,9 @@ defmodule CaptainHomework.Catalogues do
     lesson_ids = lesson.pages |> Enum.filter(&(&1.kind == "lesson")) |> MapSet.new(& &1.id)
 
     {course_bundles, resource_bundles} =
-      (bundles ++ Enum.map(knowledge, &[&1]))
+      (bundles ++
+         Enum.map(knowledge, &[&1]) ++
+         Enum.map(Enum.filter(ranked, &(&1["kind"] == "visual")), &[&1]))
       |> Enum.split_with(fn bundle ->
         Enum.any?(bundle, fn entry ->
           Enum.any?(entry["source_page_ids"], &MapSet.member?(lesson_ids, &1))
@@ -237,7 +272,7 @@ defmodule CaptainHomework.Catalogues do
     # candidates do not consume the number of exercises we may still select.
     {visual, _} =
       Enum.split_with(resource_bundles, fn bundle ->
-        Enum.any?(bundle, &(&1["kind"] == "exercise" and &1["visual_page_ids"] != []))
+        Enum.any?(bundle, &(&1["kind"] in ["exercise", "visual"] and &1["visual_page_ids"] != []))
       end)
 
     first_visual =
@@ -309,6 +344,9 @@ defmodule CaptainHomework.Catalogues do
          Jason.encode!(%{
            "catalogue" => selected,
            "source_kinds" => source_kinds,
+           "allowed_image_ids" => ranked |> Enum.flat_map(& &1["visual_page_ids"]) |> Enum.uniq(),
+           "allowed_source_page_ids" =>
+             ranked |> Enum.flat_map(& &1["source_page_ids"]) |> Enum.uniq(),
            "use_examples" => use_examples?
          }), images, examples}
       end

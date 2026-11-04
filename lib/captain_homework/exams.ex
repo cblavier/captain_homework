@@ -107,7 +107,7 @@ defmodule CaptainHomework.Exams do
           join: l in assoc(e, :lesson),
           where:
             l.profile_id == ^profile_id and l.id == ^lesson.id and
-              e.status == "completed"
+              e.status == "completed" and is_nil(e.exam_share_id)
       )
 
     retries =

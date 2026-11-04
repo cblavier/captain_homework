@@ -13,6 +13,7 @@ defmodule CaptainHomeworkWeb.CoreComponents do
   attr :value, :integer, required: true
   attr :min, :integer, default: 1
   attr :max, :integer, default: 30
+  attr :unbounded, :boolean, default: false
   attr :event, :string, required: true
   attr :label, :string, required: true
   attr :disabled, :boolean, default: false
@@ -38,7 +39,7 @@ defmodule CaptainHomeworkWeb.CoreComponents do
           type="button"
           phx-click={@event}
           phx-value-delta="1"
-          disabled={@disabled or @value >= @max}
+          disabled={@disabled or (not @unbounded and @value >= @max)}
           aria-label={"Augmenter : #{@label}"}
         >
           <.icon name="plus" />
@@ -583,46 +584,65 @@ defmodule CaptainHomeworkWeb.CoreComponents do
   end
 
   attr :question, :map, required: true
-  attr :exam, :map, required: true
-  attr :profile, :map, required: true
+  attr :exam, :map, default: nil
+  attr :profile, :map, default: nil
+  attr :sources, :list, default: nil
 
   def question_images(assigns) do
+    sources =
+      assigns.sources ||
+        Enum.map(assigns.question["images"] || [], fn asset ->
+          %{
+            id: asset["id"],
+            src:
+              CaptainHomeworkWeb.ProfilePath.child_path(
+                assigns.profile,
+                "/controles/#{assigns.exam.id}/images/#{asset["id"]}"
+              ),
+            alt: "Illustration originale de l’exercice"
+          }
+        end)
+
+    assigns = assign(assigns, sources: sources)
+
     ~H"""
-    <div :if={Map.get(@question, "images", []) != []} class="question-illustrations">
+    <div :if={@sources != []} class="question-illustrations">
       <img
-        :for={asset <- Map.get(@question, "images", [])}
-        id={"question-image-#{@question["id"]}-#{asset["id"]}"}
-        src={
-          CaptainHomeworkWeb.ProfilePath.child_path(
-            @profile,
-            "/controles/#{@exam.id}/images/#{asset["id"]}"
-          )
-        }
-        alt="Illustration originale de l’exercice"
+        :for={asset <- @sources}
+        id={"question-image-#{@question["id"]}-#{asset.id}"}
+        src={asset.src}
+        alt={asset.alt}
       />
     </div>
     """
   end
 
   attr :question, :map, required: true
-  attr :exam, :map, required: true
+  attr :exam, :map, default: nil
   attr :profile, :map, default: nil
+  attr :src, :string, default: nil
 
   def question_audio(assigns) do
+    src =
+      assigns.src ||
+        if assigns.question["type"] == "listening" and is_map(assigns.question["audio"]) do
+          CaptainHomeworkWeb.ProfilePath.child_path(
+            assigns.profile,
+            "/controles/#{assigns.exam.id}/audio/#{assigns.question["audio"]["id"]}"
+          )
+        end
+
+    assigns = assign(assigns, src: src)
+
     ~H"""
     <audio
-      :if={@question["type"] == "listening" and is_map(@question["audio"])}
+      :if={@src}
       id={"question-audio-#{@question["id"]}"}
       class="question-audio"
       controls
-      preload="none"
+      preload="metadata"
       aria-label="Extrait à écouter (voix générée par IA)"
-      src={
-        CaptainHomeworkWeb.ProfilePath.child_path(
-          @profile,
-          "/controles/#{@exam.id}/audio/#{@question["audio"]["id"]}"
-        )
-      }
+      src={@src}
     />
     """
   end

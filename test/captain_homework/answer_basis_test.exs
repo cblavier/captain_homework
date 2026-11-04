@@ -63,6 +63,28 @@ defmodule CaptainHomework.AnswerBasisTest do
     assert {:ok, [_], []} = ResponseEffort.review([q], [review])
   end
 
+  test "visual interpretation may use learned vocabulary but still rejects inconsistent content" do
+    q = %{
+      "plan_id" => "q1",
+      "response_effort" => "direct",
+      "answer_basis" => "document",
+      "image_ids" => ["image"]
+    }
+
+    review = %{
+      "plan_id" => "q1",
+      "actual_effort" => "direct",
+      "consistent" => true,
+      "actual_basis" => "knowledge",
+      "answer_exposed" => false,
+      "reason" => ""
+    }
+
+    assert {:ok, [_], []} = ResponseEffort.review([q], [review])
+    assert {:ok, [], [_]} = ResponseEffort.review([q], [Map.put(review, "consistent", false)])
+    assert {:ok, [], [_]} = ResponseEffort.review([Map.put(q, "image_ids", [])], [review])
+  end
+
   test "validation reports actual counts and identifies missing course sources and visible supports" do
     questions = [
       %{

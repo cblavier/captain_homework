@@ -121,6 +121,20 @@ defmodule CaptainHomework.OpenAIGradingTest do
     assert request["reasoning"] == %{"effort" => "low"}
   end
 
+  test "shared copies are graded for an anonymous pupil" do
+    p = profile()
+    original = exam(lesson(p))
+    {:ok, _, token} = CaptainHomework.ExamShares.create(p.id, original.id, "fill")
+    {:ok, _, attempt} = CaptainHomework.ExamShares.open(token, "visitor")
+    stub_response(grading_result())
+
+    assert {:ok, _} = OpenAI.grade(attempt)
+    assert_receive {:openai_request, request}
+    assert prompt(request) =~ "élève anonyme"
+    assert prompt(request) =~ "sans prénom"
+    refute prompt(request) =~ p.name
+  end
+
   defp grading_result do
     %{
       "appreciation" => "Continue tes révisions.",

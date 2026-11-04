@@ -147,7 +147,7 @@ defmodule CaptainHomeworkWeb.IllustrationExtractionTest do
 
     for {profile_id, lesson_id, count, instructions} <- [
           {ctx.lesson.profile_id, ctx.lesson.id, 0, ""},
-          {ctx.lesson.profile_id, ctx.lesson.id, 11, ""},
+          {ctx.lesson.profile_id, ctx.lesson.id, -1, ""},
           {profile("Bob").id, ctx.lesson.id, 2, ""},
           {ctx.lesson.profile_id, Ecto.UUID.generate(), 2, ""},
           {ctx.lesson.profile_id, ctx.lesson.id, 2, String.duplicate("x", 4001)}
@@ -199,6 +199,28 @@ defmodule CaptainHomeworkWeb.IllustrationExtractionTest do
            ]
   end
 
+  test "extraction count can exceed ten and reaches the model unchanged", ctx do
+    owner = self()
+
+    Application.put_env(:captain_homework, :extraction_test_callback, fn _, _, count, _ ->
+      send(owner, {:requested_count, count})
+      {:error, "Extraction interrompue pour le test"}
+    end)
+
+    {:ok, view, _} = live(ctx.conn, "/alice/lecons/#{ctx.lesson.id}?onglet=ressources")
+    view |> element("#open-resource-image-#{ctx.source.id}") |> render_click()
+
+    for _ <- 1..11 do
+      view |> element("#illustration-count-plus:not([disabled])") |> render_click()
+    end
+
+    assert has_element?(view, "#illustration-count", "12")
+    assert has_element?(view, "#illustration-count-plus:not([disabled])")
+    view |> form("#illustration-extraction-form") |> render_submit()
+    assert_receive {:requested_count, 12}
+    assert has_element?(view, "#extraction-error", "Extraction interrompue pour le test")
+  end
+
   test "modal keeps instructions across count changes, prevents duplicate submissions and refreshes the gallery",
        ctx do
     owner = self()
@@ -222,7 +244,7 @@ defmodule CaptainHomeworkWeb.IllustrationExtractionTest do
     assert has_element?(
              view,
              "#extract-illustrations-modal[role=dialog]",
-             "Extraire une ou plusieurs illustrations"
+             "Extraire des illustrations"
            )
 
     assert has_element?(view, "#extraction-source-image[src='/alice/pages/#{ctx.source.id}']")

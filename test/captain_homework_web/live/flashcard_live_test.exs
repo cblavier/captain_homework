@@ -233,7 +233,7 @@ defmodule CaptainHomeworkWeb.FlashcardLiveTest do
     view |> element("#close-flashcards") |> render_click()
     assert_redirect(view, "/alice/lecons/#{e.lesson_id}")
     {:ok, resumed, _} = live(conn, "/alice/controles/#{e.id}")
-    assert has_element?(resumed, "#flashcard-response", "Brouillon")
+    assert has_element?(resumed, "#flashcard-response[value=Brouillon]")
     refute has_element?(resumed, ".is-flipped")
   end
 
@@ -309,7 +309,7 @@ defmodule CaptainHomeworkWeb.FlashcardLiveTest do
 
       if outcome == :fail_grading do
         refute has_element?(view, ".is-flipped")
-        assert has_element?(view, "#flashcard-response", "quart")
+        assert has_element?(view, "#flashcard-response[value=quart]")
         refute has_element?(view, "#flashcard-answer fieldset[disabled]")
         assert has_element?(view, "#validate-card:not([disabled])[aria-busy=false]")
       else

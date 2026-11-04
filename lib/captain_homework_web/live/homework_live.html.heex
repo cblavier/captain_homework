@@ -22,19 +22,43 @@
       answers={@answers}
       subject={Study.subject!(@lesson.subject).name}
       error={@error}
-      close_path={child_path(@profile, ~p"/lecons/#{@lesson.id}")}
-    />
+      close_path={if !@shared, do: child_path(@profile, ~p"/lecons/#{@lesson.id}")}
+    >
+      <:footer :if={!@shared}>
+        <div class="exam-footer flashcard-share-footer">
+          <button
+            :if={@exam.generation_history != []}
+            id="generation-duration"
+            type="button"
+            class="button text-button generation-duration"
+            phx-click="open_generation_history"
+            aria-haspopup="dialog"
+          >
+            <%= if is_integer(@exam.generation_duration_ms) do %>
+              Généré en {generation_duration(@exam.generation_duration_ms)}
+            <% else %>
+              Temps de génération non enregistré
+            <% end %>
+          </button>
+          <button id="share-exam" type="button" class="button text-button" phx-click="open_share">
+            Partager
+          </button>
+        </div>
+      </:footer>
+    </.flashcard>
   </main>
   <main
     :if={@live_action != :exam or not flashcard_active?(@exam)}
     id="homework-content"
     class={[
       "app",
+      @shared && "shared-exam",
       @live_action == :exam && @exam.format == "flashcard" && @exam.status == "completed" &&
         "flashcard-results-enter"
     ]}
   >
     <.profile_header
+      :if={!@shared}
       profile={@profile}
       profiles={@profiles}
       form={@form}
@@ -413,14 +437,16 @@
                 class="page-card"
               >
                 <div class="page-thumbnail">
-                  <a
-                    href={child_path(@profile, ~p"/pages/#{page.id}")}
-                    target="_blank"
-                    rel="noopener"
+                  <button
+                    id={"open-example-#{page.id}"}
+                    type="button"
+                    phx-click="preview_page"
+                    phx-value-id={page.id}
+                    aria-haspopup="dialog"
                     class="page-preview"
                   >
                     <img src={child_path(@profile, ~p"/pages/#{page.id}")} alt={page.filename} />
-                  </a>
+                  </button>
                   <.page_order_actions
                     prefix="example"
                     page_id={page.id}
@@ -995,8 +1021,30 @@
 
       <section :if={@live_action == :exam}>
         <div class="page-heading exam-title">
-          <div>
+          <div class={@shared && "shared-exam-heading-container"}>
+            <div :if={@shared} class="shared-exam-heading">
+              <div class="heading-with-icon">
+                <div
+                  id="shared-exam-subject-icon"
+                  class={["icon-tile small", @subject.color]}
+                  aria-hidden="true"
+                >
+                  <.icon name={@subject.icon} />
+                </div>
+                <div>
+                  <h1 id="exam-title">Contrôle de {@subject.name}</h1>
+                  <p id="shared-exam-lesson" class="muted">{@lesson.title}</p>
+                </div>
+              </div>
+              <span
+                :if={@exam.status == "completed"}
+                class={["total-score", score_class(@exam.score)]}
+              >
+                {number(Exams.round_score(@exam.score))}<span>/20</span>
+              </span>
+            </div>
             <.page_breadcrumb
+              :if={!@shared}
               id="exam-title"
               subject={@subject}
               ancestors={[
@@ -1038,42 +1086,70 @@
           </p>
         </div>
         <section
-          :if={@exam.status in ["generation_partial", "generating"]}
+          :if={!@shared and @exam.status in ["generation_partial", "generating"]}
           id="generation-status"
-          class="panel"
+          class="panel generation-panel"
         >
-          <h2>
-            {count_label(length(@exam.questions), "question prête", "questions prêtes")} sur {@exam.generation_target}
-          </h2>
-          <p :if={@exam.status == "generating"} id="generation-stage" role="status">
-            <span class="spinner" aria-hidden="true" />
-            <span>{generation_stage_label(@exam.generation_stage)}</span>
-          </p>
-          <p :if={@exam.status == "generating"} id="generation-elapsed" class="muted">
-            Temps écoulé : {generation_duration(@generation_elapsed_ms)}
-          </p>
-          <p :if={@exam.status == "generating"} class="muted">
-            Tu peux quitter la page, la génération continue.
-          </p>
-          <ul
-            :if={@exam.status == "generation_partial" and @exam.generation_errors != []}
-            id="generation-errors"
+          <details
+            id="generation-history"
+            phx-mounted={JS.ignore_attributes("open")}
           >
-            <li :for={
-              reason <- CaptainHomework.Exams.Generation.public_errors(@exam.generation_errors)
-            }>
-              {reason}
-            </li>
-          </ul>
-          <button
-            :if={@exam.status == "generation_partial"}
-            id="resume-generation"
-            class="button primary"
-            phx-click="resume_generation"
-            disabled={@busy}
-          >
-            Réessayer les questions manquantes
-          </button>
+            <summary class="generation-summary">
+              <div class="generation-history-toggle">
+                <span>
+                  <%= if @exam.status in ["generation_partial", "generating"] do %>
+                    {count_label(length(@exam.questions), "question prête", "questions prêtes")} sur {@exam.generation_target}
+                  <% else %>
+                    Historique de génération
+                  <% end %>
+                </span>
+                <.icon name="chevron-down" />
+              </div>
+              <progress
+                :if={@exam.status in ["generating", "generation_partial"]}
+                id="generation-question-progress"
+                max={@exam.generation_target}
+                value={length(@exam.questions)}
+                aria-label="Questions prêtes"
+              />
+              <p :if={@exam.status == "generating"} id="generation-stage" role="status">
+                <span class="spinner" aria-hidden="true" />
+                <span>{generation_stage_label(@exam.generation_stage)}</span>
+              </p>
+              <p :if={@exam.status == "generating"} id="generation-elapsed" class="muted">
+                Temps écoulé : {generation_duration(@generation_elapsed_ms)}
+              </p>
+              <p :if={@exam.status == "generating"} class="muted">
+                Tu peux quitter la page, la génération continue.
+              </p>
+            </summary>
+            <div class="generation-history-content">
+              <.generation_questions questions={@streams.generation_questions} />
+              <p :if={@exam.generation_history != []} class="generation-history-note muted">
+                Les questions prêtes sont conservées. L’historique reste consultable après la génération.
+              </p>
+              <ul
+                :if={@exam.status == "generation_partial" and @exam.generation_errors != []}
+                id="generation-errors"
+              >
+                <li :for={
+                  reason <-
+                    CaptainHomework.Exams.Generation.public_errors(@exam.generation_errors)
+                }>
+                  {reason}
+                </li>
+              </ul>
+              <button
+                :if={@exam.status == "generation_partial"}
+                id="resume-generation"
+                class="button primary"
+                phx-click="resume_generation"
+                disabled={@busy}
+              >
+                Réessayer les questions manquantes
+              </button>
+            </div>
+          </details>
         </section>
         <div
           :if={@exam.format == "classic" and @exam.status in ["in_progress", "grading"]}
@@ -1130,39 +1206,30 @@
                 class="question"
                 id={"question-#{q["id"]}"}
               >
-                <.question_heading
-                  prompt={q["prompt"]}
+                <.question_content
+                  question={q}
+                  mode="classic"
                   type_label={type_name(q["type"])}
                   index={index}
-                  points={q["points"]}
-                />
-                <.question_images
-                  :if={!group.shared?}
-                  question={q}
                   exam={@exam}
                   profile={@profile}
+                  shared_support={group.shared?}
+                  show_help={@exam.status == "in_progress"}
                 />
-                <p
-                  :if={@exam.status == "in_progress" and q["help"] not in [nil, ""]}
-                  id={"question-help-#{q["id"]}"}
-                  class="preview-help"
-                >
-                  {q["help"]}
-                </p>
-                <.question_audio question={q} exam={@exam} profile={@profile} />
-                <.question_text
-                  :if={
-                    CaptainHomework.Exams.SupportGroups.question_text_visible?(q, group.shared?)
+                <.question_response
+                  :if={@exam.status != "completed" or q["type"] == "photo"}
+                  question={q}
+                  mode="classic"
+                  value={@answers[q["id"]]}
+                  context={CaptainHomework.Symbols.context(q, @lesson.pages)}
+                  disabled={@exam.status != "in_progress"}
+                  completed={@exam.status == "completed"}
+                  upload={
+                    if q["type"] == "photo" and @exam.status == "in_progress",
+                      do: @uploads[drawing_upload_name(@exam, q["id"])]
                   }
-                  text={readable_text(q["text"])}
-                />
-                <.diagram :if={q["type"] == "diagram"} question={q} />
-                <.photo_answer
-                  :if={q["type"] == "photo"}
-                  id={"photo-response-#{q["id"]}"}
-                  show_filename={false}
-                  src={
-                    if is_map(@exam.answers[q["id"]]),
+                  photo_src={
+                    if q["type"] == "photo" and is_map(@exam.answers[q["id"]]),
                       do:
                         child_path(
                           @profile,
@@ -1170,156 +1237,17 @@
                         )
                   }
                 >
-                  <:picker :if={@exam.status == "in_progress"}>
-                    <.webcam_capture
-                      id={"webcam-#{q["id"]}"}
-                      upload_name={drawing_upload_name(@exam, q["id"])}
-                    />
-                    <label
-                      id={"choose-photo-#{q["id"]}"}
-                      class="button primary photo-picker"
-                      hidden={@uploads[drawing_upload_name(@exam, q["id"])].entries != []}
-                    >
-                      <.icon name="camera" />
-                      <span class="photo-picker-mobile-label">
-                        {if is_map(@exam.answers[q["id"]]),
-                          do: "Remplacer la photo",
-                          else: "Prendre ou choisir une photo"}
-                      </span>
-                      <span class="photo-picker-desktop-label">Choisir une photo</span>
-                      <.live_file_input
-                        upload={@uploads[drawing_upload_name(@exam, q["id"])]}
-                        class="photo-file-input"
-                        aria-label="Photo de ton dessin"
-                      />
-                    </label>
-                    <div :for={entry <- @uploads[drawing_upload_name(@exam, q["id"])].entries}>
-                      <p :if={entry.valid?} role="status">Envoi : {entry.progress} %</p>
-                      <p
-                        :for={
-                          error <-
-                            upload_errors(@uploads[drawing_upload_name(@exam, q["id"])], entry)
-                        }
-                        class="error"
-                        role="alert"
-                      >
-                        {if error == :too_large,
-                          do: "La photo dépasse 12 Mo.",
-                          else: "Choisis une photo JPEG, PNG ou WebP valide."}
-                      </p>
-                      <button
-                        type="button"
-                        class="button secondary"
-                        phx-click="cancel_upload"
-                        phx-value-name={drawing_upload_name(@exam, q["id"])}
-                        phx-value-ref={entry.ref}
-                      >
-                        Annuler
-                      </button>
-                    </div>
-                  </:picker>
-                  <:remove :if={@exam.status == "in_progress" and is_map(@exam.answers[q["id"]])}>
+                  <:text_actions :if={q["type"] in ["long", "reading"]}>
                     <button
-                      id={"remove-photo-#{q["id"]}"}
                       type="button"
-                      class="button secondary"
-                      phx-click="remove_drawing_photo"
+                      class="button text-button photo-answer"
+                      phx-click="open_ocr"
                       phx-value-id={q["id"]}
                     >
-                      Supprimer
+                      <.icon name="camera" /> Répondre avec une photo
                     </button>
-                  </:remove>
-                </.photo_answer>
-                <div :if={@exam.status != "completed"}>
-                  <.ordering_input
-                    :if={q["type"] == "ordering"}
-                    id={"ordering-#{q["id"]}"}
-                    question_id={q["id"]}
-                    name={"answers[#{q["id"]}]"}
-                    options={q["options"]}
-                    value={@answers[q["id"]]}
-                    disabled={@exam.status != "in_progress"}
-                  />
-                  <div :if={q["type"] == "mcq"} class="options">
-                    <label
-                      :for={{option, i} <- Enum.with_index(q["options"])}
-                      class={["option", @answers[q["id"]] == option && "selected"]}
-                    >
-                      <input
-                        type="radio"
-                        name={"answers[#{q["id"]}]"}
-                        value={option}
-                        checked={@answers[q["id"]] == option}
-                      /><span class="option-letter">{<<65 + i>>}</span><span>{option}</span>
-                    </label>
-                  </div>
-                  <.symbol_answer
-                    :if={
-                      q["type"] in [
-                        "cloze",
-                        "diagram",
-                        "definition",
-                        "long",
-                        "reading",
-                        "listening"
-                      ]
-                    }
-                    id={"symbols-#{q["id"]}"}
-                    context={CaptainHomework.Symbols.context(q, @lesson.pages)}
-                    disabled={@exam.status != "in_progress"}
-                  >
-                    <div :if={q["type"] in ["cloze", "diagram"]} class="slot-inputs">
-                      <div :for={slot <- q["slots"]}>
-                        <label for={"answer-#{q["id"]}-#{slot}"}>{slot}</label>
-                        <.input
-                          wrapper={false}
-                          id={"answer-#{q["id"]}-#{slot}"}
-                          autocorrect="off"
-                          name={"answers[#{q["id"]}][#{slot}]"}
-                          value={slots_value(@answers, q["id"], slot)}
-                          phx-debounce="500"
-                          maxlength="2000"
-                          autocomplete="off"
-                        />
-                      </div>
-                    </div>
-                    <div :if={q["type"] in ["definition", "listening"]}>
-                      <label class="sr-only" for={"answer-#{q["id"]}"}>Ta réponse</label>
-                      <.input
-                        wrapper={false}
-                        id={"answer-#{q["id"]}"}
-                        autocorrect="off"
-                        name={"answers[#{q["id"]}]"}
-                        value={@answers[q["id"]] || ""}
-                        phx-debounce="500"
-                        maxlength="12000"
-                        autocomplete="off"
-                      />
-                    </div>
-                    <div :if={q["type"] in ["long", "reading"]}>
-                      <label class="sr-only" for={"answer-#{q["id"]}"}>Ta réponse</label>
-                      <.input
-                        wrapper={false}
-                        type="textarea"
-                        id={"answer-#{q["id"]}"}
-                        autocorrect="off"
-                        name={"answers[#{q["id"]}]"}
-                        rows="5"
-                        phx-debounce="500"
-                        maxlength="12000"
-                        value={@answers[q["id"]] || ""}
-                      />
-                      <button
-                        type="button"
-                        class="button text-button photo-answer"
-                        phx-click="open_ocr"
-                        phx-value-id={q["id"]}
-                      >
-                        <.icon name="camera" /> Répondre avec une photo
-                      </button>
-                    </div>
-                  </.symbol_answer>
-                </div>
+                  </:text_actions>
+                </.question_response>
                 <div :if={@exam.status == "completed"} class="graded-answer">
                   <.ordering_input
                     :if={q["type"] == "ordering"}
@@ -1364,7 +1292,11 @@
                       </div>
                       <p class="expected-answer">{@exam.corrections[q["id"]]["expected"]}</p>
                     </div>
-                    <div class="correction-sources" id={"question-sources-#{q["id"]}"}>
+                    <div
+                      :if={!@shared}
+                      class="correction-sources"
+                      id={"question-sources-#{q["id"]}"}
+                    >
                       <strong>Sources</strong>
                       <ul :if={Map.get(@exam_sources, q["id"], []) != []}>
                         <li :for={source <- Map.get(@exam_sources, q["id"], [])}>
@@ -1394,18 +1326,22 @@
           </fieldset>
         </.form>
         <div class="exam-bottom-actions">
-          <div class="exam-footer" id="exam-footer">
-            <span
+          <div :if={!@shared} class="exam-footer" id="exam-footer">
+            <button
               :if={@exam.status != "generating"}
               id="generation-duration"
-              class="generation-duration"
+              type="button"
+              class="button text-button generation-duration"
+              phx-click="open_generation_history"
+              aria-haspopup="dialog"
+              disabled={@exam.generation_history == []}
             >
               <%= if is_integer(@exam.generation_duration_ms) do %>
                 Généré en {generation_duration(@exam.generation_duration_ms)}
               <% else %>
                 Temps de génération non enregistré
               <% end %>
-            </span>
+            </button>
             <span
               :if={@exam.status != "generating" and Study.exam_deletable?(@exam)}
               aria-hidden="true"
@@ -1436,6 +1372,19 @@
               phx-disable-with="Création…"
             >
               Refaire
+            </button>
+            <span :if={@exam.status in ["in_progress", "grading", "completed"]} aria-hidden="true">
+              -
+            </span>
+            <button
+              :if={@exam.status in ["in_progress", "grading", "completed"]}
+              id="share-exam"
+              type="button"
+              class="button text-button"
+              phx-click="open_share"
+              aria-haspopup="dialog"
+            >
+              Partager
             </button>
           </div>
           <button
@@ -1566,7 +1515,7 @@
         <img
           :if={String.starts_with?(@source_page.content_type, "image/")}
           src={child_path(@profile, ~p"/pages/#{@source_page.id}")}
-          alt="Page source de la correction"
+          alt="Page originale"
         />
         <p :if={!String.starts_with?(@source_page.content_type, "image/")}>
           {@source_page.text}
@@ -1576,20 +1525,23 @@
     <.modal
       :if={@modal == "extract_illustrations" and @extraction_source}
       id="extract-illustrations-modal"
-      title="Extraire une ou plusieurs illustrations"
+      title="Extraire des illustrations"
     >
       <div class="page-editor illustration-editor">
-        <a
-          href={child_path(@profile, ~p"/pages/#{@extraction_source.id}")}
-          target="_blank"
-          rel="noopener"
+        <button
+          id="preview-extraction-source"
+          type="button"
+          class="page-preview"
+          phx-click="preview_page"
+          phx-value-id={@extraction_source.id}
+          aria-haspopup="dialog"
         >
           <img
             id="extraction-source-image"
             src={child_path(@profile, ~p"/pages/#{@extraction_source.id}")}
             alt="Illustration originale à recadrer"
           />
-        </a>
+        </button>
         <.form
           for={@extraction_form}
           id="illustration-extraction-form"
@@ -1599,7 +1551,7 @@
           <.count_stepper
             id="illustration-count"
             value={@extraction_count}
-            max={Resources.Extraction.max_count()}
+            unbounded
             event="change_extraction_count"
             label="Nombre d'illustrations"
             disabled={@extraction_ref != nil}
@@ -1637,10 +1589,13 @@
     </.modal>
     <.modal :if={@modal == "edit_page"} id="page-modal" title="Vérifier la page">
       <div class="page-editor">
-        <a
-          href={child_path(@profile, ~p"/pages/#{@edit_page.id}")}
-          target="_blank"
-          rel="noreferrer"
+        <button
+          id="preview-original-page"
+          type="button"
+          class="page-preview"
+          phx-click="preview_page"
+          phx-value-id={@edit_page.id}
+          aria-haspopup="dialog"
         >
           <img
             :if={String.starts_with?(@edit_page.content_type, "image/")}
@@ -1650,7 +1605,7 @@
           <span :if={!String.starts_with?(@edit_page.content_type, "image/")}>
             Voir le texte original
           </span>
-        </a>
+        </button>
         <.form for={@form} phx-change="validate_page" phx-submit="save_page" id="page-text-form">
           <label for="page-text">Texte reconnu</label>
           <.input
@@ -1750,4 +1705,74 @@
       </div>
     </div>
   </main>
+  <.modal
+    :if={!@shared && @modal == "generation_history"}
+    id="generation-history-modal"
+    title="Historique de génération"
+  >
+    <.generation_questions
+      id="generation-modal-questions"
+      questions={@streams.generation_questions}
+    />
+  </.modal>
+  <.modal
+    :if={!@shared && @modal == "share_exam"}
+    id="share-exam-modal"
+    title="Partager ce contrôle"
+  >
+    <p>Le lien donne accès uniquement à ce contrôle.</p>
+    <div class="share-options">
+      <button
+        id="share-correction"
+        type="button"
+        class={["share-option", @share_mode == "correction" && "selected"]}
+        phx-click="create_share"
+        phx-value-mode="correction"
+        aria-pressed={to_string(@share_mode == "correction")}
+        disabled={@exam.status != "completed"}
+        aria-describedby="share-correction-description"
+      >
+        <strong>Partager la correction</strong>
+        <span id="share-correction-description">
+          {if @exam.status == "completed",
+            do: "Les réponses, la note et la correction du devoir en cours.",
+            else: "Disponible une fois ce devoir corrigé."}
+        </span>
+      </button>
+      <button
+        id="share-fill"
+        type="button"
+        class={["share-option", @share_mode == "fill" && "selected"]}
+        phx-click="create_share"
+        phx-value-mode="fill"
+        aria-pressed={to_string(@share_mode == "fill")}
+      >
+        <strong>Partager le contrôle à remplir</strong>
+        <span>
+          Chaque élève remplit sa propre copie et obtient sa correction. Lien valable {CaptainHomework.ExamShares.lifetime_days()} jours.
+        </span>
+      </button>
+    </div>
+    <p :if={@error} class="notice error" role="alert">{@error}</p>
+    <div :if={@share_url} id="share-link-result" class="share-link-result">
+      <label for="share-url">Lien à partager</label>
+      <div class="share-url-row">
+        <.input id="share-url" name="share_url" value={@share_url} readonly wrapper={false} />
+        <button
+          id="copy-share-url"
+          type="button"
+          class="button primary"
+          phx-hook="CopyShareLink"
+          phx-update="ignore"
+          data-url={@share_url}
+          aria-label="Copier le lien"
+        >
+          <span class="share-copy-label">Copier</span>
+          <span class="share-copy-check" aria-hidden="true"><.icon name="check" /></span>
+        </button>
+      </div>
+      <p :if={@share_expires_at} class="muted">Disponible jusqu’au {date(@share_expires_at)}.</p>
+      <p id="share-copy-status" role="status" aria-live="polite" phx-update="ignore"></p>
+    </div>
+  </.modal>
 </Layouts.app>

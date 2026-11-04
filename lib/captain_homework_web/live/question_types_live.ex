@@ -27,6 +27,7 @@ defmodule CaptainHomeworkWeb.QuestionTypesLive do
        preview_mode: "classic",
        preview_subject: nil,
        preview_corrected: false,
+       preview_answer: %{},
        preview_ordering_answer: "",
        page_title: "Types de questions"
      )
@@ -81,6 +82,7 @@ defmodule CaptainHomeworkWeb.QuestionTypesLive do
              example: example,
              example_form: to_form(example, as: :example),
              preview_corrected: false,
+             preview_answer: %{},
              preview_ordering_answer: ""
            )
            |> edit_form(QuestionDefinitions.change(type))}
@@ -184,6 +186,7 @@ defmodule CaptainHomeworkWeb.QuestionTypesLive do
     {:noreply,
      assign(socket,
        example: example,
+       preview_answer: %{},
        preview_ordering_answer: "",
        example_form: to_form(example, as: :example),
        preview_corrected: false
@@ -205,6 +208,9 @@ defmodule CaptainHomeworkWeb.QuestionTypesLive do
 
     {:noreply, assign(socket, preview_ordering_answer: answer)}
   end
+
+  def handle_event("preview_answer", %{"answer" => answer}, socket),
+    do: {:noreply, assign(socket, preview_answer: answer)}
 
   def handle_event("preview_answer", _, socket), do: {:noreply, socket}
 

@@ -8,6 +8,10 @@ defmodule CaptainHomework.AI.Trace do
   def with_stage(stage, fun), do: with_context(:stage, stage, fun)
   def with_progress(callback, fun), do: with_context(:progress, callback, fun)
 
+  # Worker tasks inherit attribution, but never the coordinator's persistence callback.
+  def context, do: %{exam_id: Process.get({__MODULE__, :exam_id})}
+  def with_context(%{exam_id: id}, fun), do: with_exam(id, fun)
+
   def request(body, fun) do
     started = System.monotonic_time(:millisecond)
 

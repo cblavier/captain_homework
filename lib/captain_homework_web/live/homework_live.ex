@@ -4,7 +4,9 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
   alias CaptainHomework.{Study, Exams, AI, Uploads, Repo, Resources}
   alias CaptainHomework.Study.Page
   alias CaptainHomework.Exams.Flashcards
+  import CaptainHomeworkWeb.QuestionComponents
   import CaptainHomeworkWeb.FlashcardComponents
+  import CaptainHomeworkWeb.GenerationComponents
   import Ecto.Query
   alias CaptainHomeworkWeb.ProfilePath
   import CaptainHomeworkWeb.ProfilePath, only: [child_path: 2]
@@ -15,11 +17,15 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
 
   @impl true
   def mount(_params, session, socket) do
-    profiles = Study.profiles()
+    profiles = if session["shared"], do: [], else: Study.profiles()
     profile = Enum.find(profiles, &(&1.id == session["profile_id"])) || List.first(profiles)
 
     socket =
       assign(socket,
+        shared: false,
+        share_url: nil,
+        share_mode: nil,
+        share_expires_at: nil,
         form: to_form(%{}),
         lesson_form: lesson_form(),
         resource_form: to_form(%{"url" => ""}, as: :resource),
@@ -37,9 +43,11 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
         lesson_tab: "controles",
         exam: nil,
         generation_elapsed_ms: 0,
+        generation_question_ids: [],
         exam_refresh_timer: nil,
         exam_sources: %{},
         source_page: nil,
+        source_return_modal: nil,
         extraction_source: nil,
         extraction_count: 1,
         extraction_form: to_form(%{"instructions" => ""}, as: :extraction),
@@ -74,30 +82,39 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
      |> stream(:lessons, [])
      |> stream_configure(:resources, dom_id: &"resource-#{&1.id}")
      |> stream(:resources, [])
-     |> allow_upload(:pages,
-       accept: ~w(.jpg .jpeg .png .webp),
-       max_entries: 20,
-       max_file_size: 12_000_000
-     )
-     |> allow_upload(:examples,
-       auto_upload: true,
-       progress: &log_upload_progress/3,
-       accept: ~w(.jpg .jpeg .png .webp),
-       max_entries: 5,
-       max_file_size: 12_000_000
-     )
-     |> allow_upload(:resources,
-       auto_upload: true,
-       progress: &log_upload_progress/3,
-       accept: ~w(.pdf .jpg .jpeg .png .webp),
-       max_entries: 5,
-       max_file_size: @resource_upload_size
-     )
+     |> stream_configure(:generation_questions, dom_id: & &1.id)
+     |> stream(:generation_questions, [])
+     |> allow_family_uploads(session["shared"])
      |> allow_upload(:answer_photo,
        accept: ~w(.jpg .jpeg .png .webp),
        max_entries: 1,
        max_file_size: 12_000_000
      )}
+  end
+
+  defp allow_family_uploads(socket, true), do: socket
+
+  defp allow_family_uploads(socket, _) do
+    socket
+    |> allow_upload(:pages,
+      accept: ~w(.jpg .jpeg .png .webp),
+      max_entries: 20,
+      max_file_size: 12_000_000
+    )
+    |> allow_upload(:examples,
+      auto_upload: true,
+      progress: &log_upload_progress/3,
+      accept: ~w(.jpg .jpeg .png .webp),
+      max_entries: 5,
+      max_file_size: 12_000_000
+    )
+    |> allow_upload(:resources,
+      auto_upload: true,
+      progress: &log_upload_progress/3,
+      accept: ~w(.pdf .jpg .jpeg .png .webp),
+      max_entries: 5,
+      max_file_size: @resource_upload_size
+    )
   end
 
   @impl true
@@ -226,6 +243,7 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
           error: exam.error,
           page_title: "Contrôle"
         )
+        |> stream_generation_history()
         |> configure_drawing_uploads()
     end
   end
@@ -263,6 +281,38 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
     end
   end
 
+  def handle_event("open_share", _, socket) do
+    {:noreply, assign(socket, modal: "share_exam", share_url: nil, share_mode: nil, error: nil)}
+  end
+
+  def handle_event("open_generation_history", _, socket) do
+    if not socket.assigns.shared and socket.assigns.exam.generation_history != [] do
+      {:noreply, socket |> assign(modal: "generation_history") |> stream_generation_history(true)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_event("create_share", %{"mode" => mode}, socket) do
+    case CaptainHomework.ExamShares.create(
+           socket.assigns.profile.id,
+           socket.assigns.exam.id,
+           mode
+         ) do
+      {:ok, share, token} ->
+        {:noreply,
+         assign(socket,
+           share_url: url(~p"/partage/#{token}"),
+           share_mode: mode,
+           share_expires_at: share.expires_at,
+           error: nil
+         )}
+
+      {:error, _} ->
+        {:noreply, assign(socket, error: "Ce partage n’est pas encore disponible.")}
+    end
+  end
+
   def handle_event("open_modal", %{"modal" => "resource_url"}, socket) do
     {:noreply,
      assign(socket,
@@ -278,6 +328,30 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
 
   def handle_event("open_modal", %{"modal" => modal}, socket),
     do: {:noreply, assign(socket, modal: modal, error: nil)}
+
+  def handle_event("close_modal", _, %{assigns: %{modal: "source"}} = socket) do
+    {:noreply,
+     assign(socket,
+       modal: socket.assigns.source_return_modal,
+       source_page: nil,
+       source_return_modal: nil
+     )}
+  end
+
+  def handle_event("preview_page", %{"id" => id}, socket) do
+    if socket.assigns.lesson && Enum.any?(socket.assigns.lesson.pages, &(&1.id == id)) do
+      page = Study.get_page!(socket.assigns.profile.id, id)
+
+      {:noreply,
+       assign(socket,
+         modal: "source",
+         source_page: page,
+         source_return_modal: socket.assigns.modal
+       )}
+    else
+      {:noreply, socket}
+    end
+  end
 
   def handle_event("close_modal", _, socket),
     do: {:noreply, assign(socket, modal: nil, error: nil, ocr_text: nil, source_page: nil)}
@@ -494,7 +568,6 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
     count =
       (socket.assigns.extraction_count + String.to_integer(delta))
       |> max(1)
-      |> min(Resources.Extraction.max_count())
 
     {:noreply, assign(socket, extraction_count: count)}
   end
@@ -966,6 +1039,25 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
     socket |> assign(lesson: lesson) |> stream(:resources, lesson.resources, reset: true)
   end
 
+  # The shared LiveView only delegates exam interactions after checking its capability.
+  def load_shared_exam(socket, exam, profile) do
+    socket
+    |> assign(
+      shared: true,
+      profile: profile,
+      exam: exam,
+      lesson: %{exam.lesson | pages: []},
+      subject: Study.subject!(exam.lesson.subject),
+      answers: exam.answers,
+      exam_sources: %{},
+      error: exam.error,
+      page_title: "Contrôle partagé"
+    )
+    |> subscribe(:exam, exam.id)
+    |> schedule_exam_refresh(exam)
+    |> configure_drawing_uploads()
+  end
+
   defp refresh_exam(socket) do
     exam = Study.get_exam!(socket.assigns.profile.id, socket.assigns.exam.id)
     Exams.recover_stale(exam)
@@ -974,11 +1066,31 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
     assign(socket,
       exam: exam,
       generation_elapsed_ms: generation_elapsed_ms(exam),
-      exam_sources: CaptainHomework.Exams.Sources.for_exam(exam, socket.assigns.profile.id),
+      exam_sources:
+        if(socket.assigns.shared,
+          do: %{},
+          else: CaptainHomework.Exams.Sources.for_exam(exam, socket.assigns.profile.id)
+        ),
       answers: exam.answers,
       error: exam.error
     )
+    |> stream_generation_history()
     |> configure_drawing_uploads()
+  end
+
+  defp stream_generation_history(socket, reset \\ false) do
+    entries =
+      if socket.assigns.shared, do: [], else: Exams.GenerationHistory.entries(socket.assigns.exam)
+
+    ids = Enum.map(entries, & &1.id)
+    old_ids = socket.assigns.generation_question_ids
+
+    socket =
+      Enum.reduce(old_ids -- ids, socket, &stream_delete_by_dom_id(&2, :generation_questions, &1))
+
+    socket
+    |> assign(generation_question_ids: ids)
+    |> stream(:generation_questions, entries, reset: reset)
   end
 
   defp drawing_upload_pending?(uploads) do
@@ -1311,9 +1423,6 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
       _ -> "Texte reconnu"
     end
   end
-
-  defp slots_value(answers, id, slot),
-    do: if(is_map(answers[id]), do: answers[id][slot] || "", else: "")
 
   defp completed_count(exam, answers),
     do: Enum.count(exam.questions, &(not Exams.blank?(answers[&1["id"]])))

@@ -25,7 +25,9 @@ defmodule CaptainHomeworkWeb.ListeningLiveTest do
 
       control =
         exam(l, [
-          Map.put(q, "audio", %{"id" => id, "storage_key" => key, "content_type" => content_type})
+          q
+          |> Map.put("audio", %{"id" => id, "storage_key" => key, "content_type" => content_type})
+          |> Map.put("help", "Réponds en anglais en une phrase")
         ])
         |> Ecto.Changeset.change(format: format)
         |> Repo.update!()
@@ -44,7 +46,14 @@ defmodule CaptainHomeworkWeb.ListeningLiveTest do
       assert_error_sent 404, fn -> get(conn, "/bob/controles/#{control.id}/audio/#{id}") end
 
       if format == "flashcard" do
-        assert has_element?(view, "#flashcard-response")
+        assert has_element?(view, "input#flashcard-response[type=text]")
+        assert has_element?(view, "#question-audio-q1 + #question-help-q1")
+
+        view
+        |> form("#flashcard-answer", answers: %{"q1" => "She goes to the park."})
+        |> render_change()
+
+        assert Study.get_exam!(l.profile_id, control.id).answers["q1"] == "She goes to the park."
 
         {:ok, graded} =
           Exams.Flashcards.submit(l.profile_id, control.id, "q1", "She goes to the park.",

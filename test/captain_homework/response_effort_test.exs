@@ -55,4 +55,38 @@ defmodule CaptainHomework.ResponseEffortTest do
 
     assert {:ok, [], [_]} = ResponseEffort.review([question], [review])
   end
+
+  test "audit classification does not mutate an immutable contract's effort" do
+    question = %{
+      "plan_id" => "q1",
+      "type" => "long",
+      "response_effort" => "short",
+      "answer_basis" => "knowledge",
+      "exercise_spec_hash" => "frozen-contract"
+    }
+
+    review = %{
+      "plan_id" => "q1",
+      "actual_effort" => "direct",
+      "actual_basis" => "knowledge",
+      "answer_exposed" => false,
+      "consistent" => true,
+      "reason" => "La tâche et le barème sont cohérents."
+    }
+
+    assert {:ok, [accepted], []} = ResponseEffort.review([question], [review])
+    assert Map.take(accepted, Map.keys(question)) == question
+    assert accepted["response_effort"] == "short"
+    assert accepted["verified_response_effort"] == "direct"
+    assert accepted["verified_answer_basis"] == "knowledge"
+
+    assert {:ok, [], [_]} =
+             ResponseEffort.review([question], [Map.put(review, "consistent", false)])
+
+    assert {:ok, [], [_]} =
+             ResponseEffort.review(
+               [Map.merge(question, %{"type" => "mcq", "response_effort" => "direct"})],
+               [Map.put(review, "actual_effort", "developed")]
+             )
+  end
 end

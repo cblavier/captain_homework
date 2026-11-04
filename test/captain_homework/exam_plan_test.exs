@@ -2,6 +2,20 @@ defmodule CaptainHomework.ExamPlanTest do
   use ExUnit.Case, async: true
   alias CaptainHomework.Exams.{Plan, SupportGroups}
 
+  test "same objective on different illustrations is not a duplicate, but same plan ID still is" do
+    a = %{
+      "plan_id" => "q1",
+      "objective" => "Position",
+      "skill" => "interpret",
+      "image_ids" => ["a"]
+    }
+
+    b = %{a | "plan_id" => "q2", "image_ids" => ["b"]}
+    refute Plan.duplicate?(a, b)
+    assert Plan.duplicate?(a, %{b | "image_ids" => ["a"]})
+    assert Plan.duplicate?(a, %{b | "plan_id" => "q1"})
+  end
+
   defp slot(id, objective, skill) do
     %{
       "id" => id,
@@ -12,6 +26,22 @@ defmodule CaptainHomework.ExamPlanTest do
       "source_page_ids" => ["page"],
       "support_id" => "doc"
     }
+  end
+
+  test "plan validation accepts the same expected word on two different visual situations" do
+    questions =
+      for {id, image} <- [{"q1", "a"}, {"q2", "b"}] do
+        slot(id, "Identifier une position", "interpret")
+        |> Map.merge(%{"support_id" => "", "image_ids" => [image], "expected_elements" => ["in"]})
+      end
+
+    plan = %{"questions" => questions, "supports" => []}
+    assert :ok = Plan.validate(plan, 2, ["reading"], [%{id: "page"}], [%{id: "a"}, %{id: "b"}])
+
+    duplicated =
+      put_in(plan, ["questions"], Enum.map(questions, &Map.put(&1, "image_ids", ["a"])))
+
+    assert {:error, _} = Plan.validate(duplicated, 2, ["reading"], [%{id: "page"}], [%{id: "a"}])
   end
 
   defp plan do
@@ -101,6 +131,62 @@ defmodule CaptainHomework.ExamPlanTest do
     p = %{plan() | "questions" => [a, separate, b]}
     ordered = Plan.order([%{"plan_id" => "q2"}, %{"plan_id" => "q3"}, %{"plan_id" => "q1"}], p)
     assert Enum.map(ordered, & &1["plan_id"]) == ["q1", "q2", "q3"]
+  end
+
+  test "a shared text preserves each question's illustrations and their order" do
+    q = %{
+      "plan_id" => "q1",
+      "type" => "reading",
+      "text" => "Observe les deux images.",
+      "image_ids" => ["second", "first"],
+      "image_regions" => [Map.put(region(0, 0, 1000, 500), "image_id", "second")]
+    }
+
+    assert {:ok, bound} = Plan.attach(q, plan()["questions"], plan()["supports"])
+    assert bound["image_ids"] == q["image_ids"]
+    assert bound["image_regions"] == q["image_regions"]
+    assert bound["support_text"] == "Texte commun et sa source."
+    assert bound["text"] == q["text"]
+    assert {:ok, ^bound} = Plan.attach(bound, plan()["questions"], plan()["supports"])
+
+    other =
+      q
+      |> Map.put("plan_id", "q2")
+      |> Map.put("image_ids", ["third"])
+      |> Map.put("image_regions", [])
+
+    assert {:ok, other} = Plan.attach(other, plan()["questions"], plan()["supports"])
+    assert length(SupportGroups.build([bound, other])) == 2
+  end
+
+  test "question and shared images are combined without duplicating the shared image" do
+    own_crop = Map.put(region(0, 0, 1000, 500), "image_id", "own")
+    shared_crop = region(0, 500, 1000, 500)
+
+    q = %{
+      "plan_id" => "q1",
+      "type" => "reading",
+      "image_ids" => ["own", "page"],
+      "image_regions" => [own_crop, region(0, 0, 1000, 500)]
+    }
+
+    support = %{
+      "id" => "doc",
+      "title" => "Support",
+      "text" => "Texte commun",
+      "image_ids" => ["page"],
+      "image_regions" => [shared_crop]
+    }
+
+    assert {:ok, bound} = Plan.attach(q, plan()["questions"], [support])
+    assert bound["image_ids"] == ["own", "page"]
+    assert bound["image_regions"] == [own_crop, shared_crop]
+    assert {:ok, ^bound} = Plan.attach(bound, plan()["questions"], [support])
+
+    assert {:ok, whole} =
+             Plan.attach(q, plan()["questions"], [Map.put(support, "image_regions", [])])
+
+    assert whole["image_regions"] == [own_crop]
   end
 
   test "drafts must match their slot and use the canonical shared support" do

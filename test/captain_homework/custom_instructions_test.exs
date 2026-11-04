@@ -66,20 +66,50 @@ defmodule CaptainHomework.CustomInstructionsTest do
     Req.Test.stub(__MODULE__, fn conn ->
       {conn, body, prompt, properties} = request(conn)
       assert body["instructions"] =~ "priorité pédagogique maximale"
-      assert prompt =~ @instructions
+
+      construction? =
+        get_in(properties, ["questions", "properties", "q1", "properties", "spec_hash"])
+
+      unless construction?, do: assert(prompt =~ @instructions)
 
       cond do
         properties["included_ids"] ->
           assert prompt =~ "ACTIVITY_ONLY_CONTENT"
           send(owner, :selection)
-          response(conn, %{"included_ids" => [0], "use_examples" => false})
+          response(conn, selection([0]))
+
+        construction? ->
+          refute prompt =~ "ACTIVITY_ONLY_CONTENT"
+          refute prompt =~ ctx.activity.id
+          send(owner, :construction)
+
+          questions =
+            Map.new(properties["questions"]["properties"], fn {id, schema} ->
+              fields = schema["properties"]
+              question = Enum.find(plan["questions"], &(&1["id"] == id))
+
+              {id,
+               %{
+                 "spec_id" => hd(fields["spec_id"]["enum"]),
+                 "spec_hash" => hd(fields["spec_hash"]["enum"]),
+                 "prompt" => question["prompt"]
+               }}
+            end)
+
+          response(conn, %{"questions" => questions})
 
         properties["questions"] ->
           refute prompt =~ "ACTIVITY_ONLY_CONTENT"
           refute prompt =~ ctx.activity.id
           assert prompt =~ "aucune proportion n’est imposée"
           send(owner, :draft)
-          response(conn, plan)
+
+          response(
+            conn,
+            Map.update!(plan, "questions", fn questions ->
+              Enum.map(questions, &(&1 |> Map.put("task", &1["prompt"]) |> Map.delete("prompt")))
+            end)
+          )
 
         properties["reviews"] ->
           assert prompt =~ "consistent=false"
@@ -101,6 +131,7 @@ defmodule CaptainHomework.CustomInstructionsTest do
     assert exam.status == "in_progress"
     assert_received :selection
     assert_received :draft
+    assert_received :construction
     assert_received :audit
     assert Enum.all?(exam.questions, &(&1["source_page_ids"] == [ctx.course.id]))
 
@@ -163,7 +194,7 @@ defmodule CaptainHomework.CustomInstructionsTest do
       Req.Test.stub(__MODULE__, fn conn ->
         {conn, _, _, properties} = request(conn)
         assert properties["included_ids"]
-        response(conn, %{"included_ids" => ids, "use_examples" => false})
+        response(conn, selection(ids))
       end)
 
       assert {:error, _} =
@@ -212,7 +243,7 @@ defmodule CaptainHomework.CustomInstructionsTest do
       assert properties["included_ids"]
       assert prompt =~ @instructions
       refute prompt =~ "FORCE_ACTIVITY_DIAGNOSTIC"
-      response(conn, %{"included_ids" => [0], "use_examples" => false})
+      response(conn, selection([0]))
     end)
 
     assert {:ok, content, [], []} =
@@ -226,6 +257,16 @@ defmodule CaptainHomework.CustomInstructionsTest do
              )
 
     refute content =~ "ACTIVITY_ONLY_CONTENT"
+  end
+
+  defp selection(ids) do
+    %{
+      "status" => "compatible",
+      "reason" => "",
+      "included_ids" => ids,
+      "evidence_ids" => ids,
+      "use_examples" => false
+    }
   end
 
   defp drafted_plan(course) do

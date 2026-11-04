@@ -10,7 +10,7 @@ defmodule CaptainHomework.Study.Lesson do
     field :date, :date
     has_many :resources, CaptainHomework.Study.Resource
     has_many :pages, CaptainHomework.Study.Page
-    has_many :exams, CaptainHomework.Study.Exam
+    has_many :exams, CaptainHomework.Study.Exam, where: [exam_share_id: nil]
     timestamps(type: :utc_datetime_usec)
   end
 

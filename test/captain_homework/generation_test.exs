@@ -162,6 +162,47 @@ defmodule CaptainHomework.GenerationTest do
     assert List.last(calls()).instructions =~ "répète un énoncé"
   end
 
+  test "three identical instructions on distinct images are retained", %{profile: p, lesson: l} do
+    resource = Repo.insert!(%Study.Resource{lesson_id: l.id, filename: "images", status: "ready"})
+
+    pages =
+      for n <- 1..3 do
+        key = "#{Ecto.UUID.generate()}.png"
+        File.mkdir_p!(CaptainHomework.Uploads.directory())
+        File.write!(CaptainHomework.Uploads.path(key), "image #{n}")
+        on_exit(fn -> File.rm(CaptainHomework.Uploads.path(key)) end)
+
+        Repo.insert!(%Study.Page{
+          lesson_id: l.id,
+          resource_id: resource.id,
+          kind: "resource",
+          filename: key,
+          storage_key: key,
+          content_type: "image/png",
+          text: "Position #{n}",
+          status: "ready"
+        })
+      end
+
+    questions =
+      Enum.map(pages, fn page ->
+        q("Observe l’image")
+        |> Map.merge(%{
+          "image_ids" => [page.id],
+          "objective" => "Identifier une position",
+          "skill" => "interpret"
+        })
+      end)
+
+    sequence([{:ok, questions}])
+    assert {:ok, exam} = Exams.generate(p.id, l.id, 3, "Utilise les images")
+    on_exit(fn -> CaptainHomework.Exams.Illustrations.delete_exam_images(exam) end)
+    assert exam.status == "in_progress"
+    assert length(exam.questions) == 3
+    assert Enum.map(exam.questions, & &1["image_ids"]) == Enum.map(pages, &[&1.id])
+    assert length(calls()) == 1
+  end
+
   test "diagnostics are safe for malformed values and unmatched holes" do
     assert {[], [_]} = AI.inspect_questions(nil)
     assert {[], errors} = AI.inspect_questions([%{"slots" => nil}, "invalid"])

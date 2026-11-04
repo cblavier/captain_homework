@@ -66,7 +66,9 @@ Compléter le fichier `.env` :
 - `PRONOTE_CHILD_n_THEME` : thème `blue` ou `green`, avec le même numéro que l’enfant. Le nom de variable est partagé avec Captain Notes.
 - `HOMEWORK_PASSWORD` : mot de passe familial facultatif.
 
-Les variables `PHX_HOST` et `SECRET_KEY_BASE` du fichier exemple servent au déploiement en production.
+En développement derrière un reverse proxy HTTPS, définir `PHX_HOST` sans protocole ni chemin, par exemple `export PHX_HOST=homework.apps.pouet.io` dans `.envrc`. Les liens générés utilisent alors `https://homework.apps.pouet.io`, tandis que le serveur continue d’écouter en HTTP sur le port local 4125 (ou `PORT`). Sans cette variable, l’adresse locale par défaut est conservée. Redémarrer le serveur après modification.
+
+En production, `PHX_HOST` et `SECRET_KEY_BASE` sont obligatoires.
 
 L’OCR utilise un raisonnement `low` ; la préparation des catalogues et la conception des contrôles utilisent un raisonnement `medium`.
 

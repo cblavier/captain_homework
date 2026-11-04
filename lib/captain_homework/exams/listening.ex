@@ -43,8 +43,10 @@ defmodule CaptainHomework.Exams.Listening do
 
   def valid_script?(_), do: false
 
-  def prepare(questions) do
+  def prepare(questions, on_audio \\ fn _question -> :ok end) do
     Enum.reduce_while(questions, {[], []}, fn q, {ready, errors} ->
+      if q["type"] == "listening", do: on_audio.(q)
+
       case materialize(q) do
         {:ok, q} -> {:cont, {ready ++ [q], errors}}
         {:error, reason} -> {:halt, {ready, errors ++ [AI.message(reason)]}}

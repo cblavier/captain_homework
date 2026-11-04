@@ -48,9 +48,7 @@ defmodule CaptainHomework.OpenAISelectiveAuditTest do
           {%{"document_complete" => false, "content_consistent" => false}, "content",
            "content_inconsistent"},
           {%{"document_complete" => false, "visual_paraphrase" => true}, "content",
-           "visual_paraphrase"},
-          {%{"document_complete" => false, "actual_basis" => "knowledge"}, "content",
-           "answer_basis_incompatible"}
+           "visual_paraphrase"}
         ] do
       Req.Test.stub(__MODULE__, &respond(&1, %{"reviews" => [Map.merge(review("q1"), extra)]}))
 
@@ -60,6 +58,13 @@ defmodule CaptainHomework.OpenAISelectiveAuditTest do
       assert diagnostic["kind"] == kind
       assert code in diagnostic["issue_codes"]
     end
+
+    Req.Test.stub(
+      __MODULE__,
+      &respond(&1, %{"reviews" => [Map.put(review("q1"), "actual_basis", "knowledge")]})
+    )
+
+    assert {:ok, [_], [], %{}} = OpenAI.audit_response_effort_detailed([q], %{images: [image]})
 
     Req.Test.stub(
       __MODULE__,

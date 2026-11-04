@@ -29,7 +29,7 @@ defmodule CaptainHomework.Exams.ResponseEffort do
             {accepted ++
                [
                  q
-                 |> Map.put("response_effort", review["actual_effort"])
+                 |> record_effort(review["actual_effort"])
                  |> Map.put("verified_response_effort", review["actual_effort"])
                  |> Map.put("verified_answer_basis", review["actual_basis"])
                ], errors}
@@ -49,4 +49,12 @@ defmodule CaptainHomework.Exams.ResponseEffort do
   end
 
   def review(_, _), do: {:error, :invalid_effort_review}
+
+  # Contract metadata is immutable. The review records its classification separately;
+  # an incompatible format is rejected above and needs a newly constructed contract.
+  defp record_effort(%{"exercise_spec_hash" => hash} = question, _actual)
+       when is_binary(hash) and hash != "",
+       do: question
+
+  defp record_effort(question, actual), do: Map.put(question, "response_effort", actual)
 end

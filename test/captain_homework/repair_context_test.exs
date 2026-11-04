@@ -2,6 +2,27 @@ defmodule CaptainHomework.RepairContextTest do
   use ExUnit.Case, async: true
   alias CaptainHomework.AI.RepairContext
 
+  test "illustrated repairs can choose another permitted standalone figure" do
+    q = %{"id" => "q1", "image_ids" => ["ambiguous"], "source_page_ids" => ["ambiguous"]}
+
+    entries = [
+      entry("visual", ["ambiguous"], ["ambiguous"]),
+      entry("visual", ["alternative"], ["alternative"])
+    ]
+
+    plan = %{
+      "questions" => [q],
+      "supports" => [],
+      "context" => Jason.encode!(%{"catalogue" => entries})
+    }
+
+    result =
+      RepairContext.build(plan, [q], Enum.map(~w(ambiguous alternative excluded), &%{id: &1}))
+
+    assert Enum.map(result.images, & &1.id) == ~w(ambiguous alternative)
+    assert Jason.decode!(result.content)["catalogue"] == entries
+  end
+
   test "repair includes needed evidence and visible context, not unused images and answers" do
     accepted = %{
       "id" => "q1",

@@ -20,6 +20,14 @@ defmodule CaptainHomeworkWeb.ProfilePath do
 
   def find(slug), do: Enum.find(Study.profiles(), &matches?(&1, slug))
 
+  def child_path(%{share_token: token}, "/controles/" <> path) do
+    case String.split(path, "/", parts: 2) do
+      [_, asset_path] -> "/partage/#{token}/#{asset_path}"
+      [_] -> "/partage/#{token}"
+    end
+  end
+
+  def child_path(%{share_token: token}, _path), do: "/partage/#{token}"
   def child_path(nil, path), do: path
   def child_path(profile, "/"), do: "/#{slug(profile)}"
   def child_path(profile, path), do: "/#{slug(profile)}#{path}"

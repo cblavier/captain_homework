@@ -41,6 +41,13 @@ defmodule CaptainHomework.AI do
               {:ok, list()} | {:ok, list(), map()} | {:error, term()}
   @optional_callbacks plan_control: 7, repair_control_plan: 8, generate_planned: 5
 
+  @callback plan_exercises(map(), list(), list(), integer(), String.t(), list(), list()) ::
+              {:ok, map()} | {:error, term()}
+  @callback draft_exercises(list(), map()) :: {:ok, map()} | {:error, term()}
+  @callback repair_exercise_specs(map(), map(), list(), String.t(), list()) ::
+              {:ok, map()} | {:error, term()}
+  @optional_callbacks plan_exercises: 7, draft_exercises: 2, repair_exercise_specs: 5
+
   @callback generate(map(), list(), list(), integer(), String.t(), list()) ::
               {:ok, list()} | {:error, term()}
   @callback grade(map()) :: {:ok, list() | map()} | {:error, term()}
@@ -88,6 +95,7 @@ defmodule CaptainHomework.AI do
     do:
       "La préparation des questions n’a pas abouti malgré une tentative de correction automatique. Réessaie la génération."
 
+  def message(%CaptainHomework.Exams.BuildError{message: message}), do: message
   def message(reason) when is_binary(reason), do: reason
   def message(_), do: "Le service IA est indisponible. Réessaie dans un instant."
 

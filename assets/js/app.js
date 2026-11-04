@@ -9,8 +9,10 @@ import {FlashcardViewport} from "./flashcard_viewport"
 import {FlashcardStack} from "./flashcard_stack"
 import {QuestionPreviewRecorder, QuestionPreviewPhoto} from "./question_preview"
 import {WebcamCapture} from "./webcam_capture"
+import {CopyShareLink} from "./copy_share_link"
 import "./viewport"
 const Hooks = {
+  CopyShareLink,
   SymbolPalette,
   WebcamCapture,
   QuestionPreviewRecorder,

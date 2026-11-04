@@ -31,6 +31,13 @@ if config_env() != :test do
     http: [port: String.to_integer(System.get_env("PORT", "4125"))]
 end
 
+if config_env() == :dev do
+  if host = System.get_env("PHX_HOST") do
+    config :captain_homework, CaptainHomeworkWeb.Endpoint,
+      url: [host: host, port: 443, scheme: "https"]
+  end
+end
+
 if config_env() == :prod do
   secret = System.fetch_env!("SECRET_KEY_BASE")
   if byte_size(secret) < 64, do: raise("SECRET_KEY_BASE must have at least 64 characters")

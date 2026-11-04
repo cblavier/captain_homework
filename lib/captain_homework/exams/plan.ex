@@ -53,7 +53,9 @@ defmodule CaptainHomework.Exams.Plan do
         (CaptainHomework.Exams.AnswerBasis.validation_errors(questions, pages, types, opts) ++
            Enum.flat_map(supports ++ questions, &region_errors/1))
         |> issue(
-          not unique?(Enum.map(questions, &{normalize(&1["objective"]), &1["skill"]})),
+          not unique?(
+            Enum.map(questions, &{normalize(&1["objective"]), &1["skill"], visual_identity(&1)})
+          ),
           "Une notion est évaluée plusieurs fois avec la même compétence."
         )
         |> issue(
@@ -61,7 +63,7 @@ defmodule CaptainHomework.Exams.Plan do
             Enum.map(
               questions,
               &{Enum.sort(Enum.map(&1["expected_elements"], fn e -> normalize(e) end)),
-               &1["skill"]}
+               &1["skill"], visual_identity(&1)}
             )
           ),
           "Deux questions attendent les mêmes éléments de réponse pour la même compétence."
@@ -115,6 +117,7 @@ defmodule CaptainHomework.Exams.Plan do
         plan["source_fingerprint"] == fingerprint(lesson, pages, examples)
 
   def ready_questions(%{"rejected_plan" => _}), do: :legacy
+  def ready_questions(%{"construction_pending" => true}), do: :legacy
   def ready_questions(%{"version" => @version} = plan), do: {:ok, plan["questions"]}
   def ready_questions(_), do: :legacy
 
@@ -192,7 +195,14 @@ defmodule CaptainHomework.Exams.Plan do
 
             duplicates =
               Enum.filter(questions, fn other ->
-                other["id"] != id and is_binary(q["objective"]) and is_binary(other["objective"]) and
+                same_visual = visual_identity(q) == visual_identity(other)
+
+                known_visuals =
+                  ids?(q["image_ids"] || [], image_ids) and
+                    ids?(other["image_ids"] || [], image_ids)
+
+                (same_visual or not known_visuals) and other["id"] != id and
+                  is_binary(q["objective"]) and is_binary(other["objective"]) and
                   ((normalize(q["objective"]) == normalize(other["objective"]) and
                       q["skill"] == other["skill"]) or
                      (normalized_elements(q) == normalized_elements(other) and
@@ -246,11 +256,20 @@ defmodule CaptainHomework.Exams.Plan do
           {:ok, question}
 
         support ->
+          shared_ids = support["image_ids"] || []
+          image_ids = Enum.uniq((question["image_ids"] || []) ++ shared_ids)
+
+          # A shared text supplements the question's figures. For shared images,
+          # keep the canonical support crop, including an uncropped whole page.
+          regions =
+            Enum.reject(question["image_regions"] || [], &(&1["image_id"] in shared_ids)) ++
+              (support["image_regions"] || [])
+
           {:ok,
            question
            |> Map.put("support_text", support["text"])
-           |> Map.put("image_ids", support["image_ids"])
-           |> Map.put("image_regions", Map.get(support, "image_regions", []))
+           |> Map.put("image_ids", image_ids)
+           |> Map.put("image_regions", regions)
            |> Map.put("support_title", support["title"])}
       end
     else
@@ -287,6 +306,7 @@ defmodule CaptainHomework.Exams.Plan do
 
   def order(questions, nil), do: questions
   def order(questions, %{"rejected_plan" => _}), do: questions
+  def order(questions, plan) when not is_map_key(plan, "questions"), do: questions
 
   def order(questions, plan) do
     positions = plan["questions"] |> Enum.with_index() |> Map.new(fn {q, i} -> {q["id"], i} end)
@@ -321,7 +341,12 @@ defmodule CaptainHomework.Exams.Plan do
       is_binary(a["objective"]) and is_binary(b["objective"]) and
         normalize(a["objective"]) == normalize(b["objective"]) and a["skill"] == b["skill"]
 
-    same_id or same_objective
+    same_id or (same_objective and visual_identity(a) == visual_identity(b))
+  end
+
+  def visual_identity(question) do
+    {Enum.sort(question["image_ids"] || []), Enum.sort(question["image_regions"] || []),
+     question["diagram"]}
   end
 
   defp issue(issues, true, message), do: issues ++ [message]

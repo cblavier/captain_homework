@@ -268,6 +268,45 @@ defmodule CaptainHomework.OpenAIResourcesTest do
     )
   end
 
+  defp generation_stage(properties) do
+    if Map.has_key?(properties, "reviews") do
+      :audit
+    else
+      fields =
+        properties["questions"]["properties"] |> Map.values() |> hd() |> Map.fetch!("properties")
+
+      if Map.has_key?(fields, "spec_hash"), do: :construction, else: :plan
+    end
+  end
+
+  defp specification_result(questions, supports \\ []) do
+    %{
+      "questions" =>
+        Enum.map(questions, fn question ->
+          question |> Map.put("task", question["prompt"]) |> Map.delete("prompt")
+        end),
+      "supports" => supports
+    }
+  end
+
+  defp construction_result(properties, questions) do
+    %{
+      "questions" =>
+        Map.new(properties["questions"]["properties"], fn {id, schema} ->
+          fields = schema["properties"]
+          assert Enum.sort(Map.keys(fields)) == ~w(prompt spec_hash spec_id)
+          question = Enum.find(questions, &((&1["plan_id"] || &1["id"]) == id))
+
+          {id,
+           %{
+             "spec_id" => hd(fields["spec_id"]["enum"]),
+             "spec_hash" => hd(fields["spec_hash"]["enum"]),
+             "prompt" => question["prompt"]
+           }}
+        end)
+    }
+  end
+
   test "planner produces final questions with original images in one call" do
     {lesson, resource, [source]} = document(1)
     stub(%{"entries" => [entry(source)]})
@@ -398,7 +437,7 @@ defmodule CaptainHomework.OpenAIResourcesTest do
              })
   end
 
-  test "generation audits its first complete draft without a second writing call" do
+  test "generation builds its first contract once and audits without changing its frozen effort" do
     {lesson, resource, [source]} = document(1)
     stub(%{"entries" => [entry(source, %{"visual_page_ids" => []})]})
     assert {:ok, _} = Catalogues.prepare_resource(resource)
@@ -408,13 +447,15 @@ defmodule CaptainHomework.OpenAIResourcesTest do
     Req.Test.stub(__MODULE__, fn conn ->
       {:ok, raw, conn} = Plug.Conn.read_body(conn)
       props = get_in(Jason.decode!(raw), ["text", "format", "schema", "properties"])
-      kind = if Map.has_key?(props, "reviews"), do: :audit, else: :plan
+      kind = generation_stage(props)
       Agent.update(calls, &(&1 ++ [kind]))
 
       result =
-        if kind == :plan,
-          do: %{"questions" => [draft], "supports" => []},
-          else: %{"reviews" => [review("q1")]}
+        case kind do
+          :plan -> specification_result([draft])
+          :construction -> construction_result(props, [draft])
+          :audit -> %{"reviews" => [review("q1")]}
+        end
 
       response(conn, result)
     end)
@@ -425,12 +466,12 @@ defmodule CaptainHomework.OpenAIResourcesTest do
              )
 
     assert exam.status == "in_progress"
-    assert Agent.get(calls, & &1) == [:plan, :audit]
+    assert Agent.get(calls, & &1) == [:plan, :construction, :audit]
     assert hd(exam.questions)["prompt"] == draft["prompt"]
     assert hd(exam.questions)["verified_response_effort"] == "direct"
     assert hd(exam.questions)["verified_answer_basis"] == "document"
-    assert hd(exam.questions)["response_effort"] == "direct"
-    assert hd(exam.generation_plan["questions"])["response_effort"] == "direct"
+    assert hd(exam.questions)["response_effort"] == "short"
+    assert hd(exam.generation_plan["questions"])["response_effort"] == "short"
   end
 
   test "different tasks on one shared document survive generation and audit without repair" do
@@ -462,17 +503,22 @@ defmodule CaptainHomework.OpenAIResourcesTest do
       {:ok, raw, conn} = Plug.Conn.read_body(conn)
       body = Jason.decode!(raw)
       props = get_in(body, ["text", "format", "schema", "properties"])
-      kind = if Map.has_key?(props, "reviews"), do: :audit, else: :plan
+      kind = generation_stage(props)
       Agent.update(calls, &(&1 ++ [kind]))
 
       result =
-        if kind == :plan do
-          %{"questions" => drafts, "supports" => [support]}
-        else
-          prompt = hd(hd(body["input"])["content"])["text"]
-          for task <- tasks, do: assert(prompt =~ task)
-          assert prompt =~ support["text"]
-          %{"reviews" => [review("q1"), review("q2")]}
+        case kind do
+          :plan ->
+            specification_result(drafts, [support])
+
+          :construction ->
+            construction_result(props, drafts)
+
+          :audit ->
+            prompt = hd(hd(body["input"])["content"])["text"]
+            for task <- tasks, do: assert(prompt =~ task)
+            assert prompt =~ support["text"]
+            %{"reviews" => [review("q1"), review("q2")]}
         end
 
       response(conn, result)
@@ -484,9 +530,71 @@ defmodule CaptainHomework.OpenAIResourcesTest do
              )
 
     assert exam.status == "in_progress"
-    assert Agent.get(calls, & &1) == [:plan, :audit]
+    assert Agent.get(calls, & &1) == [:plan, :construction, :audit]
     assert Enum.map(exam.questions, & &1["text"]) == tasks
     assert Enum.all?(exam.questions, &(&1["support_text"] == support["text"]))
+  end
+
+  test "question images survive a shared text through planning, audit and persisted snapshots" do
+    {lesson, resource, sources} = document(2)
+    stub(%{"entries" => Enum.map(sources, &entry/1)})
+    assert {:ok, _} = Catalogues.prepare_resource(resource)
+    calls = start_supervised!({Agent, fn -> [] end})
+
+    drafts =
+      for {source, index} <- Enum.with_index(sources, 1) do
+        complete_question("q#{index}", "reading", source, %{
+          "prompt" => "Observe l’illustration.",
+          "text" => "",
+          "image_ids" => [source.id],
+          "support_id" => "s1"
+        })
+      end
+
+    support = %{
+      "id" => "s1",
+      "title" => "Aide vocabulaire",
+      "text" => "Aide commune",
+      "image_ids" => []
+    }
+
+    Req.Test.stub(__MODULE__, fn conn ->
+      {:ok, raw, conn} = Plug.Conn.read_body(conn)
+      body = Jason.decode!(raw)
+      props = get_in(body, ["text", "format", "schema", "properties"])
+      kind = generation_stage(props)
+      Agent.update(calls, &(&1 ++ [kind]))
+      input = hd(body["input"])["content"]
+      assert Enum.count(input, &(&1["type"] == "input_image")) == 2
+
+      result =
+        case kind do
+          :plan -> specification_result(drafts, [support])
+          :construction -> construction_result(props, drafts)
+          :audit -> %{"reviews" => [review("q1"), review("q2")]}
+        end
+
+      response(conn, result)
+    end)
+
+    assert {:ok, exam} =
+             CaptainHomework.Exams.generate(lesson.profile_id, lesson.id, 2, "",
+               question_types: question_type_ids(["reading"])
+             )
+
+    assert exam.status == "in_progress"
+    assert Agent.get(calls, & &1) == [:plan, :construction, :audit]
+
+    assert Enum.map(exam.generation_plan["questions"], & &1["image_ids"]) ==
+             Enum.map(sources, &[&1.id])
+
+    for {q, source} <- Enum.zip(exam.questions, sources) do
+      assert q["image_ids"] == [source.id]
+      assert q["support_text"] == support["text"]
+      assert [%{"source_page_id" => id, "storage_key" => key}] = q["images"]
+      assert id == source.id
+      assert File.read!(Uploads.path(key)) == Uploads.read(source)
+    end
   end
 
   test "only a rejected question is repaired before the complete control is audited again" do
@@ -502,28 +610,36 @@ defmodule CaptainHomework.OpenAIResourcesTest do
       props = get_in(body, ["text", "format", "schema", "properties"])
       prompt = hd(hd(body["input"])["content"])["text"]
 
+      kind = generation_stage(props)
+
       kind =
-        cond do
-          Map.has_key?(props, "reviews") -> :audit
-          String.contains?(prompt, "Corrige uniquement") -> :repair
-          true -> :plan
-        end
+        if kind == :plan and String.contains?(prompt, "Reprends ce contrôle"),
+          do: :repair,
+          else: kind
 
       history = Agent.get_and_update(calls, fn history -> {history, history ++ [kind]} end)
 
       result =
         case kind do
           :plan ->
-            %{"questions" => [draft], "supports" => []}
+            specification_result([draft])
+
+          :construction ->
+            corrected =
+              if :repair in history,
+                do: Map.put(draft, "prompt", "Nomme uniquement la structure."),
+                else: draft
+
+            construction_result(props, [corrected])
 
           :audit ->
-            actual = if history == [:plan], do: "developed", else: "direct"
+            actual = if :repair in history, do: "direct", else: "developed"
 
             %{
               "reviews" => [
                 review("q1", %{
                   "actual_effort" => actual,
-                  "consistent" => history != [:plan],
+                  "consistent" => :repair in history,
                   "reason" => "Le barème exige un élément absent de la consigne"
                 })
               ]
@@ -532,10 +648,7 @@ defmodule CaptainHomework.OpenAIResourcesTest do
           :repair ->
             assert prompt =~ "effort constaté developed"
 
-            %{
-              "questions" => [Map.put(draft, "prompt", "Nomme uniquement la structure.")],
-              "supports" => []
-            }
+            specification_result([Map.put(draft, "prompt", "Nomme uniquement la structure.")])
         end
 
       response(conn, result)
@@ -547,7 +660,16 @@ defmodule CaptainHomework.OpenAIResourcesTest do
              )
 
     assert exam.status == "in_progress"
-    assert Agent.get(calls, & &1) == [:plan, :audit, :repair, :audit]
+
+    assert Agent.get(calls, & &1) == [
+             :plan,
+             :construction,
+             :audit,
+             :repair,
+             :construction,
+             :audit
+           ]
+
     assert hd(exam.questions)["prompt"] == "Nomme uniquement la structure."
   end
 
@@ -605,7 +727,7 @@ defmodule CaptainHomework.OpenAIResourcesTest do
   defp full_frame(id),
     do: %{"image_id" => id, "x" => 0, "y" => 0, "width" => 1000, "height" => 1000}
 
-  test "invalid plans are repaired once and expose only a readable error" do
+  test "invalid specifications stop after one call with a typed terminal error" do
     {lesson, resource, [source]} = document(1)
     stub(%{"entries" => [entry(source, %{"visual_page_ids" => []})]})
     assert {:ok, _} = Catalogues.prepare_resource(resource)
@@ -634,39 +756,48 @@ defmodule CaptainHomework.OpenAIResourcesTest do
         question_types: question_type_ids(["reading"])
       )
 
-    assert Agent.get(counter, & &1) == 2
+    assert Agent.get(counter, & &1) == 1
     assert exam.status == "generation_partial"
-    assert exam.generation_errors == [CaptainHomework.AI.message(:invalid_plan)]
-    refute hd(exam.generation_errors) =~ "identifiants"
+    assert exam.questions == []
+    assert exam.generation_plan["build_error"]["kind"] == "invalid_contract"
+    assert exam.generation_plan["build_error"]["stage"] == "specification"
+    assert exam.generation_plan["build_error"]["retryable"] == false
+    assert exam.generation_errors == [exam.generation_plan["build_error"]["message"]]
   end
 
   test "a failed audit resumes saved drafts without paying for another plan" do
     {lesson, resource, [source]} = document(1)
     stub(%{"entries" => [entry(source, %{"visual_page_ids" => []})]})
     assert {:ok, _} = Catalogues.prepare_resource(resource)
-    calls = start_supervised!({Agent, fn -> %{plans: 0, audits: 0} end})
+    calls = start_supervised!({Agent, fn -> %{plans: 0, constructions: 0, audits: 0} end})
     q = complete_question("q1", "reading", source)
 
     Req.Test.stub(__MODULE__, fn conn ->
       {:ok, raw, conn} = Plug.Conn.read_body(conn)
       props = get_in(Jason.decode!(raw), ["text", "format", "schema", "properties"])
 
-      if Map.has_key?(props, "reviews") do
-        number =
-          Agent.get_and_update(calls, fn state ->
-            {state.audits + 1, %{state | audits: state.audits + 1}}
-          end)
+      case generation_stage(props) do
+        :audit ->
+          number =
+            Agent.get_and_update(calls, fn state ->
+              {state.audits + 1, %{state | audits: state.audits + 1}}
+            end)
 
-        if number == 1 do
-          conn
-          |> Plug.Conn.put_resp_content_type("application/json")
-          |> Plug.Conn.send_resp(429, "{}")
-        else
-          response(conn, %{"reviews" => [review("q1")]})
-        end
-      else
-        Agent.update(calls, &%{&1 | plans: &1.plans + 1})
-        response(conn, %{"questions" => [q], "supports" => []})
+          if number == 1 do
+            conn
+            |> Plug.Conn.put_resp_content_type("application/json")
+            |> Plug.Conn.send_resp(429, "{}")
+          else
+            response(conn, %{"reviews" => [review("q1")]})
+          end
+
+        :plan ->
+          Agent.update(calls, &%{&1 | plans: &1.plans + 1})
+          response(conn, specification_result([q]))
+
+        :construction ->
+          Agent.update(calls, &%{&1 | constructions: &1.constructions + 1})
+          response(conn, construction_result(props, [q]))
       end
     end)
 
@@ -681,7 +812,7 @@ defmodule CaptainHomework.OpenAIResourcesTest do
     assert hd(partial.generation_plan["pending_drafts"])["prompt"] == q["prompt"]
     {:ok, complete} = CaptainHomework.Exams.resume_generation(lesson.profile_id, partial.id)
     assert complete.status == "in_progress"
-    assert Agent.get(calls, & &1) == %{plans: 1, audits: 2}
+    assert Agent.get(calls, & &1) == %{plans: 1, constructions: 1, audits: 2}
     assert hd(complete.questions)["verified_answer_basis"] == "document"
   end
 

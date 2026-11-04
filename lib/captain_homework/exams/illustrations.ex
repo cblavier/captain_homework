@@ -36,18 +36,28 @@ defmodule CaptainHomework.Exams.Illustrations do
   defp ready_resource_ids(lesson),
     do: for(resource <- lesson.resources, resource.status == "ready", do: resource.id)
 
-  def validate(candidates, lesson) do
+  def validate(candidates, lesson, opts \\ []) do
     allowed = Map.new(sources(lesson), &{&1.id, &1})
+    allow_snapshots? = Keyword.get(opts, :allow_snapshots, false)
 
     Enum.reduce(candidates, {[], []}, fn q, {valid, errors} ->
       ids = Map.get(q, "image_ids", [])
 
-      if ImageCrops.validate(ids, Map.get(q, "image_regions", [])) == :ok and
-           Enum.all?(
-             ids,
-             &(Map.has_key?(allowed, &1) and File.regular?(Uploads.path(allowed[&1].storage_key)))
-           ) do
-        {valid ++ [Map.delete(q, "images")], errors}
+      retained? = allow_snapshots? and Map.has_key?(q, "images")
+
+      valid_images? =
+        ImageCrops.validate(ids, Map.get(q, "image_regions", [])) == :ok and
+          Enum.all?(ids, fn id ->
+            if retained? do
+              not is_nil(snapshot_asset(q, id))
+            else
+              Map.has_key?(allowed, id) and File.regular?(Uploads.path(allowed[id].storage_key))
+            end
+          end)
+
+      if valid_images? do
+        question = if retained?, do: q, else: Map.delete(q, "images")
+        {valid ++ [question], errors}
       else
         {valid,
          errors ++
@@ -63,19 +73,42 @@ defmodule CaptainHomework.Exams.Illustrations do
 
     assets =
       Enum.map(Enum.uniq(Map.get(question, "image_ids", [])), fn id ->
-        page = Map.fetch!(allowed, id)
-        region = Enum.find(Map.get(question, "image_regions", []), &(&1["image_id"] == id))
+        case snapshot_asset(question, id) do
+          nil ->
+            page = Map.fetch!(allowed, id)
+            region = Enum.find(Map.get(question, "image_regions", []), &(&1["image_id"] == id))
 
-        %{
-          "storage_key" => page.storage_key,
-          "content_type" => page.content_type,
-          "source_page_id" => id,
-          "crop" => region
-        }
+            %{
+              "storage_key" => page.storage_key,
+              "content_type" => page.content_type,
+              "source_page_id" => id,
+              "source_content_hash" => file_content_hash(page.storage_key),
+              "crop" => region
+            }
+
+          asset ->
+            Map.put(asset, "already_cropped", true)
+        end
       end)
       |> copy_assets(true)
 
     Map.put(question, "images", assets)
+  end
+
+  @doc "Returns a complete, readable snapshot matching the question's visible crop."
+  def snapshot_asset(question, source_id) do
+    region =
+      Enum.find(
+        List.wrap(question["image_regions"]),
+        &(is_map(&1) and &1["image_id"] == source_id)
+      )
+
+    Enum.find(List.wrap(question["images"]), fn asset ->
+      is_map(asset) and asset["source_page_id"] == source_id and asset["crop"] == region and
+        is_binary(asset["storage_key"]) and is_binary(asset["content_type"]) and
+        String.starts_with?(asset["content_type"], "image/") and
+        File.regular?(Uploads.path(asset["storage_key"]))
+    end)
   end
 
   def copy_retry(question) do
@@ -132,6 +165,8 @@ defmodule CaptainHomework.Exams.Illustrations do
     end)
   end
 
+  defp copy(%{"already_cropped" => true} = asset, true), do: copy(asset, false)
+
   defp copy(%{"crop" => region} = asset, true) when is_map(region) do
     id = Ecto.UUID.generate()
     key = "question-#{id}.png"
@@ -143,6 +178,8 @@ defmodule CaptainHomework.Exams.Illustrations do
         "storage_key" => key,
         "content_type" => "image/png",
         "source_page_id" => asset["source_page_id"],
+        "source_content_hash" => asset["source_content_hash"],
+        "content_hash" => :crypto.hash(:sha256, data) |> Base.encode16(case: :lower),
         "crop" => region
       }
     else
@@ -159,8 +196,13 @@ defmodule CaptainHomework.Exams.Illustrations do
     case File.cp(Uploads.path(asset["storage_key"]), Uploads.path(key)) do
       :ok ->
         asset
-        |> Map.take(["source_page_id", "crop"])
-        |> Map.merge(%{"id" => id, "storage_key" => key, "content_type" => asset["content_type"]})
+        |> Map.take(["source_page_id", "source_content_hash", "crop"])
+        |> Map.merge(%{
+          "id" => id,
+          "storage_key" => key,
+          "content_type" => asset["content_type"],
+          "content_hash" => asset["content_hash"] || file_content_hash(key)
+        })
 
       {:error, reason} ->
         File.rm(Uploads.path(key))
@@ -170,6 +212,13 @@ defmodule CaptainHomework.Exams.Illustrations do
           source: Uploads.path(asset["storage_key"]),
           destination: Uploads.path(key),
           on: ""
+    end
+  end
+
+  defp file_content_hash(key) do
+    case File.read(Uploads.path(key)) do
+      {:ok, bytes} -> :crypto.hash(:sha256, bytes) |> Base.encode16(case: :lower)
+      {:error, _} -> nil
     end
   end
 

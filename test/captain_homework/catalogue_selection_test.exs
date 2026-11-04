@@ -175,6 +175,75 @@ defmodule CaptainHomework.CatalogueSelectionTest do
     assert id == crop.id
   end
 
+  test "standalone extracted figures survive cached unusable catalogues but obey exclusions" do
+    lesson = lesson(profile())
+    course = page(lesson)
+    knowledge = entry(course, %{"kind" => "knowledge"})
+    stub([knowledge])
+    assert {:ok, _} = Catalogues.prepare_page(course)
+
+    resource =
+      Repo.insert!(%Study.Resource{lesson_id: lesson.id, filename: "Figures", status: "ready"})
+
+    crop =
+      Repo.insert!(%Study.Page{
+        lesson_id: lesson.id,
+        resource_id: resource.id,
+        kind: "illustration",
+        extracted_from_id: Ecto.UUID.generate(),
+        status: "ready",
+        text: "Un chien sous une couverture, sans texte ni consigne.",
+        filename: "figure.png",
+        storage_key: "figure.png",
+        content_type: "image/png"
+      })
+
+    File.write!(Uploads.path(crop.storage_key), "figure pixels")
+    stub([entry(crop, %{"kind" => "knowledge", "usable" => false})])
+    assert {:ok, _} = Catalogues.prepare_resource(resource)
+    lesson = Study.get_lesson!(lesson.profile_id, lesson.id)
+    pages = CaptainHomework.Exams.Illustrations.content_pages(lesson)
+
+    assert {:ok, content, [^crop], []} = Catalogues.context(lesson, pages, [], 1, "", [])
+
+    assert Enum.any?(Jason.decode!(content)["catalogue"], fn item ->
+             item["kind"] == "visual" and item["visual_page_ids"] == [crop.id]
+           end)
+
+    Req.Test.stub(__MODULE__, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      prompt = Jason.decode!(body)["input"] |> inspect()
+      assert prompt =~ "visual"
+
+      Req.Test.json(conn, %{
+        "status" => "completed",
+        "output" => [
+          %{
+            "content" => [
+              %{
+                "type" => "output_text",
+                "text" =>
+                  Jason.encode!(%{
+                    "status" => "compatible",
+                    "reason" => "",
+                    "included_ids" => [0],
+                    "evidence_ids" => [0],
+                    "use_examples" => false
+                  })
+              }
+            ]
+          }
+        ]
+      })
+    end)
+
+    # The course entry is first; the synthetic figure is submitted to the same filter.
+    assert {:ok, content, [], []} =
+             Catalogues.context(lesson, pages, [], 1, "Uniquement le cours", [])
+
+    assert Jason.decode!(content)["catalogue"] == [knowledge]
+  end
+
   test "resource budget retains whole exercises and does not discard course knowledge" do
     lesson = lesson(profile())
     course_page = page(lesson)
