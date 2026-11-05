@@ -105,6 +105,34 @@ defmodule CaptainHomeworkWeb.GenerationHistoryLiveTest do
     assert has_element?(view, "#generation-history-modal #generation-question-1")
   end
 
+  test "busy indicators keep stable IDs across active states and disappear when ready", %{
+    conn: conn,
+    exam: exam
+  } do
+    history = Enum.map(exam.generation_history, &Map.put(&1, "status", "writing"))
+
+    exam =
+      Repo.update!(
+        Ecto.Changeset.change(exam, status: "generation_partial", generation_history: history)
+      )
+
+    {:ok, view, _} = live(conn, "/alice/controles/#{exam.id}")
+
+    for status <- ["writing", "checking", "audio", "repairing", "ready"] do
+      history = Enum.map(history, &Map.put(&1, "status", status))
+      Repo.update!(Ecto.Changeset.change(exam, generation_history: history))
+      send(view.pid, :exam_updated)
+
+      assert has_element?(view, "#generation-question-1[data-status='#{status}']")
+
+      if status == "ready" do
+        refute has_element?(view, "#generation-question-1-spinner")
+      else
+        assert has_element?(view, "#generation-question-1-spinner.spinner[phx-update=ignore]")
+      end
+    end
+  end
+
   test "shared correction does not expose generation drafts or diagnostics", %{
     conn: conn,
     exam: exam

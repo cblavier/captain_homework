@@ -21,3 +21,23 @@ config :captain_homework, CaptainHomeworkWeb.Endpoint,
 config :logger, level: :warning
 config :phoenix, :plug_init_mode, :runtime
 config :phoenix_live_view, enable_expensive_runtime_checks: true
+
+config :captain_homework, :accounts, [
+  %{id: "family", role: :family, label: "Famille", pin: "12345678", profile_key: nil},
+  %{
+    id: "child-1",
+    role: :child,
+    label: "Alice",
+    pin: "23456789",
+    profile_key: "HOMEWORK_CHILD_1"
+  },
+  %{
+    id: "child-2",
+    role: :child,
+    label: "Marius",
+    pin: "34567890",
+    profile_key: "HOMEWORK_CHILD_2"
+  },
+  %{id: "parent-1", role: :parent, label: "Agnès", pin: "45678901", profile_key: nil},
+  %{id: "parent-2", role: :parent, label: "Christian", pin: "56789012", profile_key: nil}
+]

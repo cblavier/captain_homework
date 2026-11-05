@@ -115,6 +115,14 @@ defmodule CaptainHomeworkWeb.CoreComponents do
   end
 
   defp form_control(assigns) do
+    assigns =
+      if assigns.type in ["text", "textarea", "search"] do
+        defaults = %{autocorrect: "on", spellcheck: "true", writingsuggestions: "true"}
+        assign(assigns, :rest, Map.merge(defaults, assigns.rest))
+      else
+        assigns
+      end
+
     ~H"""
     <span :if={@type == "select"} class="select-control">
       <select id={@id} name={@name} class={@class} {@rest}>
@@ -449,10 +457,10 @@ defmodule CaptainHomeworkWeb.CoreComponents do
             <span>Paramètres</span>
           </.link>
           <div class="child-picker-logout">
-            <button id="logout" type="button" class="child-picker-option" disabled>
+            <.link id="logout" href={~p"/session"} method="delete" class="child-picker-option">
               <.icon name="hero-arrow-right-on-rectangle" />
               <span>Se déconnecter</span>
-            </button>
+            </.link>
           </div>
         </div>
       </details>
@@ -540,6 +548,44 @@ defmodule CaptainHomeworkWeb.CoreComponents do
       <strong title="Avancement total estimé">≈ {@percent} %</strong>
       <span>{@stage}</span>
     </span>
+    """
+  end
+
+  @doc "A themed dropdown for both LiveView and ordinary HTML forms."
+  attr :id, :string, required: true
+  attr :name, :string, required: true
+  attr :label, :string, required: true
+  attr :options, :list, required: true
+  attr :value, :string, default: nil
+  attr :disabled, :boolean, default: false
+
+  def dropdown(assigns) do
+    selected =
+      Enum.find(assigns.options, fn {_, value} -> value == assigns.value end) ||
+        List.first(assigns.options)
+
+    assigns = assign(assigns, :selected, selected)
+
+    ~H"""
+    <details id={@id <> "-picker"} class="themed-dropdown" data-dropdown>
+      <summary id={@id} aria-label={@label}>
+        <span data-dropdown-label>{if @selected, do: elem(@selected, 0)}</span>
+        <.icon name="hero-chevron-down" class="size-4 shrink-0" />
+      </summary>
+      <div class="dropdown-options" role="group" aria-label={@label}>
+        <label :for={{label, value} <- @options} class="dropdown-option">
+          <input
+            type="radio"
+            name={@name}
+            value={value}
+            checked={@selected && value == elem(@selected, 1)}
+            disabled={@disabled}
+          />
+          <span data-option-label>{label}</span>
+          <.icon name="hero-check" class="size-4 dropdown-check" />
+        </label>
+      </div>
+    </details>
     """
   end
 

@@ -53,20 +53,10 @@ defmodule CaptainHomework.Exams.Plan do
         (CaptainHomework.Exams.AnswerBasis.validation_errors(questions, pages, types, opts) ++
            Enum.flat_map(supports ++ questions, &region_errors/1))
         |> issue(
-          not unique?(
-            Enum.map(questions, &{normalize(&1["objective"]), &1["skill"], visual_identity(&1)})
-          ),
-          "Une notion est évaluée plusieurs fois avec la même compétence."
-        )
-        |> issue(
-          not unique?(
-            Enum.map(
-              questions,
-              &{Enum.sort(Enum.map(&1["expected_elements"], fn e -> normalize(e) end)),
-               &1["skill"], visual_identity(&1)}
-            )
-          ),
-          "Deux questions attendent les mêmes éléments de réponse pour la même compétence."
+          Enum.any?(questions, fn q ->
+            Enum.any?(questions, &(&1["id"] != q["id"] and duplicate_content?(q, &1)))
+          end),
+          "Deux questions répètent la même tâche dans le même contexte avec la même réponse attendue."
         )
         |> issue(
           Enum.any?(questions, fn q ->
@@ -195,18 +185,7 @@ defmodule CaptainHomework.Exams.Plan do
 
             duplicates =
               Enum.filter(questions, fn other ->
-                same_visual = visual_identity(q) == visual_identity(other)
-
-                known_visuals =
-                  ids?(q["image_ids"] || [], image_ids) and
-                    ids?(other["image_ids"] || [], image_ids)
-
-                (same_visual or not known_visuals) and other["id"] != id and
-                  is_binary(q["objective"]) and is_binary(other["objective"]) and
-                  ((normalize(q["objective"]) == normalize(other["objective"]) and
-                      q["skill"] == other["skill"]) or
-                     (normalized_elements(q) == normalized_elements(other) and
-                        q["skill"] == other["skill"]))
+                other["id"] != id and duplicate_content?(q, other)
               end)
 
             structural ++
@@ -214,7 +193,7 @@ defmodule CaptainHomework.Exams.Plan do
               compatible ++
               if(duplicates == [],
                 do: [],
-                else: ["Notion ou éléments attendus déjà évalués par une autre question."]
+                else: ["Tâche et réponse attendue déjà proposées dans le même contexte."]
               )
 
           _ ->
@@ -337,11 +316,29 @@ defmodule CaptainHomework.Exams.Plan do
   def duplicate?(a, b) do
     same_id = is_binary(a["plan_id"]) and a["plan_id"] == b["plan_id"]
 
-    same_objective =
-      is_binary(a["objective"]) and is_binary(b["objective"]) and
-        normalize(a["objective"]) == normalize(b["objective"]) and a["skill"] == b["skill"]
+    same_id or duplicate_content?(a, b)
+  end
 
-    same_id or (same_objective and visual_identity(a) == visual_identity(b))
+  # An objective or an expected word can legitimately recur across exercises.
+  # Only concrete tasks with matching context and answers are exact duplicates.
+  defp duplicate_content?(a, b) do
+    task = task_identity(a)
+    elements = normalized_elements(a)
+
+    task != [] and task == task_identity(b) and elements != [] and
+      elements == normalized_elements(b) and
+      visual_identity(a) == visual_identity(b) and
+      a["support_id"] == b["support_id"] and
+      a["support_text"] == b["support_text"]
+  end
+
+  defp task_identity(question) do
+    fields = if is_binary(question["task"]), do: ~w(task), else: ~w(prompt text)
+
+    Enum.map(fields, &Map.get(question, &1))
+    |> Enum.filter(&is_binary/1)
+    |> Enum.map(&normalize/1)
+    |> Enum.reject(&(&1 == ""))
   end
 
   def visual_identity(question) do

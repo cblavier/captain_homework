@@ -10,7 +10,7 @@ defmodule CaptainHomeworkWeb.QuestionTypesLive do
 
   @impl true
   def mount(_params, session, socket) do
-    profiles = Study.profiles()
+    profiles = CaptainHomework.Accounts.profiles(socket.assigns.account)
     profile = Enum.find(profiles, &(&1.id == session["profile_id"])) || List.first(profiles)
 
     {:ok,

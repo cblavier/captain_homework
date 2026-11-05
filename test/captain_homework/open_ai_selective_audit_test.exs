@@ -193,6 +193,46 @@ defmodule CaptainHomework.OpenAISelectiveAuditTest do
              OpenAI.audit_response_effort_detailed([], %{exposure_only_questions: [q("kept")]})
   end
 
+  test "an off-subject visual task is routed to content repair", %{image: image} do
+    question =
+      q("q18")
+      |> Map.merge(%{
+        "prompt" => "Écris en français la position du chien par rapport à la couverture.",
+        "answer" => "sous",
+        "image_ids" => [image.id]
+      })
+
+    Req.Test.stub(__MODULE__, fn conn ->
+      {:ok, raw, conn} = Plug.Conn.read_body(conn)
+      prompt = hd(hd(Jason.decode!(raw)["input"])["content"])["text"]
+      assert prompt =~ "Matière évaluée : anglais"
+      assert prompt =~ "Cours évalué : Prepositions of place"
+      assert prompt =~ "sans comprendre ni produire d'anglais"
+      assert prompt =~ "Une réponse en français est valide pour traduire"
+
+      respond(conn, %{
+        "reviews" => [
+          Map.merge(review("q18"), %{
+            "content_consistent" => false,
+            "consistent" => false,
+            "reason" =>
+              "L'image seule et la réponse française ne mobilisent pas l'anglais. Demander la préposition anglaise."
+          })
+        ]
+      })
+    end)
+
+    assert {:ok, [], [_], %{"q18" => diagnostic}} =
+             OpenAI.audit_response_effort_detailed([question], %{
+               subject: "anglais",
+               lesson_title: "Prepositions of place",
+               images: [image]
+             })
+
+    assert diagnostic["kind"] == "content"
+    assert "content_inconsistent" in diagnostic["issue_codes"]
+  end
+
   defp q(id),
     do:
       question(id, "reading")

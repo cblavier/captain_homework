@@ -4,11 +4,9 @@ defmodule CaptainHomeworkWeb.PageController do
 
   def show(conn, %{"id" => id} = params) do
     profile =
-      if params["child"] do
-        CaptainHomeworkWeb.ProfilePath.find(params["child"])
-      else
-        Study.get_profile(get_session(conn, :profile_id)) || List.first(Study.profiles())
-      end
+      if params["child"],
+        do: CaptainHomeworkWeb.ProfilePath.find(params["child"]),
+        else: conn.assigns.profile
 
     if profile do
       page = Study.get_page!(profile.id, id)

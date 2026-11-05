@@ -232,6 +232,7 @@
             Accueil
           </.page_breadcrumb>
           <.link
+            :if={CaptainHomework.Accounts.parent?(@account)}
             id="subjects-settings-button"
             class="button secondary settings-gear-button"
             navigate={child_path(@profile, ~p"/matieres/parametres")}
@@ -989,7 +990,6 @@
                 type="textarea"
                 id="instructions"
                 aria-describedby="instructions-help"
-                autocorrect="off"
                 name="instructions"
                 rows="4"
                 maxlength="8000"
@@ -1113,7 +1113,12 @@
                 aria-label="Questions prêtes"
               />
               <p :if={@exam.status == "generating"} id="generation-stage" role="status">
-                <span class="spinner" aria-hidden="true" />
+                <span
+                  id="generation-stage-spinner"
+                  phx-update="ignore"
+                  class="spinner"
+                  aria-hidden="true"
+                />
                 <span>{generation_stage_label(@exam.generation_stage)}</span>
               </p>
               <p :if={@exam.status == "generating"} id="generation-elapsed" class="muted">
@@ -1183,14 +1188,19 @@
           <fieldset disabled={@exam.status == "grading"}>
             <section
               :for={group <- CaptainHomework.Exams.SupportGroups.build(@exam.questions)}
-              class={[group.shared? && "question-group"]}
+              class={[(group.shared? and length(group.questions) > 1) && "question-group"]}
               id={"question-group-#{group.support["id"]}"}
             >
-              <header :if={group.shared?} class="shared-question-support">
-                <h2>
-                  {if length(group.questions) == 1,
-                    do: "Document de la question",
-                    else: "Document commun aux questions"} {Enum.map_join(
+              <header
+                :if={
+                  group.shared? and length(group.questions) > 1 and
+                    (String.trim(group.support["text"] || "") != "" or
+                       (group.support["images"] || []) != [])
+                }
+                class="shared-question-support"
+              >
+                <h2 :if={length(group.questions) > 1}>
+                  Document commun aux questions {Enum.map_join(
                     group.questions,
                     ", ",
                     fn {_, index} ->
@@ -1213,7 +1223,7 @@
                   index={index}
                   exam={@exam}
                   profile={@profile}
-                  shared_support={group.shared?}
+                  shared_support={group.shared? and length(group.questions) > 1}
                   show_help={@exam.status == "in_progress"}
                 />
                 <.question_response
@@ -1343,13 +1353,13 @@
               <% end %>
             </button>
             <span
-              :if={@exam.status != "generating" and Study.exam_deletable?(@exam)}
+              :if={@exam.status != "generating" and Study.exam_deletable?(@exam, @account)}
               aria-hidden="true"
             >
               -
             </span>
             <button
-              :if={@exam.status != "generating" and Study.exam_deletable?(@exam)}
+              :if={@exam.status != "generating" and Study.exam_deletable?(@exam, @account)}
               id="delete-exam"
               type="button"
               class="button text-button"
@@ -1495,7 +1505,6 @@
           id="lesson-title"
           name={@lesson_form[:title].name}
           value={@lesson_form[:title].value}
-          autocorrect="off"
           required
           maxlength="120"
         />
@@ -1612,7 +1621,6 @@
             wrapper={false}
             type="textarea"
             id="page-text"
-            autocorrect="off"
             name="text"
             rows="14"
             maxlength="60000"
@@ -1667,7 +1675,11 @@
           type="textarea"
           name="text"
           id="transcription"
+          autocomplete="off"
           autocorrect="off"
+          autocapitalize="off"
+          spellcheck="false"
+          writingsuggestions="false"
           rows="9"
           value={@ocr_text}
         />

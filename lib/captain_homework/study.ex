@@ -31,7 +31,7 @@ defmodule CaptainHomework.Study do
     },
     %{
       id: "svt",
-      name: "Science de la Vie de la Terre",
+      name: "SVT",
       short_name: "SVT",
       icon: "leaf",
       color: "green"
@@ -211,7 +211,16 @@ defmodule CaptainHomework.Study do
   def exam_deletable?(exam),
     do: exam.status == "completed" or (is_nil(exam.submitted_at) and exam.status != "grading")
 
-  def delete_exam(profile_id, id) do
+  def exam_deletable?(exam, account),
+    do:
+      exam_deletable?(exam) and
+        (CaptainHomework.Accounts.parent?(account) or
+           exam.status not in ["in_progress", "grading", "completed"])
+
+  def delete_exam(profile_id, id), do: delete_exam(profile_id, id, %{role: :parent})
+
+  def delete_exam(profile_id, id, account) do
+    parent = CaptainHomework.Accounts.parent?(account)
     exam = get_exam!(profile_id, id)
     shared_attempts = CaptainHomework.ExamShares.attempts_for_exam(exam.id)
 
@@ -220,6 +229,7 @@ defmodule CaptainHomework.Study do
         from e in Exam,
           where:
             e.id == ^exam.id and
+              (^parent or e.status not in ["in_progress", "grading", "completed"]) and
               (e.status == "completed" or (is_nil(e.submitted_at) and e.status != "grading"))
       )
 

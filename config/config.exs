@@ -35,6 +35,7 @@ config :phoenix, :json_library, Jason
 
 config :phoenix, :filter_parameters, [
   "password",
+  "pin",
   "token",
   "key",
   "answers",

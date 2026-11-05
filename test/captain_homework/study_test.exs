@@ -12,7 +12,7 @@ defmodule CaptainHomework.StudyTest do
              "Latin",
              "Mathématiques",
              "Physique - Chimie",
-             "Science de la Vie de la Terre",
+             "SVT",
              "Technologie"
            ]
   end

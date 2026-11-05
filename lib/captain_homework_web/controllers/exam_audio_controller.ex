@@ -6,7 +6,7 @@ defmodule CaptainHomeworkWeb.ExamAudioController do
     profile =
       if params["child"],
         do: CaptainHomeworkWeb.ProfilePath.find(params["child"]),
-        else: Study.get_profile(get_session(conn, :profile_id)) || List.first(Study.profiles())
+        else: conn.assigns.profile
 
     if profile do
       exam = Study.get_exam!(profile.id, exam_id)

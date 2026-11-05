@@ -64,7 +64,7 @@ Compléter le fichier `.env` :
 - `HOMEWORK_CHILD_n_SCHOOL_NAME` et `HOMEWORK_CHILD_n_CLASS_NAME` : établissement et classe facultatifs, affichés dans l’en-tête sans connexion à Pronote. Par exemple : `Collège Jean Monnet` et `4A`.
 - `HOMEWORK_CHILD_n_AVATAR_BASE64` : avatar facultatif en PNG, JPEG ou WebP encodé en base64.
 - `PRONOTE_CHILD_n_THEME` : thème `blue` ou `green`, avec le même numéro que l’enfant. Le nom de variable est partagé avec Captain Notes.
-- `HOMEWORK_PASSWORD` : mot de passe familial facultatif.
+- `PRONOTE_FAMILY_PIN_CODE`, `PRONOTE_CHILD_n_PIN_CODE` et `PRONOTE_PARENT_n_PIN_CODE` : codes PIN à huit chiffres, identiques à Captain Notes. Les comptes numérotés utilisent aussi `PRONOTE_CHILD_n_FIRST_NAME` / `PRONOTE_PARENT_n_FIRST_NAME`. Aucun identifiant ou mot de passe Pronote n’est nécessaire.
 
 En développement derrière un reverse proxy HTTPS, définir `PHX_HOST` sans protocole ni chemin, par exemple `export PHX_HOST=homework.apps.pouet.io` dans `.envrc`. Les liens générés utilisent alors `https://homework.apps.pouet.io`, tandis que le serveur continue d’écouter en HTTP sur le port local 4125 (ou `PORT`). Sans cette variable, l’adresse locale par défaut est conservée. Redémarrer le serveur après modification.
 
@@ -98,7 +98,9 @@ Les avatars acceptent au maximum 262 144 caractères base64. Sans avatar valide,
 
 Depuis le menu utilisateur, la page **Paramètres** permet de choisir le thème et d’activer les matières de chaque enfant. Désactiver une matière conserve ses leçons et résultats. Les règles pédagogiques communes sont intégrées au code ; des instructions facultatives peuvent être ajoutées à la création de chaque contrôle. Toute réponse doit pouvoir être déduite des leçons ou des supports affichés avec la question.
 
-Les profils enfants sont des espaces de travail, pas des comptes avec authentification individuelle. Le mot de passe familial protège l’accès global à l’application.
+Chaque compte enfant accède uniquement au profil `HOMEWORK_CHILD_n` de même numéro, y compris pour les documents et les notifications. Famille et les comptes parents accèdent à tous les profils. Sans compte PIN configuré, l’accès privé est fermé. Les liens de partage restent accessibles sans connexion.
+
+Les sessions durent une heure, ou trente jours avec « Rester connecté ». La déconnexion révoque la session en base et déconnecte les onglets ouverts ; changer un PIN invalide les sessions du compte. Après trois codes incorrects, les tentatives sont temporairement bloquées, comme dans Captain Notes.
 
 ### Ressources pédagogiques
 
@@ -142,7 +144,7 @@ Le fichier **`env`** contient les variables de l’application, sans `export`. R
 
 - `PHX_HOST` : nom de domaine de l’application, sans protocole ni chemin.
 - `SECRET_KEY_BASE` : secret généré avec `mix phx.gen.secret`, à conserver lors des mises à jour.
-- `HOMEWORK_PASSWORD` : mot de passe familial pour protéger l’accès si le service est exposé.
+- Les variables de comptes PIN ci-dessus doivent aussi figurer dans le fichier `env` du NAS. Elles sont lues au démarrage.
 
 Les secrets ne sont pas intégrés à l’image. Ne pas versionner `env`.
 

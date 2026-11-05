@@ -16,6 +16,7 @@ defmodule CaptainHomeworkWeb.ManifestTest do
     end
   end
 
+  @tag :unauthenticated
   test "login declares standalone mode, icons and correctly sized launch images", %{conn: conn} do
     document = conn |> get("/connexion") |> html_response(200) |> LazyHTML.from_document()
 

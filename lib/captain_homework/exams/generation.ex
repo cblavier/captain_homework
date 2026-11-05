@@ -724,6 +724,8 @@ defmodule CaptainHomework.Exams.Generation do
       source_ids = Enum.uniq(Enum.flat_map(questions, &Map.get(&1, "source_page_ids", [])))
 
       context = %{
+        subject: lesson.subject,
+        lesson_title: lesson.title,
         custom_instructions: exam.instructions,
         permitted_content: plan["context"],
         supports: supports,

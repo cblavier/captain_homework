@@ -26,6 +26,8 @@ defmodule CaptainHomeworkWeb.GenerationComponents do
           <span class={["generation-question-badge", badge_class(question)]}>
             <span
               :if={question["status"] in ~w(writing repairing checking audio)}
+              id={dom_id <> "-spinner"}
+              phx-update="ignore"
               class="spinner"
               aria-hidden="true"
             />

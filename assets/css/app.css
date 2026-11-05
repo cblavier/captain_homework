@@ -250,11 +250,16 @@
 .question-type-group { margin-top: 1rem; }
 .question-type-group > h3 { margin-bottom: .5rem; font-size: 1rem; font-weight: 600; }
 
-.exam-bottom-actions { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-top: 2.5rem; }
+.exam-bottom-actions { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-top: 1rem; }
 .exam-bottom-actions > .button { margin-left: auto; }
 .exam-footer { display: flex; justify-content: flex-start; align-items: center; flex-wrap: wrap; gap: .4rem; font-size: 14px; font-weight: 550; line-height: 1.4; color: var(--muted); }
 .exam-footer .text-button { font-size: inherit; padding-inline: 0; flex-shrink: 0; }
 .generation-duration { color: var(--muted); }
+@media(min-width:601px) {
+  .exam-footer { flex: 1; }
+  .exam-footer .generation-duration { margin-right: auto; }
+  .exam-footer .generation-duration + [aria-hidden] { display: none; }
+}
 @media(max-width:600px) {
   .exam-bottom-actions { flex-direction: column; align-items: stretch; gap: 16px; }
   .exam-bottom-actions > .button { order: -1; width: 100%; margin-left: 0; }
@@ -293,6 +298,11 @@
 .generation-question-reason { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .generation-question-badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 6px; font-size: 11px; line-height: 1.4; white-space: nowrap; }
 .generation-question-badge > .icon, .generation-question-badge > .spinner { width: 14px; height: 14px; flex-shrink: 0; }
+/* Keep rotating indicators on their own compositing layer when details toggle. */
+#generation-stage > .spinner, .generation-question-badge > .spinner {
+  will-change: transform;
+  backface-visibility: hidden;
+}
 .generation-question-chevron { color: var(--muted); width: 16px; height: 16px; }
 .generation-ready { color: var(--success-ink); background: var(--success-tint); }
 .generation-corrected { color: var(--day-ink, var(--primary)); background: var(--day-tint, var(--soft-background)); }
@@ -327,8 +337,8 @@
   .generation-comparison { grid-template-columns: minmax(0, 1fr); padding: 12px; }
 }
 
-/* Keep touch scrolling available without pinch or double-tap zoom. */
-html, body { touch-action: pan-x pan-y; }
+/* Only the active flashcard player locks browser zoom. */
+html:has(#flashcard-viewport), body:has(#flashcard-viewport) { touch-action: pan-x pan-y; }
 
 /* Avoid focus zoom on touch devices, including the compact display setting. */
 @media (any-pointer: coarse) {
@@ -364,6 +374,7 @@ html, body { touch-action: pan-x pan-y; }
 }
 
 @media(max-width:600px) {
+  .identity-row { margin-bottom: calc(var(--header-gap) + 1rem); }
   .page-breadcrumb nav a { font-size: .875rem; min-height: 40px; }
   .page-breadcrumb .breadcrumb-separator { width: 14px; height: 14px; }
   .page-breadcrumb .page-title { font-size: 1.375rem; }
@@ -782,12 +793,12 @@ body:has(#flashcard-session) { position: fixed; inset: 0; }
 .photo-response-actions .button { white-space: normal; margin: 0; }
 .photo-picker { position: relative; overflow: hidden; cursor: pointer; }
 .photo-file-input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
-.photo-picker:focus-within { outline: 3px solid var(--primary); outline-offset: 3px; }
+.photo-picker:has(input:focus-visible) { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 4px; }
 .photo-response-hint { color: var(--muted); font-size: 12px; margin-top: 12px; }
 .photo-response-preview img { display: block; max-width: 100%; max-height: 420px; object-fit: contain; border-radius: 10px; margin: 0 auto 12px; }
 .photo-response-preview p { overflow-wrap: anywhere; }
 .photo-response-preview img:last-child { margin-bottom: 0; }
-.photo-response + .graded-answer { margin-top: 20px; }
+.question-response:has(.photo-response) + .graded-answer { margin-top: 24px; }
 @media(max-width:600px) { .photo-response { padding: 18px; } .photo-response-actions { flex-direction: column; } }
 
 #instructions-help { margin-top: 8px; }
@@ -869,6 +880,11 @@ body:has(#flashcard-session) { position: fixed; inset: 0; }
 .symbol-families button[aria-pressed=true] { color: var(--primary); background: var(--day-tint); }
 .symbol-feedback { min-height: 18px; margin-top: 8px; color: var(--primary); font-size: 12px; }
 
+/* Touch devices use the native photo picker, including tablets in landscape. */
+@media (max-width: 760px), (any-pointer: coarse), (hover: none) {
+  [phx-hook="WebcamCapture"] { display: none; }
+}
+
 .photo-picker-desktop-label { display: none; }
 @media (min-width: 761px) {
   .photo-response-actions { flex-direction: column; align-items: center; }
@@ -932,3 +948,91 @@ body:has(#flashcard-session) { position: fixed; inset: 0; }
 #flashcard-answer { margin-top: 0; }
 .question-response-flashcard textarea { resize: none; }
 .question-submit { min-height: 52px; width: 100%; font-size: 18px; white-space: normal; box-shadow: 0 2px 6px #00000018; }
+
+/* PIN login shared with Captain Notes. */
+#login-screen {
+  --login-primary: #365985;
+  --login-line: #d1e0f2;
+  --login-tint: #e5effb;
+  min-height: 100svh;
+}
+
+/* Notebook paper on the login page. */
+#login-screen {
+  background-color: #f4f7fc;
+  background-image:
+    linear-gradient(to right, transparent calc(clamp(28px, 8vw, 96px) - 1px), #36598526 calc(clamp(28px, 8vw, 96px) - 1px), #36598526 clamp(28px, 8vw, 96px), transparent clamp(28px, 8vw, 96px)),
+    repeating-linear-gradient(to bottom, transparent 0, transparent 31px, #36598514 31px, #36598514 32px);
+  background-position: 0 0;
+  background-size: auto;
+}
+#login-screen .login-card {
+  border-color: color-mix(in srgb, var(--login-primary) 20%, #fff);
+  box-shadow: 0 16px 48px #26344912;
+}
+#login-screen .login-title { color: rgb(30, 68, 141); }
+.login-logo { display: block; width: 85%; height: auto; margin-inline: auto; }
+#login-screen .pin-key {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 3rem;
+  border: 1px solid color-mix(in srgb, var(--login-primary) 35%, transparent);
+  border-radius: 0.5rem;
+  background: color-mix(in srgb, var(--login-primary) 8%, transparent);
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+#login-screen .pin-key[data-pin-digit] { font-size: 1.25rem; font-weight: 600; }
+#login-screen .pin-key:hover { background: color-mix(in srgb, var(--login-primary) 18%, transparent); }
+#login-screen .pin-key:active { background: color-mix(in srgb, var(--login-primary) 28%, transparent); }
+#login-screen #pin { height: 4rem; font-size: 1.75rem; border-color: color-mix(in srgb, var(--login-primary) 45%, transparent); background: color-mix(in srgb, var(--login-primary) 8%, #fff); }
+#login-screen #pin:autofill { box-shadow: inset 0 0 0 100px color-mix(in srgb, var(--login-primary) 8%, #fff); -webkit-text-fill-color: var(--ink); }
+#login-screen .login-submit { min-height: 3rem; font-size: 1rem; background: var(--login-primary); border-color: var(--login-primary); color: #fff; font-weight: 700; }
+#login-screen :is(.pin-key, .login-submit, #pin):focus-visible { outline: 2px solid var(--login-primary); outline-offset: 3px; }
+.themed-dropdown { position: relative; }
+.themed-dropdown > summary { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; min-height: 2rem; padding: 0.375rem 0.625rem; border: 1px solid var(--login-line); border-radius: 0.375rem; background: #fff; color: var(--login-primary); font-size: 0.875rem; cursor: pointer; list-style: none; }
+.themed-dropdown > summary::-webkit-details-marker { display: none; }
+.themed-dropdown > summary::marker { content: ""; }
+.themed-dropdown > summary > span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.themed-dropdown > summary:focus-visible, .themed-dropdown[open] > summary { outline: 2px solid var(--login-primary); outline-offset: 2px; }
+.dropdown-options { position: absolute; right: 0; top: calc(100% + 0.5rem); z-index: 30; min-width: max(100%, 10rem); padding: 0.25rem; border: 1px solid var(--login-line); border-radius: 0.375rem; background: #fff; box-shadow: 0 8px 24px #00000018; }
+.dropdown-option { position: relative; display: flex; justify-content: space-between; gap: 1rem; min-height: 2.75rem; padding: 0.625rem 0.75rem; border-radius: 0.25rem; color: var(--ink); font-size: 0.875rem; cursor: pointer; }
+.dropdown-option input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.dropdown-check { visibility: hidden; }
+.dropdown-option:has(input:checked), .dropdown-option:hover { background: var(--login-tint); color: var(--login-primary); }
+.dropdown-option:has(input:checked) .dropdown-check { visibility: visible; }
+.dropdown-option:has(input:focus-visible) { outline: 2px solid var(--login-primary); outline-offset: -2px; }
+
+#login-screen { display: flex; align-items: center; justify-content: center; padding: 24px; min-height: calc(100dvh / var(--app-zoom, 1)); }
+#login-screen .login-card { width: 100%; max-width: 21rem; padding: 24px; background: #fff; border: 1px solid var(--login-line); border-radius: 12px; }
+#login-screen .login-title { text-align: center; }
+.login-intro { margin-top: 24px; font-size: 14px; line-height: 1.5; color: var(--muted); }
+#pin-form { display: grid; gap: 16px; margin-top: 24px; }
+.pin-keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+#login-screen #pin { text-align: center; letter-spacing: .1em; }
+#login-screen #login-account { min-height: 44px; }
+#login-screen .dropdown-option { align-items: center; margin: 0; }
+#login-screen .login-remember { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 14px; cursor: pointer; }
+#login-screen input[name="remember"] { accent-color: var(--login-primary); }
+#login-error { margin-top: 16px; padding: 12px; color: #a52a2a; background: #fff1f1; border-radius: 8px; font-size: 14px; line-height: 1.5; }
+
+/* Links retain a keyboard focus cue without a rectangular outline. */
+a:focus-visible,
+a.child-picker-option:focus-visible,
+a.popover-anchor:focus-visible,
+button.text-button:focus-visible {
+  outline: none;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
+}
+.upload-area:has(.upload-label:focus-within) { outline: none; }
+.upload-label:has(input:focus-visible) {
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
+}
+
+#exam-answers > fieldset > section:last-child { margin-bottom: 0; }
+#exam-answers > fieldset > section:last-child > .question:last-child { padding-bottom: 0; }

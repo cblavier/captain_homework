@@ -7,7 +7,7 @@ defmodule CaptainHomeworkWeb.SharedExamLiveTest do
   setup do
     previous =
       Map.new(
-        [:ai_provider, :access_password, :grading_test_pid],
+        [:ai_provider, :grading_test_pid],
         &{&1, Application.fetch_env(:captain_homework, &1)}
       )
 
@@ -76,8 +76,8 @@ defmodule CaptainHomeworkWeb.SharedExamLiveTest do
   end
 
   test "a guest submits a separate copy and gets a generic correction without application navigation",
-       %{conn: conn, profile: p, exam: e} do
-    Application.put_env(:captain_homework, :access_password, "family-password")
+       %{profile: p, exam: e} do
+    conn = Phoenix.ConnTest.build_conn()
     Application.put_env(:captain_homework, :ai_provider, CaptainHomework.BlockingGradeAI)
     Application.put_env(:captain_homework, :grading_test_pid, self())
     {:ok, _, token} = ExamShares.create(p.id, e.id, "fill")

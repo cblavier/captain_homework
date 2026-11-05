@@ -35,7 +35,8 @@ defmodule CaptainHomeworkWeb.GenerationNotifications do
 
   defp put_notification(socket, exam) do
     with %Study.Lesson{} = lesson <- Repo.get(Study.Lesson, exam.lesson_id),
-         %Study.Profile{} = profile <- Repo.get(Study.Profile, lesson.profile_id) do
+         %Study.Profile{} = profile <- Repo.get(Study.Profile, lesson.profile_id),
+         true <- CaptainHomework.Accounts.profile_allowed?(socket.assigns.account, profile) do
       success? = exam.status == "in_progress"
 
       put_flash(socket, if(success?, do: :info, else: :error), %{

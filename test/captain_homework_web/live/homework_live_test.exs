@@ -437,7 +437,12 @@ defmodule CaptainHomeworkWeb.HomeworkLiveTest do
     l = lesson(profile())
     exam(l)
     {:ok, view, _} = live(conn, "/alice/lecons/#{l.id}/controle")
-    assert has_element?(view, "#instructions[placeholder]")
+
+    assert has_element?(
+             view,
+             "#instructions[placeholder][autocorrect=on][spellcheck=true][writingsuggestions=true]"
+           )
+
     refute has_element?(view, "#instructions", "Instructions SVT")
     refute has_element?(view, "#reset-instructions")
     assert has_element?(view, "#settings-link[href='/alice/parametres']")
@@ -670,18 +675,6 @@ defmodule CaptainHomeworkWeb.HomeworkLiveTest do
   test "a page URL cannot read another child's photo", %{conn: conn} do
     p = profile() |> lesson() |> page()
     assert_error_sent 404, fn -> get(conn, "/marius/pages/#{p.id}") end
-  end
-
-  test "optional password protects controller and live routes", %{conn: conn} do
-    Application.put_env(:captain_homework, :access_password, "family-test-password")
-    on_exit(fn -> Application.delete_env(:captain_homework, :access_password) end)
-    conn = get(conn, "/")
-    assert redirected_to(conn) == "/connexion"
-    bad = post(recycle(conn), "/connexion", %{password: "bad"})
-    assert bad.status == 401
-    good = post(recycle(conn), "/connexion", %{password: "family-test-password"})
-    assert redirected_to(good) == "/"
-    assert CaptainHomeworkWeb.Access.allowed?(get_session(good))
   end
 
   test "lesson tabs separate content and keep their selection in the URL", %{conn: conn} do

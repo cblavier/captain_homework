@@ -16,7 +16,24 @@ defmodule CaptainHomework.AI.OpenAI do
   Réponds uniquement selon le schéma JSON demandé. N'invente jamais un texte illisible. Toute connaissance nécessaire à la réponse doit être présente dans les leçons ou dans les supports affichés avec la question. Le raisonnement à partir de ces éléments est autorisé, sans exiger de connaissance extérieure non fournie.
   """
 
+  @subject_rules """
+  PERTINENCE POUR LA MATIÈRE : chaque question doit réellement mobiliser une compétence
+  de la matière et du cours évalués. Un objectif interne ne suffit pas : vérifie le travail
+  effectivement demandé à l'élève et les critères du barème.
+  En langue étrangère, l'élève doit comprendre ou utiliser la langue étudiée : vocabulaire,
+  grammaire, compréhension écrite/orale, traduction ou expression. Les consignes peuvent
+  être en français. Une réponse en français est valide pour traduire un mot anglais ou
+  montrer la compréhension d'un texte/audio anglais ; n'impose pas toutes les réponses en anglais.
+  En revanche, décrire en français une image seule, sans comprendre ni produire d'anglais,
+  n'évalue pas l'anglais, même si l'objectif interne mentionne une préposition anglaise.
+  Pour une image de position, demande la préposition ou une phrase dans la langue étudiée,
+  avec une réponse modèle et un barème cohérents. Ne fournis pas le mot attendu dans la consigne.
+  Ne détourne pas un type de question ou une illustration pour remplir le nombre demandé :
+  choisis une tâche autorisée qui évalue réellement la compétence de la matière.
+  """
+
   @question_rules """
+  #{@subject_rules}
   #{CaptainHomework.Exams.Listening.instructions()}
   Pour diagram, le composant affiche un SVG autonome de 500 × 300 unités, séparé des images ressources.
   Les coordonnées x/y et les dimensions width/height sont exprimées dans ce repère : x + width ≤ 500,
@@ -541,6 +558,7 @@ defmodule CaptainHomework.AI.OpenAI do
       prompt = """
       #{priority_instructions(instructions)}
       Complète les entrées demandées pour un contrôle de #{count} questions sur « #{lesson.title} ».
+      Matière évaluée : #{lesson.subject}.
       questions est un OBJET indexé par les clés exactes du schéma, jamais une liste numérotée.
       Identifiants à retourner uniquement : #{Jason.encode!(requested_ids)}.
       Ne renomme, ne supprime et ne permute jamais les identifiants.
@@ -1439,6 +1457,13 @@ defmodule CaptainHomework.AI.OpenAI do
 
     prompt = """
     Audite l'effort RÉEL des questions ci-dessous, indépendamment de leur format technique.
+    Matière évaluée : #{Map.get(context, :subject, "non précisée")}.
+    Cours évalué : #{Map.get(context, :lesson_title, "non précisé")}.
+    #{@subject_rules}
+    Si la tâche peut être réussie sans mobiliser la compétence de la matière, indique
+    content_consistent=false et consistent=false. Dans reason, précise la compétence absente
+    et demande une correction de la tâche, de la réponse et du barème. Une description en
+    français d'une image seule dans un contrôle d'anglais doit ainsi être corrigée.
     #{priority_instructions(Map.get(context, :custom_instructions, ""))}
     Vérifie aussi le respect de ces consignes, notamment les exclusions de contenus ou d'activités.
     Si une question les contredit, consistent=false et reason décrit précisément la contradiction.

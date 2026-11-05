@@ -182,6 +182,8 @@ defmodule CaptainHomework.Exams.ExercisePipelineTest do
 
       :audit, _, request ->
         prompt = get_in(request, ["input", Access.at(0), "content", Access.at(0), "text"])
+        assert prompt =~ "Matière évaluée : #{context.lesson.subject}"
+        assert prompt =~ "Cours évalué : #{context.lesson.title}"
         assert prompt =~ "Quel élément délimite la cellule ?"
         assert prompt =~ slot["answer"]
         assert prompt =~ slot["rubric"]

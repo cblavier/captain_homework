@@ -19,7 +19,8 @@ defmodule CaptainHomeworkWeb.QuestionComponents do
 
   def question_content(assigns) do
     {prompt, text} = content(assigns.question, assigns.mode)
-    assigns = assign(assigns, prompt: prompt, text: text)
+    support_text = readable_text(assigns.question["support_text"] || "")
+    assigns = assign(assigns, prompt: prompt, text: text, support_text: support_text)
 
     ~H"""
     <div class={["question-content", "question-content-#{@mode}"]}>
@@ -45,8 +46,12 @@ defmodule CaptainHomeworkWeb.QuestionComponents do
       />
       <.question_audio question={@question} exam={@exam} profile={@profile} src={@audio_src} />
       <.question_text
+        :if={!@shared_support and String.trim(@support_text) != ""}
+        text={@support_text}
+      />
+      <.question_text
         :if={
-          @text != "" and
+          @text != "" and (@shared_support or @text != @support_text) and
             CaptainHomework.Exams.SupportGroups.question_text_visible?(
               Map.put(@question, "text", @text),
               @shared_support
@@ -184,11 +189,11 @@ defmodule CaptainHomeworkWeb.QuestionComponents do
                 disabled={@disabled}
                 maxlength="2000"
                 phx-debounce="300"
-                autocomplete="off"
-                autocorrect="off"
-                autocapitalize="off"
-                spellcheck="false"
-                writingsuggestions="false"
+                autocomplete={if @preview, do: "on", else: "off"}
+                autocorrect={if @preview, do: "on", else: "off"}
+                autocapitalize={if @preview, do: "sentences", else: "off"}
+                spellcheck={if @preview, do: "true", else: "false"}
+                writingsuggestions={if @preview, do: "true", else: "false"}
               />
             </div>
           </div>
@@ -209,11 +214,11 @@ defmodule CaptainHomeworkWeb.QuestionComponents do
             disabled={@disabled}
             maxlength="12000"
             phx-debounce="300"
-            autocomplete="off"
-            autocorrect="off"
-            autocapitalize="off"
-            spellcheck="false"
-            writingsuggestions="false"
+            autocomplete={if @preview, do: "on", else: "off"}
+            autocorrect={if @preview, do: "on", else: "off"}
+            autocapitalize={if @preview, do: "sentences", else: "off"}
+            spellcheck={if @preview, do: "true", else: "false"}
+            writingsuggestions={if @preview, do: "true", else: "false"}
           />
           {render_slot(@text_actions)}
         <% end %>

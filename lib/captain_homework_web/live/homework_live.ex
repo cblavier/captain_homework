@@ -17,7 +17,11 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
 
   @impl true
   def mount(_params, session, socket) do
-    profiles = if session["shared"], do: [], else: Study.profiles()
+    profiles =
+      if session["shared"],
+        do: [],
+        else: CaptainHomework.Accounts.profiles(socket.assigns.account)
+
     profile = Enum.find(profiles, &(&1.id == session["profile_id"])) || List.first(profiles)
 
     socket =
@@ -121,7 +125,7 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
   def handle_params(params, url, socket) do
     profile =
       if params["child"] do
-        Enum.find(Study.profiles(), &ProfilePath.matches?(&1, params["child"])) ||
+        Enum.find(socket.assigns.profiles, &ProfilePath.matches?(&1, params["child"])) ||
           raise Ecto.NoResultsError, queryable: CaptainHomework.Study.Profile
       else
         if socket.assigns.profile, do: Study.get_profile(socket.assigns.profile.id)
@@ -687,7 +691,11 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
   end
 
   def handle_event("delete_exam", _, socket) do
-    case Study.delete_exam(socket.assigns.profile.id, socket.assigns.exam.id) do
+    case Study.delete_exam(
+           socket.assigns.profile.id,
+           socket.assigns.exam.id,
+           socket.assigns.account
+         ) do
       {:ok, exam} ->
         {:noreply,
          push_navigate(socket,

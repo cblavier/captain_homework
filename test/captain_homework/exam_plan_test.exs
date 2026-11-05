@@ -6,6 +6,8 @@ defmodule CaptainHomework.ExamPlanTest do
     a = %{
       "plan_id" => "q1",
       "objective" => "Position",
+      "task" => "Situer le chat",
+      "expected_elements" => ["in"],
       "skill" => "interpret",
       "image_ids" => ["a"]
     }
@@ -21,6 +23,7 @@ defmodule CaptainHomework.ExamPlanTest do
       "id" => id,
       "type" => "reading",
       "objective" => objective,
+      "task" => objective,
       "skill" => skill,
       "expected_elements" => [objective],
       "source_page_ids" => ["page"],
@@ -42,6 +45,34 @@ defmodule CaptainHomework.ExamPlanTest do
       put_in(plan, ["questions"], Enum.map(questions, &Map.put(&1, "image_ids", ["a"])))
 
     assert {:error, _} = Plan.validate(duplicated, 2, ["reading"], [%{id: "page"}], [%{id: "a"}])
+  end
+
+  test "shared objectives and answers are allowed for distinct tasks" do
+    first =
+      slot("q1", "Situer un objet", "recall")
+      |> Map.merge(%{"task" => "The cat is ... the box", "expected_elements" => ["in"]})
+
+    second = %{first | "id" => "q2", "task" => "The book is ... the bag"}
+    p = %{plan() | "questions" => [first, second]}
+
+    assert :ok = Plan.validate(p, 2, ["reading"], [%{id: "page"}], [])
+    refute Plan.duplicate?(first, second)
+
+    repeated = %{second | "task" => first["task"]}
+    assert Plan.duplicate?(first, repeated)
+
+    assert {:error, _} =
+             Plan.validate(
+               %{p | "questions" => [first, repeated]},
+               2,
+               ["reading"],
+               [%{id: "page"}],
+               []
+             )
+
+    # Missing task metadata must not turn the shared objective into a duplicate.
+    refute Plan.duplicate?(Map.delete(first, "task"), Map.delete(second, "task"))
+    refute Plan.duplicate?(first, %{repeated | "support_id" => "another-document"})
   end
 
   defp plan do
@@ -81,7 +112,7 @@ defmodule CaptainHomework.ExamPlanTest do
     refute Plan.rejected_current?(rejected, lesson, [], [])
   end
 
-  test "a shared support is valid only with distinct objectives and real sources" do
+  test "a shared support rejects repeated tasks and invalid sources" do
     assert :ok = Plan.validate(plan(), 2, ["reading"], [%{id: "page"}], [])
 
     duplicate =

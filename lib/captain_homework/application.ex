@@ -18,6 +18,7 @@ defmodule CaptainHomework.Application do
       {CaptainHomework.AI.WorkLimiter,
        limit: Application.get_env(:captain_homework, :exercise_concurrency, 3)},
       CaptainHomework.Exams.GenerationSupervisor,
+      CaptainHomework.Auth,
       # Start a worker by calling: CaptainHomework.Worker.start_link(arg)
       # {CaptainHomework.Worker, arg},
       # Start to serve requests, typically the last entry

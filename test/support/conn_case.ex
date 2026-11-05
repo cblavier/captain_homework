@@ -33,6 +33,17 @@ defmodule CaptainHomeworkWeb.ConnCase do
 
   setup tags do
     CaptainHomework.DataCase.setup_sandbox(tags)
-    {:ok, conn: Phoenix.ConnTest.build_conn()}
+    conn = Phoenix.ConnTest.build_conn()
+
+    conn =
+      if tags[:unauthenticated],
+        do: conn,
+        else:
+          Plug.Test.init_test_session(
+            conn,
+            CaptainHomework.Auth.session(tags[:account] || "parent-1")
+          )
+
+    {:ok, conn: conn}
   end
 end

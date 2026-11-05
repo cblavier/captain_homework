@@ -381,7 +381,7 @@ defmodule CaptainHomework.OpenAIPlanCheckpointTest do
     assert Map.put(new_support, "image_regions", []) in repaired["supports"]
   end
 
-  test "diagnostics detect normalized duplicate answers and unknown images", ctx do
+  test "diagnostics distinguish repeated tasks from different visual contexts", ctx do
     first = hd(ctx.plan["questions"])
 
     second =
@@ -402,8 +402,20 @@ defmodule CaptainHomework.OpenAIPlanCheckpointTest do
         []
       )
 
-    assert Enum.any?(errors["q1"], &String.contains?(&1, "déjà évalués"))
+    refute Map.has_key?(errors, "q1")
     assert Enum.any?(errors["q2"], &String.contains?(&1, "Illustration"))
+
+    errors =
+      CaptainHomework.Exams.Plan.diagnostics(
+        %{"questions" => [first, %{second | "image_ids" => []}], "supports" => []},
+        ["q1", "q2"],
+        ["long"],
+        [ctx.source],
+        []
+      )
+
+    assert Enum.any?(errors["q1"], &String.contains?(&1, "déjà proposées"))
+    assert Enum.any?(errors["q2"], &String.contains?(&1, "déjà proposées"))
   end
 
   defp response(conn, plan) do
