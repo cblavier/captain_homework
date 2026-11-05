@@ -5,8 +5,8 @@ defmodule CaptainHomework.WorkDuration do
   def values, do: Enum.map(@options, &elem(&1, 0))
 
   def select_options do
-    Enum.map(@options, fn {value, label, minutes} ->
-      {"#{label} (≈ #{minutes} min)", value}
+    Enum.map(@options, fn {value, label, _minutes} ->
+      {label, value}
     end)
   end
 

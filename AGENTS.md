@@ -2,6 +2,17 @@
 
 Ce projet n'aura jamais de ticket Linear. Ne pas demander de ticket Linear à Christian pour ce projet et ne pas conditionner le travail ou le nom de branche à un ticket Linear. Cette exception prévaut sur la consigne générale demandant un ticket en début de session.
 
+## Screenshots
+
+- Capturer l’interface réelle dans un environnement local isolé : copie de la base et des fichiers, sans modifier les données d’origine ni appeler les services IA.
+- Utiliser un seul enfant fictif : Alice, en 6B au collège Jules Ferry, avec le portrait de `screenshots/portraits/alice.png` repris de Captain Notes et le thème bleu clair. Vérifier les profils, les réponses, les appréciations et les documents pour exclure toute identité réelle.
+- Préparer les exemples à partir des leçons et contrôles existants, avec des données anonymisées cohérentes. La génération en cours peut être un état de démonstration enregistré ; le préciser dans la documentation des captures.
+- Produire sept vues desktop : catalogue des types, édition QCM avec aperçu Flashcard, création de leçon avec photos chargées, onglet Cours, contrôle de maths avec QCM et dépôt de photo de géométrie, correction avec note, appréciation et construction géométrique, correction d’histoire-géographie à 14/20 avec définition juste et faute corrigée puis QCM illustré erroné.
+- Produire trois vues mobile : création d’un contrôle classique de maths, génération détaillée de quatre questions en cours, contrôle d’anglais en Flashcard.
+- Viser 1440 × 1100 en desktop et 430 × 932 en mobile ; autoriser 1440 × 1400 pour les contrôles et 1440 × 1920 pour la correction d’histoire-géographie afin de garder les éléments demandés visibles. Attendre les polices, portraits, photos et la fin des transitions ; exclure le navigateur et le pointeur.
+- Conserver les PNG bruts dans `screenshots/originaux/alice/` et les images encadrées dans `screenshots/alice/`. Reprendre le cadre discret de Captain Notes : fond blanc, marge, bordure gris clair, coins légèrement arrondis et ombre légère, sans téléphone ni modification du contenu.
+- Vérifier visuellement chaque capture, conserver les noms et la sélection du README et fournir l’archive locale `screenshots/alice-screenshots.zip`, ignorée par Git.
+
 This is a web application written using the Phoenix web framework.
 
 ## Project guidelines

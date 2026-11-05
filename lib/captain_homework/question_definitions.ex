@@ -65,6 +65,16 @@ defmodule CaptainHomework.QuestionDefinitions do
   def used?(definition),
     do: Repo.exists?(from r in ExamQuestionDefinition, where: r.definition_id == ^definition.id)
 
+  def exam_count(nil), do: 0
+
+  def exam_count(definition_id) do
+    Repo.one(
+      from r in ExamQuestionDefinition,
+        where: r.definition_id == ^definition_id,
+        select: count(r.exam_id, :distinct)
+    )
+  end
+
   def available(subject), do: list(%{"subject" => subject})
 
   def resolve(subject, ids) do

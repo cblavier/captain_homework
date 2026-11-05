@@ -104,7 +104,7 @@ defmodule CaptainHomeworkWeb.SharedExamLiveTest do
     refute has_element?(view, "#source-modal")
 
     view |> form("#exam-answers", answers: %{"q1" => "quart"}) |> render_submit()
-    assert has_element?(view, "#submit-confirm", "1 réponses sur 1")
+    assert has_element?(view, "#submit-confirm", "1 réponse sur 1")
     view |> element("#submit-confirm button[phx-click=submit_exam]") |> render_click()
     assert_receive {:grading_waiting, worker}
     on_exit(fn -> send(worker, :fail_grading) end)

@@ -1,4 +1,5 @@
 defmodule CaptainHomework.AI do
+  import CaptainHomework.Text
   @callback transcribe(binary(), String.t()) :: {:ok, String.t()} | {:error, term()}
   @callback analyze_resource(binary(), String.t()) :: {:ok, map()} | {:error, term()}
   @optional_callbacks analyze_resource: 2
@@ -105,7 +106,11 @@ defmodule CaptainHomework.AI do
     errors =
       if length(valid) == expected,
         do: errors,
-        else: errors ++ ["#{length(valid)} questions valides reçues pour #{expected} attendues"]
+        else:
+          errors ++
+            [
+              "#{count_label(length(valid), "question valide reçue", "questions valides reçues")} pour #{expected} #{plural(expected, "attendue", "attendues")}"
+            ]
 
     if errors == [], do: {:ok, valid}, else: {:error, Enum.join(errors, "; ")}
   end

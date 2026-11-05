@@ -1,5 +1,6 @@
 defmodule CaptainHomeworkWeb.SessionController do
   use CaptainHomeworkWeb, :controller
+  import CaptainHomework.Text
   alias CaptainHomework.{Accounts, Auth, Study}
 
   def health(conn, _), do: json(conn, %{status: "ok"})
@@ -84,7 +85,9 @@ defmodule CaptainHomeworkWeb.SessionController do
     conn
     |> put_status(429)
     |> put_resp_header("retry-after", to_string(seconds))
-    |> page("Veuillez attendre #{seconds} secondes avant une nouvelle tentative.")
+    |> page(
+      "Veuillez attendre #{count_label(seconds, "seconde", "secondes")} avant une nouvelle tentative."
+    )
   end
 
   defp page(conn, error) do

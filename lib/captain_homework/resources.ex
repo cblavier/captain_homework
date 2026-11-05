@@ -1,4 +1,5 @@
 defmodule CaptainHomework.Resources do
+  import CaptainHomework.Text
   @moduledoc "Import and OCR of lesson reference documents."
   import Ecto.Query
   alias CaptainHomework.{AI, Repo, Study, Uploads}
@@ -347,7 +348,7 @@ defmodule CaptainHomework.Resources do
     CaptainHomework.ProcessingProgress.update(
       resource,
       percent,
-      "Lecture OCR — #{done}/#{total} pages"
+      "Lecture OCR — #{done}/#{count_label(total, "page", "pages")}"
     )
   end
 

@@ -16,7 +16,7 @@ defmodule CaptainHomeworkWeb.HomeworkLiveTest do
     {:ok, view, _} = live(conn, "/alice")
     assert has_element?(view, "#subject-anglais .subject-copy", "2 leçons · 2 contrôles")
     assert has_element?(view, "#subject-svt .subject-copy", "1 leçon · 1 contrôle")
-    assert has_element?(view, "#subject-francais .subject-copy", "0 leçons · 0 contrôles")
+    assert has_element?(view, "#subject-francais .subject-copy", "0 leçon · 0 contrôle")
   end
 
   test "settings offer the three device appearance preferences", %{conn: conn} do
@@ -55,7 +55,7 @@ defmodule CaptainHomeworkWeb.HomeworkLiveTest do
     assert has_element?(view, "#exam-footer #delete-exam", "Supprimer")
     e |> Ecto.Changeset.change(generation_duration_ms: nil) |> Repo.update!()
     {:ok, reloaded, _} = live(conn, "/alice/controles/#{e.id}")
-    assert has_element?(reloaded, "#generation-duration", "non enregistré")
+    refute has_element?(reloaded, "#generation-duration")
   end
 
   test "a shared document does not hide the individual tasks", %{conn: conn} do

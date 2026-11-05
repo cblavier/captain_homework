@@ -1333,10 +1333,6 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
     end
   end
 
-  defp count_label(count, singular, plural) do
-    "#{count} #{if count == 1, do: singular, else: plural}"
-  end
-
   defp schedule_exam_refresh(socket, exam) do
     if timer = socket.assigns.exam_refresh_timer, do: Process.cancel_timer(timer)
 
@@ -1360,7 +1356,7 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
   defp generation_stage_label(stage) do
     label =
       stage
-      |> String.replace(~r/^\d+ questions prêtes sur \d+ ·\s*/u, "")
+      |> String.replace(~r/^\d+ questions? prêtes? sur \d+ ·\s*/u, "")
       |> String.replace(~r/\s*(?:…|\.\.\.)$/u, "")
       |> String.trim()
       |> String.replace(~r/^correction de /iu, "Ajustement de ")

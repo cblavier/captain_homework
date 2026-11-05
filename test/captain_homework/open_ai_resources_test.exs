@@ -841,7 +841,7 @@ defmodule CaptainHomework.OpenAIResourcesTest do
           Map.has_key?(properties, "document_kind") ->
             progress = Repo.get!(Study.Resource, resource.id)
             assert progress.processing_progress == 30
-            assert progress.processing_stage == "Lecture OCR — 0/1 pages"
+            assert progress.processing_stage == "Lecture OCR — 0/1 page"
             send(caller, :ocr)
             %{"text" => "La membrane délimite la cellule.", "document_kind" => "course"}
 

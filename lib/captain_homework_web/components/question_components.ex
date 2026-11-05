@@ -180,7 +180,14 @@ defmodule CaptainHomeworkWeb.QuestionComponents do
         <%= if @kind in ["cloze", "legends"] do %>
           <div class="slot-inputs">
             <div :for={{slot, index} <- Enum.with_index(@question["slots"] || [])}>
-              <label for={slot_id(@namespace, @question["id"], slot, index)}>{slot}</label>
+              <label
+                for={slot_id(@namespace, @question["id"], slot, index)}
+                class={@kind == "legends" && "slot-marker"}
+              >
+                {if @kind == "legends",
+                  do: String.replace(slot, ~r/^Repère\s+(\d+)$/iu, "\\1"),
+                  else: slot}
+              </label>
               <.input
                 wrapper={false}
                 id={slot_id(@namespace, @question["id"], slot, index)}

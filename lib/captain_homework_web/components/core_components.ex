@@ -1,6 +1,7 @@
 defmodule CaptainHomeworkWeb.CoreComponents do
   @moduledoc "Shared controls and layout elements used across the application."
   use Phoenix.Component
+  import CaptainHomework.Text
   alias Phoenix.LiveView.JS
   import CaptainHomeworkWeb.ProfilePath, only: [child_path: 2]
 
@@ -248,7 +249,7 @@ defmodule CaptainHomeworkWeb.CoreComponents do
     <div class="question-meta">
       <span class="question-number">{@index}</span>
       <span>{@type_label}</span>
-      <span class="points">{@points} {if @points == 1, do: "point", else: "points"}</span>
+      <span class="points">{count_label(@points, "point", "points")}</span>
     </div>
     <h2>{@prompt}</h2>
     """

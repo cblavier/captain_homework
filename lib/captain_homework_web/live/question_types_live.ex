@@ -77,6 +77,7 @@ defmodule CaptainHomeworkWeb.QuestionTypesLive do
            socket
            |> assign(
              type: type,
+             usage_count: QuestionDefinitions.exam_count(type.id),
              tab: "definition",
              preview_mode: mode,
              example: example,
@@ -114,10 +115,13 @@ defmodule CaptainHomeworkWeb.QuestionTypesLive do
   defp edit_form(socket, cs) do
     type = Ecto.Changeset.apply_changes(cs)
 
+    languages = preview_languages(type)
+    candidates = if languages == [], do: type.subjects, else: Enum.map(languages, & &1.id)
+
     subject =
-      if socket.assigns.preview_subject in type.subjects,
+      if socket.assigns.preview_subject in candidates,
         do: socket.assigns.preview_subject,
-        else: Enum.find_value(Study.subjects(), fn s -> if s.id in type.subjects, do: s.id end)
+        else: Enum.find_value(Study.subjects(), fn s -> if s.id in candidates, do: s.id end)
 
     assign(socket,
       type_form: to_form(cs, as: :type),
@@ -129,7 +133,7 @@ defmodule CaptainHomeworkWeb.QuestionTypesLive do
 
   @impl true
   def handle_event("preview_subject", %{"subject" => subject}, socket) do
-    if subject in socket.assigns.preview_type.subjects do
+    if Enum.any?(preview_languages(socket.assigns.preview_type), &(&1.id == subject)) do
       {:noreply,
        assign(socket,
          preview_subject: subject,
@@ -256,9 +260,8 @@ defmodule CaptainHomeworkWeb.QuestionTypesLive do
         if id == value, do: label
       end)
 
-  defp subject_names(ids),
-    do:
-      Study.subjects()
-      |> Enum.filter(&(&1.id in ids))
-      |> Enum.map_join(" · ", &Study.subject_short_name/1)
+  defp subjects_for(ids), do: Enum.filter(Study.subjects(), &(&1.id in ids))
+
+  defp preview_languages(type),
+    do: Enum.filter(subjects_for(type.subjects), &(&1.id in ["anglais", "espagnol"]))
 end

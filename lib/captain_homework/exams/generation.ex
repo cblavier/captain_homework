@@ -1,4 +1,5 @@
 defmodule CaptainHomework.Exams.Generation do
+  import CaptainHomework.Text
   import Ecto.Query
   alias CaptainHomework.{AI, Repo, QuestionDefinitions}
   alias CaptainHomework.Study.Exam
@@ -245,12 +246,12 @@ defmodule CaptainHomework.Exams.Generation do
         stage =
           if round == 0,
             do: "préparation",
-            else: "ajustement de #{missing} #{if missing == 1, do: "question", else: "questions"}"
+            else: "ajustement de #{count_label(missing, "question", "questions")}"
 
         progress(
           exam,
           opts,
-          "#{length(exam.questions)} questions prêtes sur #{exam.generation_target} · #{stage}…"
+          "#{count_label(length(exam.questions), "question prête", "questions prêtes")} sur #{exam.generation_target} · #{stage}…"
         )
 
         allowed =
@@ -465,7 +466,11 @@ defmodule CaptainHomework.Exams.Generation do
 
             errors =
               if remaining > 0,
-                do: errors ++ ["Il manque #{remaining} questions valides."],
+                do:
+                  errors ++
+                    [
+                      "Il manque #{count_label(remaining, "question valide", "questions valides")}."
+                    ],
                 else: []
 
             discarded =
@@ -905,11 +910,11 @@ defmodule CaptainHomework.Exams.Generation do
           exam.generation_plan["build_error"]["message"]
 
         stalled?(exam) ->
-          "La génération est arrêtée : les dernières corrections n’améliorent plus les questions restantes. Les #{length(exam.questions)} questions prêtes sont conservées."
+          "La génération est arrêtée : les dernières corrections n’améliorent plus les questions restantes. #{count_label(length(exam.questions), "question prête conservée", "questions prêtes conservées")}."
 
         true ->
-          "#{length(exam.questions)} questions prêtes sur #{exam.generation_target}. " <>
-            "Elles sont conservées ; réessaie uniquement les questions manquantes."
+          "#{count_label(length(exam.questions), "question prête", "questions prêtes")} sur #{exam.generation_target}. " <>
+            "Le travail effectué est conservé ; réessaie uniquement les questions manquantes."
       end
 
     unless complete? do
@@ -1077,7 +1082,7 @@ defmodule CaptainHomework.Exams.Generation do
     current = Repo.get!(Exam, exam.id)
     missing = max(exam.generation_target - length(current.questions), 1)
     count = count || missing
-    questions = "#{count} #{if count == 1, do: "question", else: "questions"}"
+    questions = count_label(count, "question", "questions")
 
     message =
       case stage do

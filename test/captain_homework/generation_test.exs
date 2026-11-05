@@ -114,8 +114,8 @@ defmodule CaptainHomework.GenerationTest do
     assert feedback =~ "QCM"
     assert feedback =~ "réponse identique"
     assert kept["prompt"] == "Question kept"
-    assert_receive {:progress, "0 questions prêtes sur 2 · préparation…"}
-    assert_receive {:progress, "1 questions prêtes sur 2 · ajustement de 1 question…"}
+    assert_receive {:progress, "0 question prête sur 2 · préparation…"}
+    assert_receive {:progress, "1 question prête sur 2 · ajustement de 1 question…"}
   end
 
   test "two repairs then a simple fallback, followed by persistent partial recovery", %{

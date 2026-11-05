@@ -4,27 +4,17 @@
 
 Une application de révision pour les collégiens : importer ses cours, préparer des contrôles et obtenir une correction détaillée, dans un espace dédié à chaque enfant.
 
-Les leçons sont organisées par matière et présentées dans trois onglets : **Contrôles**, **Cours** et **Ressources**. Les pages de cours et les contrôles d’exemple peuvent être ajoutés en photo, vérifiés après reconnaissance du texte, puis réordonnés.
+Les leçons sont organisées par matière, alimentées en prenant des photos des cahiers, et éventuellement complétées de ressources externes (photo des livres, cours sur Internet ...).
 
-Les ressources complémentaires peuvent être des PDF, des images ou des liens vers des documents publics. Leur texte et leurs illustrations enrichissent les contrôles. Les exercices des évaluations et fiches d’activité sont utilisés en priorité, avec leurs illustrations originales dans les questions.
+Vous pouvez ensuite générer des évaluations personnalisées, avec tous types de questions (définition, QCM, schéma ...) pouvant parfois s'appuyer sur des documents externes.
 
-Les réponses sont sauvegardées pendant le contrôle. La correction fournit une note sur 20 et un retour par question. Les exercices précédemment mal réussis peuvent être repris lors des prochaines révisions.
-
-La compréhension orale est disponible en contrôle classique et en flashcards : un court monologue
-est créé dans la langue étudiée, puis lu par une voix de synthèse naturelle. La voix est choisie
-selon le locuteur du texte (féminine, masculine ou neutre quand le genre n’est pas indiqué).
-L’élève peut réécouter l’extrait et répond par écrit ; la transcription reste côté serveur pour la
-correction. Les fichiers sont conservés avec le contrôle, copiés lorsqu’on le refait et supprimés
-avec lui. Un échec de synthèse laisse les questions prêtes disponibles et la génération reprenable.
+Le contrôle est alors corrigé automatiquement, une note sur 20 est attribué et une correction détaillée par question est fournie.
 
 ## Motivations
 
 - Aider les enfants à réviser à partir de leurs propres cours.
-- Faciliter la préparation de contrôles variés sans ressaisir les documents.
-- Garder les leçons, les ressources et les résultats au même endroit.
+- Faciliter la préparation de contrôles variés, équilibrés et ludiques
 - Proposer une interface simple, utilisable sur ordinateur, tablette et téléphone.
-
-L’interface reprend les conventions de [Captain Notes](https://github.com/cblavier/captain_notes), avec un avatar et un thème de couleur par enfant. L’application peut être ajoutée à l’écran d’accueil comme PWA.
 
 ## Techno
 
@@ -34,6 +24,34 @@ L’interface reprend les conventions de [Captain Notes](https://github.com/cbla
 - ImageMagick pour la compatibilité des illustrations recadrées des anciens contrôles.
 - Code massivement généré par intelligence artificielle avec OpenAI Codex.
 - Prévu pour tourner avec Docker en production.
+
+## Screenshots
+
+Captures de l’interface avec un seul profil fictif, Alice, et des données anonymisées. [Voir le répertoire screenshots](screenshots/).
+
+### Desktop
+
+![Création d’une leçon avec deux photos de cours chargées](screenshots/alice/desktop-creation-lecon.png)
+
+![Pages de géométrie dans l’onglet Cours](screenshots/alice/desktop-lecon-cours.png)
+
+![Contrôle de maths : QCM et construction à rendre en photo](screenshots/alice/desktop-controle-maths.png)
+
+![Correction de géométrie avec note et appréciation](screenshots/alice/desktop-correction-maths.png)
+
+![Correction d’histoire-géographie : 14/20, orthographe corrigée et QCM illustré erroné](screenshots/alice/desktop-correction-histoire-geo.png)
+
+![Catalogue des types de questions](screenshots/alice/desktop-types.png)
+
+![Édition du type QCM avec aperçu Flashcard](screenshots/alice/desktop-type-qcm-flashcard.png)
+
+### Mobile
+
+<p>
+  <img src="screenshots/alice/mobile-creation-controle.png" alt="Création d’un contrôle classique de maths" width="250" />
+  <img src="screenshots/alice/mobile-generation-detaillee.png" alt="Génération détaillée de cinq questions — état de démonstration" width="250" />
+  <img src="screenshots/alice/mobile-flashcard-anglais.png" alt="Contrôle d’anglais en Flashcard avec compréhension orale" width="250" />
+</p>
 
 ## Lancer le projet en local
 
@@ -99,20 +117,6 @@ Les avatars acceptent au maximum 262 144 caractères base64. Sans avatar valide,
 Depuis le menu utilisateur, la page **Paramètres** permet de choisir le thème et d’activer les matières de chaque enfant. Désactiver une matière conserve ses leçons et résultats. Les règles pédagogiques communes sont intégrées au code ; des instructions facultatives peuvent être ajoutées à la création de chaque contrôle. Toute réponse doit pouvoir être déduite des leçons ou des supports affichés avec la question.
 
 Chaque compte enfant accède uniquement au profil `HOMEWORK_CHILD_n` de même numéro, y compris pour les documents et les notifications. Famille et les comptes parents accèdent à tous les profils. Sans compte PIN configuré, l’accès privé est fermé. Les liens de partage restent accessibles sans connexion.
-
-Les sessions durent une heure, ou trente jours avec « Rester connecté ». La déconnexion révoque la session en base et déconnecte les onglets ouverts ; changer un PIN invalide les sessions du compte. Après trois codes incorrects, les tentatives sont temporairement bloquées, comme dans Captain Notes.
-
-### Ressources pédagogiques
-
-L’onglet **Ressources** accepte les PDF, JPEG, PNG et WebP, les URL publiques et les fichiers Google Drive accessibles par lien. Les imports n’ont pas de plafond de taille, mais le traitement est limité à 100 pages et 300 images par PDF (160 mégapixels et 256 Mo extraits), et 40 images par page web. Les documents nécessitant une connexion ou JavaScript, Word et présentations doivent être exportés en PDF.
-
-Le texte reconnu peut être corrigé ; un import interrompu peut reprendre sans refaire les pages déjà traitées. Les imports incomplets doivent être terminés ou retirés avant génération. Un catalogue pédagogique est réutilisé tant que le contenu et les paramètres d’analyse restent inchangés.
-
-Les nouveaux contrôles utilisent les ressources telles qu’elles sont chargées : aucun recadrage automatique ni appel de réparation du cadrage n’est effectué. Le cadrage des ressources est préparé manuellement en amont. La vérification pédagogique examine les images entières et conserve les protections contre les paraphrases et les réponses dévoilées. Les descriptions d’analyse restent internes ; les textes sources utiles à la compréhension restent autorisés. Les contrôles déjà enregistrés conservent leurs illustrations ; leur génération n’est pas relancée automatiquement.
-
-Les illustrations retenues restent accessibles dans le contrôle après suppression de la ressource. Les vidéos et liens cités ne sont pas consultés automatiquement.
-
-Les documents et réponses nécessaires sont transmis à OpenAI ; la base et les fichiers restent stockés dans l’application.
 
 ### Génération et correction des contrôles
 
@@ -194,18 +198,3 @@ Le script [deploy.sh](deploy.sh) automatise la construction et le transfert SSH/
 ## Licence
 
 Captain Homework est distribué sous [licence MIT](LICENSE). Elle autorise l’utilisation, la modification et la redistribution, y compris commerciales, sous réserve de conserver la notice de copyright et la licence. Le logiciel est fourni sans garantie. Les dépendances et éléments tiers restent soumis à leurs licences respectives.
-
-Les paramètres de chaque matière permettent de gérer une liste de types de questions propre à chaque enfant. Les six types initiaux peuvent être supprimés et de nouveaux types ajoutés avec un nom, une consigne et un format de réponse. Cette liste alimente les cases à cocher à la création d’un contrôle ; les consignes sélectionnées sont conservées avec celui-ci. Supprimer un type ne modifie pas les contrôles existants.
-
-Dans les paramètres, le thème Jour / Nuit / Système est conservé sur l’appareil. Le mode Système suit automatiquement l’apparence du système ; le mode sombre conserve la couleur de chaque enfant, sans modifier les images des documents.
-
-### Synthèse vocale
-
-`CaptainHomework.AI.Speech` utilise l’API Realtime par WebSocket, côté serveur, avec
-`gpt-realtime-2.1-mini`. La connexion est limitée à deux minutes et toujours fermée, sans
-nouvelle tentative payante automatique. Le flux PCM mono à 24 kHz est enregistré en WAV,
-sans convertisseur externe. Un extrait n’est accepté qu’après une réponse complète et une
-vérification de sa transcription ; les extraits tronqués ou reformulés sont rejetés.
-Les anciens MP3 restent lisibles et copiables. Les clés API restent côté serveur.
-
-Référence : [conversations Realtime OpenAI](https://developers.openai.com/api/docs/guides/realtime-conversations).

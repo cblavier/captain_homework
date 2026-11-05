@@ -55,6 +55,10 @@ defmodule CaptainHomework.QuestionDefinitionsTest do
     {:ok, used} = QuestionDefinitions.save(%QuestionDefinition{}, attrs())
     exam = exam(lesson(profile()))
     QuestionDefinitions.attach!(exam, [used])
+    assert QuestionDefinitions.exam_count(used.id) == 1
+    other_exam = exam(lesson(profile("Marius")))
+    QuestionDefinitions.attach!(other_exam, [used])
+    assert QuestionDefinitions.exam_count(used.id) == 2
     {:ok, changed} = QuestionDefinitions.save(used, %{name: "Nouveau nom"})
     assert Repo.get_by!(ExamQuestionDefinition, exam_id: exam.id).snapshot["name"] == used.name
     {:ok, _} = QuestionDefinitions.delete(changed.id)

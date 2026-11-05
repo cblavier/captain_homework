@@ -70,7 +70,14 @@
                 >
                   {type.name}
                 </.link>
-                <small class="type-sub">{subject_names(type.subjects)}</small>
+                <div class="type-subjects">
+                  <span
+                    :for={subject <- subjects_for(type.subjects)}
+                    class={["subject-badge", subject.color]}
+                  >
+                    {Study.subject_short_name(subject)}
+                  </span>
+                </div>
               </td>
               <td class="response-column">{response_label(type.response_kind)}</td>
               <td class="duration-column">{duration_label(type.work_duration)}</td>
@@ -104,7 +111,9 @@
           </tbody>
         </table>
       </div>
-      <p id="type-count" class="muted" role="status">{@type_count} type(s) de questions</p>
+      <p id="type-count" class="muted" role="status">
+        {count_label(@type_count, "type de question", "types de questions")}
+      </p>
       <p :if={@type_count == 0} id="no-question-types" class="notice">
         Aucun type ne correspond à cette sélection.
       </p>
@@ -309,16 +318,6 @@
               rows="3"
             />
           </div>
-          <button
-            :if={@type.id}
-            type="button"
-            id="delete-current-type"
-            class="button text-button admin-danger"
-            phx-click="ask_delete"
-            phx-value-id={@type.id}
-          >
-            Supprimer ce type
-          </button>
         </.form>
         <aside class="admin-preview" aria-label="Aperçu de la question">
           <header class="lesson-navigation">
@@ -362,7 +361,7 @@
             class="preview-separator"
           />
           <.form
-            :if={@preview_mode in @preview_type.modes}
+            :if={@preview_mode in @preview_type.modes and preview_languages(@preview_type) != []}
             for={@preview_subject_form}
             id="type-preview-subject"
             phx-change="preview_subject"
@@ -372,8 +371,7 @@
               type="select"
               label="Langue de l’aperçu"
               options={
-                for s <- Study.subjects(),
-                    s.id in @preview_type.subjects,
+                for s <- preview_languages(@preview_type),
                     do: {Study.subject_short_name(s), s.id}
               }
             />
@@ -411,6 +409,20 @@
           </.form>
         </aside>
       </div>
+      <footer :if={@type.id} id="type-editor-footer" class="type-editor-footer">
+        <p id="type-usage-count" class="muted">
+          Utilisé dans {count_label(@usage_count, "contrôle", "contrôles")}
+        </p>
+        <button
+          type="button"
+          id="delete-current-type"
+          class="button text-button"
+          phx-click="ask_delete"
+          phx-value-id={@type.id}
+        >
+          Supprimer
+        </button>
+      </footer>
     </section>
     <.modal :if={@modal == "delete"} id="delete-type-modal" title="Supprimer ce type ?">
       <p>

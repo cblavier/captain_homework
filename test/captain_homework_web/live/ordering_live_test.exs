@@ -96,7 +96,7 @@ defmodule CaptainHomeworkWeb.OrderingLiveTest do
 
       if format == "classic" do
         view |> form("#exam-answers") |> render_submit()
-        assert has_element?(view, "#submit-confirm", "1 réponses sur 1")
+        assert has_element?(view, "#submit-confirm", "1 réponse sur 1")
         view |> element("#confirm-finish") |> render_click()
       else
         view |> form("#flashcard-answer") |> render_submit()

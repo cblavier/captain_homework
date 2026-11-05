@@ -81,6 +81,7 @@ defmodule CaptainHomeworkWeb do
       import Phoenix.HTML
       # Core UI components
       import CaptainHomeworkWeb.PhotoAnswerComponents
+      import CaptainHomework.Text
       import CaptainHomeworkWeb.CoreComponents
       import CaptainHomeworkWeb.SymbolComponents
 

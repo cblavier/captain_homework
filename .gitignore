@@ -48,3 +48,6 @@ npm-debug.log
 
 # macOS metadata
 .DS_Store
+
+# Local screenshot delivery archive
+/screenshots/*.zip

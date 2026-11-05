@@ -27,18 +27,14 @@
       <:footer :if={!@shared}>
         <div class="exam-footer flashcard-share-footer">
           <button
-            :if={@exam.generation_history != []}
+            :if={@exam.generation_history != [] and is_integer(@exam.generation_duration_ms)}
             id="generation-duration"
             type="button"
             class="button text-button generation-duration"
             phx-click="open_generation_history"
             aria-haspopup="dialog"
           >
-            <%= if is_integer(@exam.generation_duration_ms) do %>
-              Généré en {generation_duration(@exam.generation_duration_ms)}
-            <% else %>
-              Temps de génération non enregistré
-            <% end %>
+            Généré en {generation_duration(@exam.generation_duration_ms)}
           </button>
           <button id="share-exam" type="button" class="button text-button" phx-click="open_share">
             Partager
@@ -261,15 +257,11 @@
             <div class="subject-copy">
               <h2>{s.name}</h2>
               <span>
-                {Map.get(@counts, s.id, 0)} {if Map.get(@counts, s.id, 0) == 1,
-                  do: "leçon",
-                  else: "leçons"} · {Map.get(@exam_counts, s.id, 0)} {if Map.get(
-                                                                           @exam_counts,
-                                                                           s.id,
-                                                                           0
-                                                                         ) == 1,
-                                                                         do: "contrôle",
-                                                                         else: "contrôles"}
+                {count_label(Map.get(@counts, s.id, 0), "leçon", "leçons")} · {count_label(
+                  Map.get(@exam_counts, s.id, 0),
+                  "contrôle",
+                  "contrôles"
+                )}
               </span>
             </div>
             <.icon name="arrow" class="card-arrow" />
@@ -404,7 +396,7 @@
                 </div>
                 <p>
                   {date(exam.submitted_at || exam.inserted_at)}
-                  <span>·</span> {length(exam.questions)} questions
+                  <span>·</span> {count_label(length(exam.questions), "question", "questions")}
                 </p>
               </div>
               <span
@@ -1160,12 +1152,21 @@
           :if={@exam.format == "classic" and @exam.status in ["in_progress", "grading"]}
           class="exam-progress"
         >
-          <span>{completed_count(@exam, @answers)} / {length(@exam.questions)} réponses</span><span
+          <span>
+            {completed_count(@exam, @answers)} / {count_label(
+              length(@exam.questions),
+              "réponse",
+              "réponses"
+            )}
+          </span>
+          <span
             id="saved"
             phx-hook="Saved"
             data-saved={@saved}
             class="saved"
-          ><.icon name="check" /> Enregistré</span>
+          >
+            <.icon name="check" /> Enregistré
+          </span>
         </div>
         <p
           :if={@exam.format == "classic" and @exam.status == "grading"}
@@ -1338,7 +1339,7 @@
         <div class="exam-bottom-actions">
           <div :if={!@shared} class="exam-footer" id="exam-footer">
             <button
-              :if={@exam.status != "generating"}
+              :if={@exam.status != "generating" and is_integer(@exam.generation_duration_ms)}
               id="generation-duration"
               type="button"
               class="button text-button generation-duration"
@@ -1346,11 +1347,7 @@
               aria-haspopup="dialog"
               disabled={@exam.generation_history == []}
             >
-              <%= if is_integer(@exam.generation_duration_ms) do %>
-                Généré en {generation_duration(@exam.generation_duration_ms)}
-              <% else %>
-                Temps de génération non enregistré
-              <% end %>
+              Généré en {generation_duration(@exam.generation_duration_ms)}
             </button>
             <span
               :if={@exam.status != "generating" and Study.exam_deletable?(@exam, @account)}
@@ -1699,7 +1696,11 @@
     >
       <.focus_wrap id="submit-focus" class="modal-panel">
         <h2 id="submit-title">Rendre ta copie ?</h2>
-        <p>{completed_count(@exam, @answers)} réponses sur {length(@exam.questions)}.</p>
+        <p>
+          {count_label(completed_count(@exam, @answers), "réponse", "réponses")} sur {length(
+            @exam.questions
+          )}.
+        </p>
         <p>Tu ne pourras plus modifier tes réponses après la correction.</p>
         <div class="form-actions">
           <button class="button secondary" phx-click="cancel_submit">Continuer</button><button

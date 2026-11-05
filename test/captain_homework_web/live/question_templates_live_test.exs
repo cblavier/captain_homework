@@ -34,6 +34,15 @@ defmodule CaptainHomeworkWeb.QuestionTemplatesLiveTest do
     assert has_element?(view, "#question-type-preview .preview-help", "Réponds en espagnol.")
     view |> form("#type-preview-mode", mode: "classic") |> render_change()
     assert has_element?(view, "#question-type-preview .preview-help", "Rédige en espagnol.")
+    view |> form("#type-editor", type: %{subjects: ["histoire-geo"]}) |> render_change()
+    refute has_element?(view, "#type-preview-subject")
+
+    view
+    |> form("#type-editor", type: %{subjects: ["histoire-geo", "espagnol"]})
+    |> render_change()
+
+    assert has_element?(view, "#type-preview-subject option[value=espagnol][selected]")
+    refute has_element?(view, "#type-preview-subject option[value=histoire-geo]")
     assert QuestionDefinitions.get!(type.id).instruction == "Lis en {langue}."
     assert QuestionDefinitions.instructions([type], "espagnol") =~ "Lis en espagnol."
     render_change(view, "preview_subject", %{"subject" => "latin"})
