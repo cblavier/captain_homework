@@ -4,7 +4,7 @@
 
 Une application de révision pour les collégiens : importer ses cours, préparer des contrôles et obtenir une correction détaillée, dans un espace dédié à chaque enfant.
 
-Les leçons sont organisées par matière, alimentées en prenant des photos des cahiers, et éventuellement complétées de ressources externes (photo des livres, cours sur Internet ...).
+Les chapitres sont organisés par matière, alimentées en prenant des photos des cahiers, et éventuellement complétées de ressources externes (photo des livres, cours sur Internet ...).
 
 Vous pouvez ensuite générer des évaluations personnalisées, avec tous types de questions (définition, QCM, schéma ...) pouvant parfois s'appuyer sur des documents externes.
 
@@ -31,9 +31,9 @@ Captures de l’interface avec un seul profil fictif, Alice, et des données ano
 
 ### Desktop
 
-![Création d’une leçon avec deux photos de cours chargées](screenshots/alice/desktop-creation-lecon.png)
+![Création d’un chapitre avec deux photos de cours chargées](screenshots/alice/desktop-creation-lecon.png)
 
-![Pages de géométrie dans l’onglet Cours](screenshots/alice/desktop-lecon-cours.png)
+![Pages de géométrie dans l’onglet Leçons](screenshots/alice/desktop-lecon-cours.png)
 
 ![Contrôle de maths : QCM et construction à rendre en photo](screenshots/alice/desktop-controle-maths.png)
 
@@ -43,14 +43,14 @@ Captures de l’interface avec un seul profil fictif, Alice, et des données ano
 
 ![Catalogue des types de questions](screenshots/alice/desktop-types.png)
 
-![Édition du type QCM avec aperçu Flashcard](screenshots/alice/desktop-type-qcm-flashcard.png)
+![Édition du type QCM avec aperçu Flash cards](screenshots/alice/desktop-type-qcm-flashcard.png)
 
 ### Mobile
 
 <p>
   <img src="screenshots/alice/mobile-creation-controle.png" alt="Création d’un contrôle classique de maths" width="250" />
   <img src="screenshots/alice/mobile-generation-detaillee.png" alt="Génération détaillée de cinq questions — état de démonstration" width="250" />
-  <img src="screenshots/alice/mobile-flashcard-anglais.png" alt="Contrôle d’anglais en Flashcard avec compréhension orale" width="250" />
+  <img src="screenshots/alice/mobile-flashcard-anglais.png" alt="Contrôle d’anglais en Flash cards avec compréhension orale" width="250" />
 </p>
 
 ## Lancer le projet en local
@@ -60,10 +60,14 @@ Prérequis : Elixir et Erlang/OTP (versions locales dans [.tool-versions](.tool-
 Sur macOS, installer les outils de traitement des documents :
 
 ```sh
-brew install poppler imagemagick
+brew install poppler imagemagick ffmpeg yt-dlp node
 ```
 
-Sur Debian ou Ubuntu, les paquets correspondants sont `poppler-utils` et `imagemagick`.
+Sur Debian ou Ubuntu, les paquets correspondants sont `poppler-utils` et `imagemagick`. Pour l’import audio, ajouter `ffmpeg`, `yt-dlp` avec ses dépendances par défaut et Node.js 22 ou ultérieur. L’image Docker inclut ces outils.
+
+Les ressources de chapitre acceptent aussi les fichiers MP3 et MP4 (512 Mo, 2 heures maximum). Le bouton existant « Importer depuis une URL » accepte les liens YouTube vers une vidéo publique, y compris les liens courts et Shorts, sans importer de playlist ni de direct. Seule la transcription est conservée et utilisée comme source pour les évaluations ; aucun lecteur audio ni image extraite de vidéo n’est ajouté. Le fichier importé est conservé temporairement pour permettre une reprise après erreur, puis supprimé dès que sa transcription est enregistrée. Les extraits audio temporaires sont nettoyés même en cas d’échec.
+
+La transcription utilise l’API audio OpenAI (`gpt-transcribe`, configurable via `:openai_transcription_model`) avec la configuration API existante, en extraits de dix minutes. Références : [transcription OpenAI](https://developers.openai.com/api/docs/guides/speech-to-text), [yt-dlp](https://github.com/yt-dlp/yt-dlp). YouTube peut refuser certaines vidéos publiques depuis le serveur ; l’import signale alors une erreur et permet de réessayer ou d’importer un fichier local.
 
 ```sh
 git clone https://github.com/cblavier/captain_homework.git
@@ -114,15 +118,15 @@ Remplacer `n` par `1`, `2`, etc. Les numéros identifient durablement les enfant
 
 Les avatars acceptent au maximum 262 144 caractères base64. Sans avatar valide, l’initiale du prénom est affichée. Sans thème valide, les palettes bleu et vert alternent dans l’ordre des enfants.
 
-Depuis le menu utilisateur, la page **Paramètres** permet de choisir le thème et d’activer les matières de chaque enfant. Désactiver une matière conserve ses leçons et résultats. Les règles pédagogiques communes sont intégrées au code ; des instructions facultatives peuvent être ajoutées à la création de chaque contrôle. Toute réponse doit pouvoir être déduite des leçons ou des supports affichés avec la question.
+Depuis le menu utilisateur, la page **Paramètres** permet de choisir le thème et d’activer les matières de chaque enfant. Désactiver une matière conserve ses chapitres et résultats. Les règles pédagogiques communes sont intégrées au code ; des instructions facultatives peuvent être ajoutées à la création de chaque contrôle. Toute réponse doit pouvoir être déduite des leçons ou des supports affichés avec la question.
 
 Chaque compte enfant accède uniquement au profil `HOMEWORK_CHILD_n` de même numéro, y compris pour les documents et les notifications. Famille et les comptes parents accèdent à tous les profils. Sans compte PIN configuré, l’accès privé est fermé. Les liens de partage restent accessibles sans connexion.
 
-### Génération et correction des contrôles
+### Génération et correction des évaluations
 
-La création permet de choisir les types de questions et d’ajouter des consignes personnalisées prioritaires. La répartition des questions dépend des types sélectionnés, de leur durée de travail et du contenu disponible, sans quota fixe de rédactions ni de questions documentaires. Les contrôles d’exemple guident uniquement la forme ; les cours et ressources fournissent le contenu pédagogique.
+La création permet de choisir les types de questions et d’ajouter des consignes personnalisées prioritaires. La répartition des questions dépend des types sélectionnés, de leur durée de travail et du contenu disponible, sans quota fixe de rédactions ni de questions documentaires. Les contrôles de référence sont rangés par matière et par enfant : chacun possède un nom, une date et des pages ordonnées. À la création d’une évaluation classique, le choix facultatif « S’inspirer d’un contrôle de référence » propose les contrôles de la matière, avec « Aucun » par défaut. Seule la référence sélectionnée guide la structure ; le chapitre et ses ressources fournissent le contenu pédagogique. Les Flash cards ignorent les contrôles de référence.
 
-Le mode **Flashcard** utilise toutes les pages de cours, sans exemples ni ressources externes, avec uniquement des questions rapides. Chaque carte vaut un point, avec des points partiels par quarts, et révèle sa correction après validation. Le résultat final est ramené sur 20.
+Le mode **Flash cards** utilise toutes les pages de leçons avec uniquement des questions rapides. Si le chapitre ne contient aucune page de leçon, il utilise le texte de ses ressources prêtes, notamment les transcriptions audio. Les contrôles de référence et les anciennes évaluations sont exclus. Chaque carte vaut un point, avec des points partiels par quarts, et révèle sa correction après validation. Le résultat final est ramené sur 20.
 
 La génération sauvegarde une première version, puis un audit indépendant vérifie les questions, leurs sources et leurs supports. Une différence de classification de l’effort, à elle seule, met à jour les métadonnées de la question et du plan ; les défauts pédagogiques restent soumis à réparation. Les réparations conservent les questions validées et transmettent leurs énoncés visibles, les sources utiles aux questions rejetées et les images nécessaires. Seules les questions rejetées sont réécrites. Un contrôle incomplet reste **À compléter** : la reprise conserve le travail prêt et les instructions. La génération continue après fermeture de la page ; une tâche interrompue peut être reprise et une tâche bloquée expire après dix minutes.
 
@@ -130,9 +134,9 @@ Pendant la génération, l’écran affiche l’étape de l’appel en cours, le
 
 Un document partagé est conservé séparément du texte propre à chaque question. Il apparaît une seule fois avant les questions associées, sans remplacer leurs consignes ni leur contenu dynamique, y compris lors des réparations et des reprises de questions.
 
-Le contexte conserve les connaissances de toutes les pages de cours. Les exercices des ressources sont sélectionnés avec leurs faits et supports associés dans un budget de contexte adapté au nombre de questions. Les pages visuelles sélectionnées sont transmises en entier pour préserver les légendes ; leurs figures extraites ne sont pas ajoutées automatiquement en doublon.
+Le contexte conserve les connaissances de toutes les pages de leçons. Les exercices des ressources sont sélectionnés avec leurs faits et supports associés dans un budget de contexte adapté au nombre de questions. Les pages visuelles sélectionnées sont transmises en entier pour préserver les légendes ; leurs figures extraites ne sont pas ajoutées automatiquement en doublon.
 
-La table `ai_calls` conserve les durées, statuts et consommations de tokens, sans prompts ni réponses. Les contrôles non rendus ou terminés peuvent être supprimés après confirmation, avec leurs résultats et fichiers associés. Une leçon ne peut être supprimée que lorsqu’elle est vide. L’OCR et la correction restent des propositions de l’IA, à vérifier.
+La table `ai_calls` conserve les durées, statuts et consommations de tokens, sans prompts ni réponses. Les contrôles non rendus ou terminés peuvent être supprimés après confirmation, avec leurs résultats et fichiers associés. Un chapitre ne peut être supprimé que lorsqu’il est vide. L’OCR et la correction restent des propositions de l’IA, à vérifier.
 
 ## Construire et lancer en production avec Docker
 
@@ -198,3 +202,15 @@ Le script [deploy.sh](deploy.sh) automatise la construction et le transfert SSH/
 ## Licence
 
 Captain Homework est distribué sous [licence MIT](LICENSE). Elle autorise l’utilisation, la modification et la redistribution, y compris commerciales, sous réserve de conserver la notice de copyright et la licence. Le logiciel est fourni sans garantie. Les dépendances et éléments tiers restent soumis à leurs licences respectives.
+
+### Migration des contrôles de référence
+
+La migration `20261110183108` regroupe les anciennes pages d’exemple de chaque chapitre dans un contrôle de référence de la même matière et du même enfant. Elle reprend le nom et la date du chapitre, faute de métadonnées historiques plus précises ; ils restent modifiables. Les identifiants des pages, leurs fichiers, leur ordre et leurs analyses sont conservés. Les évaluations déjà créées gardent leurs questions et leurs résultats.
+
+Cette migration reconstruit la table SQLite `pages` pour rendre le rattachement à un chapitre facultatif. Sauvegarder la base avant application ; un retour à l’ancien modèle nécessite la restauration de cette sauvegarde. Les URLs historiques `/controles/` restent compatibles, tandis que l’interface utilise « Évaluations ».
+
+### Prononciation
+
+Le type **Prononciation** fonctionne en évaluation classique et en Flash cards pour l’anglais et l’espagnol. L’élève lit une courte phrase, enregistre sa voix (60 secondes, 5 Mo maximum), puis peut réécouter ou remplacer sa réponse avant correction. Le microphone nécessite HTTPS ou localhost et une autorisation du navigateur. Les enregistrements sont privés, conservés avec la copie et supprimés avec elle.
+
+La correction reçoit le son réel, et pas uniquement sa transcription, via un modèle audio (`gpt-audio-1.5`, configurable via `:openai_pronunciation_model`). Elle donne une note par quarts et un conseil en français, en acceptant les accents non natifs intelligibles. En cas d’échec du service, la réponse reste disponible pour réessayer. Voir la [documentation audio](https://developers.openai.com/api/docs/guides/audio-chat-completions).

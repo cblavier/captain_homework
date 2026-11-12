@@ -17,3 +17,5 @@ Les viewports sont de 1440 × 1100 sur desktop et 430 × 932 sur mobile. Le cont
 La correction d’histoire-géographie utilise un viewport de 1440 × 1920 pour afficher la note de 14/20, l’appréciation, la définition correcte avec correction orthographique et le QCM illustré erroné. Ses réponses et sa notation sont des données de démonstration cohérentes (14 points sur 20), sans appel IA.
 
 Aucun secret, compte réel, base de données ou fichier de session n’est versionné avec les captures.
+
+Capture complémentaire du 12 novembre 2026 : `desktop-evaluations-partagees.png`, page réelle sur une copie isolée de la base de tests, avec Alice et deux partages de démonstration (statuts enregistrés sans appel IA).
