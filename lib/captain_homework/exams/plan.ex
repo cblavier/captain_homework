@@ -76,9 +76,9 @@ defmodule CaptainHomework.Exams.Plan do
     _ -> {:error, "Le plan contient une structure de question ou de support invalide."}
   end
 
-  def validate(_, _, _, _, _, _), do: {:error, "Le plan du contrôle est incomplet."}
+  def validate(_, _, _, _, _, _), do: {:error, "Le plan de l’évaluation est incomplet."}
 
-  @version 4
+  @version 5
   def version, do: @version
 
   def fingerprint(lesson, pages, examples) do
@@ -144,7 +144,7 @@ defmodule CaptainHomework.Exams.Plan do
   defp validate_identities(questions, ids) do
     if Enum.sort(Enum.map(questions, & &1["id"])) == Enum.sort(ids),
       do: :ok,
-      else: {:error, "Les identifiants des questions diffèrent de ceux du contrôle."}
+      else: {:error, "Les identifiants des questions diffèrent de ceux de l’évaluation."}
   end
 
   # Collect every independent question diagnostic before making a paid repair call.

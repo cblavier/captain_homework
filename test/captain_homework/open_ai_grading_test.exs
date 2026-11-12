@@ -82,6 +82,37 @@ defmodule CaptainHomework.OpenAIGradingTest do
            ] = graded.corrections["q1"]["language_errors"]
   end
 
+  for format <- ["classic", "flashcard"] do
+    @format format
+    test "#{format} grading treats written-out decades as equivalent without changing the answer" do
+      q =
+        question("q1", "listening")
+        |> Map.merge(%{
+          "prompt" => "What kind of music is Tom a big fan of?",
+          "answer" => "60s and 70s rock music",
+          "rubric" => "1 point pour 60s and 70s rock music.",
+          "audio_script" => %{"text" => "I'm a big fan of 60s and 70s rock music."}
+        })
+
+      answer = "sixties and seventies rock music"
+      e = %{exam(lesson(profile(), "anglais"), [q]) | format: @format, answers: %{"q1" => answer}}
+      stub_response(grading_result())
+      assert {:ok, result} = OpenAI.grade(e)
+      assert_receive {:openai_request, request}
+      text = prompt(request)
+
+      assert text =~
+               "Les nombres, dates et décennies écrits en lettres ou en chiffres sont équivalents"
+
+      assert text =~ "consigne VISIBLE"
+      [_, copy] = String.split(text, "Copie : ", parts: 2)
+      assert [%{"student_answer" => ^answer}] = Jason.decode!(String.trim(copy))
+
+      assert {:ok, %{"q1" => %{"fraction" => 1}}, 20.0} =
+               CaptainHomework.Exams.validate_grades(e, result)
+    end
+  end
+
   test "flashcard grading respects its dedicated model override" do
     Application.put_env(:captain_homework, :openai_flashcard_model, "configured-flashcard-model")
     e = %{exam(lesson(profile())) | format: "flashcard"}

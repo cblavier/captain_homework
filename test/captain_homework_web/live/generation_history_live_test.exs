@@ -90,19 +90,16 @@ defmodule CaptainHomeworkWeb.GenerationHistoryLiveTest do
     assert has_element?(reloaded, "#generation-question-2")
   end
 
-  test "flashcard history can be reopened without losing its streamed questions", %{
+  test "flashcards hide the generation duration and history link", %{
     conn: conn,
     exam: exam
   } do
     exam = Repo.update!(Ecto.Changeset.change(exam, format: "flashcard"))
     {:ok, view, _} = live(conn, "/alice/controles/#{exam.id}")
     assert has_element?(view, "#flashcard-player")
-    view |> element("#generation-duration") |> render_click()
-    assert has_element?(view, "#generation-history-modal #generation-question-2")
-    render_click(view, "close_modal")
+    refute has_element?(view, "#generation-duration")
     refute has_element?(view, "#generation-history-modal")
-    view |> element("#generation-duration") |> render_click()
-    assert has_element?(view, "#generation-history-modal #generation-question-1")
+    assert has_element?(view, "#delete-exam")
   end
 
   test "busy indicators keep stable IDs across active states and disappear when ready", %{

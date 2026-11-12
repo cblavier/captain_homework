@@ -213,7 +213,7 @@ defmodule CaptainHomework.ResourcesTest do
 
     assert Documents.title(resource) == "History exercises"
     assert {:ok, processed} = Resources.process(resource.id)
-    assert processed.filename == "History exercises.pdf"
+    assert processed.title == "History exercises"
     Resources.delete(l.profile_id, resource.id)
   end
 

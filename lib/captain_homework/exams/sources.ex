@@ -68,7 +68,7 @@ defmodule CaptainHomework.Exams.Sources do
 
   defp source(%{kind: "lesson"} = page, page_numbers) do
     %{
-      label: "Leçon : #{page.lesson.title}",
+      label: "Chapitre : #{page.lesson.title}",
       page_id: page.id,
       page_number: Map.fetch!(page_numbers, page.id),
       resource_id: nil

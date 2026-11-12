@@ -11,6 +11,16 @@ defmodule CaptainHomework.Fixtures do
     lesson
   end
 
+  def reference_exam(profile, subject \\ "svt") do
+    {:ok, reference} =
+      CaptainHomework.ReferenceExams.create(profile, subject, %{
+        "title" => "Contrôle de référence",
+        "date" => "2026-10-12"
+      })
+
+    reference
+  end
+
   def ensure_question_definitions do
     if CaptainHomework.QuestionDefinitions.list() == [] do
       for {format, response, content} <- [

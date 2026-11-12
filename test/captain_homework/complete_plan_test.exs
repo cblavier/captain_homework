@@ -67,7 +67,11 @@ defmodule CaptainHomework.CompletePlanTest do
           end
 
         basis = if n <= 15, do: "knowledge", else: "document"
-        question(n) |> Map.put("response_effort", effort) |> Map.put("answer_basis", basis)
+
+        question(n)
+        |> Map.put("response_effort", effort)
+        |> Map.put("answer_basis", basis)
+        |> Map.put("text", if(basis == "document", do: "Document original #{n}", else: ""))
       end
 
     assert :ok =

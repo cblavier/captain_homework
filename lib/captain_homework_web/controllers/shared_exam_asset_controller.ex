@@ -41,6 +41,6 @@ defmodule CaptainHomeworkWeb.SharedExamAssetController do
     Enum.find_value(exam.questions, fn q ->
       if q["type"] == "listening" and is_map(q["audio"]) and q["audio"]["id"] == id,
         do: q["audio"]
-    end)
+    end) || Enum.find(CaptainHomework.Exams.RecordingAnswers.assets(exam), &(&1["id"] == id))
   end
 end

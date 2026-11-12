@@ -9,13 +9,26 @@ defmodule CaptainHomeworkWeb.ExamAudioController do
         else: conn.assigns.profile
 
     if profile do
-      exam = Study.get_exam!(profile.id, exam_id)
+      exam =
+        try do
+          Study.get_exam!(profile.id, exam_id)
+        rescue
+          Ecto.NoResultsError ->
+            if CaptainHomework.Accounts.parent?(conn.assigns.account) do
+              CaptainHomework.ExamShares.get_owner_correction!(profile.id, exam_id)
+            else
+              raise Ecto.NoResultsError, queryable: CaptainHomework.Study.Exam
+            end
+        end
 
       asset =
         Enum.find_value(exam.questions, fn q ->
           if q["type"] == "listening" and is_map(q["audio"]) and q["audio"]["id"] == id,
             do: q["audio"]
         end)
+
+      asset =
+        asset || Enum.find(CaptainHomework.Exams.RecordingAnswers.assets(exam), &(&1["id"] == id))
 
       if asset && File.regular?(Uploads.path(asset["storage_key"])) do
         conn

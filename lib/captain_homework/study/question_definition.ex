@@ -14,8 +14,6 @@ defmodule CaptainHomework.Study.QuestionDefinition do
     field :instruction, :string
     field :content_kind, :string, default: "text"
     field :content_presence, :string, default: "optional"
-    field :help_classic, :string
-    field :help_flashcard, :string
     field :work_duration, :string, default: "quick"
     field :example, :map, default: %{}
     field :revision, :integer, default: 1
@@ -51,9 +49,8 @@ defmodule CaptainHomework.Study.QuestionDefinition do
       :instruction,
       :content_kind,
       :content_presence,
-      :help_classic,
-      :help_flashcard,
-      :work_duration
+      :work_duration,
+      :example
     ])
     |> update_change(:name, &String.trim/1)
     |> update_change(:subjects, &Enum.uniq(Enum.reject(&1, fn v -> v == "" end)))
@@ -70,8 +67,6 @@ defmodule CaptainHomework.Study.QuestionDefinition do
     ])
     |> validate_length(:name, max: 80)
     |> validate_length(:instruction, max: 2000)
-    |> validate_length(:help_classic, max: 1000)
-    |> validate_length(:help_flashcard, max: 1000)
     |> validate_choices(:subjects, Study.subject_ids())
     |> validate_choices(:modes, ~w(classic flashcard))
     |> validate_inclusion(:response_kind, @responses)

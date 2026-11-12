@@ -73,14 +73,17 @@ defmodule CaptainHomeworkWeb.Access do
   defp settings_allowed?(account, path) do
     Accounts.parent?(account) or
       not Regex.match?(
-        ~r{/(?:matieres/parametres|parametres/(?:matieres|types)(?:/.*)?)$},
+        ~r{/(?:parametres(?:/(?:matieres|types|partages)(?:/.*)?)?)$},
         URI.decode(path)
       )
   end
 
   defp settings_view_allowed?(account, socket) do
     Accounts.parent?(account) or
-      (socket.view != CaptainHomeworkWeb.QuestionTypesLive and
+      (socket.view not in [
+         CaptainHomeworkWeb.QuestionTypesLive,
+         CaptainHomeworkWeb.SharedEvaluationsLive
+       ] and
          socket.assigns.live_action not in [:subjects_settings, :subject_preferences])
   end
 

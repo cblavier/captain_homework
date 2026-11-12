@@ -12,12 +12,18 @@ defmodule CaptainHomeworkWeb.SubjectSettingsLiveTest do
 
     assert has_element?(
              home,
-             "#subjects-settings-button[href='/alice/matieres/parametres'][aria-label='Paramètres'] svg"
+             "#subjects-settings-button[href='/alice/parametres'][aria-label='Paramètres'] svg"
            )
 
-    assert has_element?(home, "#settings-link[href='/alice/parametres']")
-    {:ok, display, _} = live(conn, "/alice/parametres")
-    assert has_element?(display, "#theme-settings")
+    assert has_element?(home, "#settings-link[href='/alice/apparence']")
+    {:ok, display, _} = live(conn, "/alice/apparence")
+    assert has_element?(display, "#theme-settings[phx-hook='ThemeSettings'][phx-update='ignore']")
+    assert has_element?(display, "#theme-light[value='light']")
+    assert has_element?(display, "#theme-dark[value='dark']")
+    assert has_element?(display, "#theme-system[value='system'][checked]")
+    refute has_element?(display, "#default-instructions")
+    refute has_element?(display, "#settings-form")
+    refute has_element?(display, "#manage-student-subjects")
     assert has_element?(display, "#settings-page.settings-page:not(.setup-section)")
 
     assert has_element?(
@@ -28,7 +34,7 @@ defmodule CaptainHomeworkWeb.SubjectSettingsLiveTest do
 
     refute has_element?(display, "#student-subjects-card")
     refute has_element?(display, "#question-types-card")
-    {:ok, settings, _} = live(conn, "/alice/matieres/parametres")
+    {:ok, settings, _} = live(conn, "/alice/parametres")
     refute has_element?(settings, "#theme-settings")
     assert has_element?(settings, "#subjects-settings-page.settings-page:not(.setup-section)")
 
@@ -40,7 +46,7 @@ defmodule CaptainHomeworkWeb.SubjectSettingsLiveTest do
 
     assert has_element?(settings, "#manage-student-subjects[href='/alice/parametres/matieres']")
     assert has_element?(settings, "#manage-question-types[href='/alice/parametres/types']")
-    {:ok, other, _} = live(conn, "/marius/matieres/parametres")
+    {:ok, other, _} = live(conn, "/marius/parametres")
     assert has_element?(other, "#student-subjects-card h3", "Marius")
   end
 
@@ -78,9 +84,7 @@ defmodule CaptainHomeworkWeb.SubjectSettingsLiveTest do
       instruction_kind: "dynamic",
       content_kind: "text",
       content_presence: "required",
-      work_duration: "medium",
-      help_classic: "Explique ta réponse.",
-      help_flashcard: ""
+      work_duration: "medium"
     }
 
     view |> form("#type-editor", type: attrs) |> render_submit()

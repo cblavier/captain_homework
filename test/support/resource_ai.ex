@@ -20,6 +20,7 @@ defmodule CaptainHomework.ResourceAI do
        CaptainHomework.Fixtures.question("q#{index}")
        |> Map.put("prompt", "Exercice du document #{index}")
        |> Map.put("image_ids", ids)
+       |> Map.put("text", if(ids == [], do: "Exercice original à traiter.", else: ""))
      end)}
   end
 

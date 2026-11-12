@@ -1,8 +1,27 @@
 defmodule CaptainHomework.Exams.Instructions do
   @moduledoc "Keeps author instructions separate from generation and repair diagnostics."
 
-  def compose(custom, guidance) do
-    Jason.encode!(%{"generation_context" => 1, "custom" => custom, "guidance" => guidance})
+  def compose(custom, guidance, type_context \\ %{}) do
+    Jason.encode!(%{
+      "generation_context" => 1,
+      "custom" => custom,
+      "guidance" => guidance,
+      "type_context" => type_context
+    })
+  end
+
+  def type_context(value) do
+    with true <- is_binary(value),
+         {:ok, %{"type_context" => context}} <- Jason.decode(value),
+         true <- is_map(context) do
+      %{
+        definitions: context["definitions"] || [],
+        mode: context["mode"],
+        subject: context["subject"]
+      }
+    else
+      _ -> %{definitions: []}
+    end
   end
 
   def custom(value) do

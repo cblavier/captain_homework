@@ -26,6 +26,87 @@ defmodule CaptainHomeworkWeb.SharedExamLiveTest do
     %{profile: p, exam: exam(lesson(p))}
   end
 
+  test "owner can list shares and open a completed visitor correction", %{
+    conn: conn,
+    profile: p,
+    exam: exam
+  } do
+    {:ok, share, token} = ExamShares.create(p.id, exam.id, "fill")
+    {:ok, _, attempt} = ExamShares.open(token, "owner-list-test")
+
+    {:ok, _} =
+      Exams.submit({:shared, token, "owner-list-test"}, attempt.id, %{"q1" => "quart"},
+        sync: true
+      )
+
+    {:ok, view, _} = live(conn, "/alice/parametres/partages")
+    assert has_element?(view, ".page-shell[data-child-theme] #shared-evaluations-page.app")
+    assert has_element?(view, "#shared-evaluations-title-breadcrumb a[href='/alice/parametres']")
+    assert has_element?(view, "#shared-evaluations .shared-evaluation .shared-attempt-label")
+    assert has_element?(view, "#shared-evaluations a.button.secondary")
+    assert has_element?(view, "a[href='/alice/parametres/partages/#{attempt.id}']")
+    Repo.update!(Ecto.Changeset.change(share, expires_at: DateTime.add(DateTime.utc_now(), -60)))
+    {:ok, correction, _} = live(conn, "/alice/parametres/partages/#{attempt.id}")
+    assert has_element?(correction, "#exam-title")
+  end
+
+  test "shared copy badges distinguish blank, started and corrected answers", %{
+    conn: conn,
+    profile: p,
+    exam: exam
+  } do
+    {:ok, _, token} = ExamShares.create(p.id, exam.id, "fill")
+    {:ok, _, blank} = ExamShares.open(token, "blank-badge")
+    Repo.update!(Ecto.Changeset.change(blank, answers: %{"q1" => "   "}))
+    {:ok, _, started} = ExamShares.open(token, "started-badge")
+    Repo.update!(Ecto.Changeset.change(started, answers: %{"q1" => "une réponse"}))
+    {:ok, _, corrected} = ExamShares.open(token, "corrected-badge")
+    Repo.update!(Ecto.Changeset.change(corrected, status: "completed"))
+    {:ok, view, _} = live(conn, "/alice/parametres/partages")
+
+    assert has_element?(
+             view,
+             "#shared-attempt-status-#{blank.id}[data-status='not_started']",
+             "Non commencée"
+           )
+
+    assert has_element?(
+             view,
+             "#shared-attempt-status-#{started.id}[data-status='in_progress']",
+             "En cours"
+           )
+
+    assert has_element?(
+             view,
+             "#shared-attempt-status-#{corrected.id}[data-status='completed']",
+             "Corrigée"
+           )
+  end
+
+  test "deleting a share revokes public access and preserves the original and copies", %{
+    conn: conn,
+    profile: p,
+    exam: exam
+  } do
+    {:ok, share, token} = ExamShares.create(p.id, exam.id, "fill")
+    {:ok, _, attempt} = ExamShares.open(token, "retained-copy")
+    {:ok, other, other_token} = ExamShares.create(p.id, exam.id, "fill")
+    owner = profile("Marius")
+    assert_raise Ecto.NoResultsError, fn -> ExamShares.revoke(owner.id, share.id) end
+    {:ok, public, _} = live(conn, "/partage/#{token}")
+    {:ok, view, _} = live(conn, "/alice/parametres/partages")
+    view |> element("#delete-share-#{share.id}") |> render_click()
+    assert_redirect(view, "/alice/parametres/partages")
+    assert {:error, :unavailable} = ExamShares.fetch(token)
+    assert {:ok, _} = ExamShares.fetch(other_token)
+    assert Repo.get!(Study.Exam, exam.id)
+    assert Repo.get!(Study.Exam, attempt.id)
+    assert has_element?(public, "#share-unavailable")
+    {:ok, refreshed, _} = live(conn, "/alice/parametres/partages")
+    refute has_element?(refreshed, "#delete-share-#{share.id}")
+    assert has_element?(refreshed, "#delete-share-#{other.id}")
+  end
+
   test "both share modes use the originating student's theme", %{conn: conn} do
     owner = profile("Marius")
     control = exam(lesson(owner))
@@ -36,6 +117,66 @@ defmodule CaptainHomeworkWeb.SharedExamLiveTest do
       {:ok, view, _} = live(conn, "/partage/#{token}")
       assert has_element?(view, ".page-shell[data-child-theme='#{owner.theme}'] #exam-title")
     end
+  end
+
+  test "both share modes preserve the saved question type label", %{conn: conn, profile: p} do
+    q =
+      question("translation", "definition")
+      |> Map.put("type_contract", %{"name" => "Traduction en {langue}"})
+
+    control = exam(lesson(p, "anglais"), [q])
+
+    control
+    |> Ecto.Changeset.change(
+      status: "completed",
+      score: 20.0,
+      corrections: %{"translation" => %{"points" => q["points"]}}
+    )
+    |> Repo.update!()
+
+    for mode <- ["fill", "correction"] do
+      {:ok, _, token} = ExamShares.create(p.id, control.id, mode)
+      {:ok, view, _} = live(conn, "/partage/#{token}")
+
+      assert has_element?(
+               view,
+               "#question-translation .question-type-label",
+               "Traduction en anglais"
+             )
+    end
+  end
+
+  test "shared URLs expose descriptive previews in the initial HTML", %{profile: p} do
+    control = exam(lesson(p, "anglais"))
+    {:ok, _} = Exams.submit(p.id, control.id, %{"q1" => "quart"}, sync: true)
+
+    for {mode, prefix} <- [{"fill", "Évaluation"}, {"correction", "Corrigé de l’évaluation"}] do
+      {:ok, _, token} = ExamShares.create(p.id, control.id, mode)
+      conn = get(build_conn(), "/partage/#{token}")
+      html = conn |> html_response(200) |> LazyHTML.from_document()
+      title = "#{prefix} d’anglais — La cellule"
+
+      assert LazyHTML.text(LazyHTML.query(html, "title")) =~ title
+
+      assert LazyHTML.attribute(LazyHTML.query(html, "meta[property='og:title']"), "content") ==
+               [title <> " | Captain Homework"]
+
+      [image] = LazyHTML.attribute(LazyHTML.query(html, "meta[property='og:image']"), "content")
+      assert URI.parse(image).scheme in ["http", "https"]
+      assert URI.parse(image).path == "/images/brand/share-preview.png"
+
+      assert LazyHTML.attribute(LazyHTML.query(html, "meta[name='twitter:card']"), "content") ==
+               ["summary_large_image"]
+
+      {:ok, view, _} = live(conn)
+      assert page_title(view) == title
+    end
+  end
+
+  test "unavailable shares do not expose preview metadata" do
+    conn = get(build_conn(), "/partage/#{ExamShares.token()}")
+    html = conn |> html_response(200) |> LazyHTML.from_document()
+    assert LazyHTML.attribute(LazyHTML.query(html, "meta[property='og:title']"), "content") == []
   end
 
   test "the footer opens both choices and a copyable unique URL", %{
@@ -92,7 +233,7 @@ defmodule CaptainHomeworkWeb.SharedExamLiveTest do
     refute has_element?(view, "a[href]")
     refute has_element?(view, "#delete-exam")
     refute has_element?(view, "#share-exam")
-    assert has_element?(view, "#exam-title", "Contrôle de #{Study.subject!("svt").name}")
+    assert has_element?(view, "#exam-title", "Évaluation de #{Study.subject!("svt").name}")
     assert has_element?(view, "#shared-exam-subject-icon.green .icon")
     assert has_element?(view, "#shared-exam-lesson.muted", "La cellule")
     {:ok, _, attempt} = ExamShares.open(token, visitor)

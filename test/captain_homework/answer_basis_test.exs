@@ -49,7 +49,12 @@ defmodule CaptainHomework.AnswerBasisTest do
   end
 
   test "finding an answer in its document is allowed for a document question" do
-    q = %{"plan_id" => "q1", "response_effort" => "direct", "answer_basis" => "document"}
+    q = %{
+      "plan_id" => "q1",
+      "response_effort" => "direct",
+      "answer_basis" => "document",
+      "text" => "Le village est au nord de la rivière."
+    }
 
     review = %{
       "plan_id" => "q1",

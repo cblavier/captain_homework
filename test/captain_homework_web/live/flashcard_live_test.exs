@@ -17,6 +17,104 @@ defmodule CaptainHomeworkWeb.FlashcardLiveTest do
     |> Repo.update!()
   end
 
+  test "a comprehension flashcard displays its excerpt with the question", %{conn: conn} do
+    excerpt = "Hi, I'm Tom. I was born in Leeds."
+
+    q =
+      question("tom", "mcq")
+      |> Map.merge(%{
+        "prompt" => "Where was Tom born?",
+        "text" => excerpt,
+        "answer" => "Leeds",
+        "answer_basis" => "document",
+        "options" => ["London", "Leeds", "Yorkshire"]
+      })
+
+    e =
+      exam(lesson(profile(), "anglais"), [q])
+      |> Ecto.Changeset.change(format: "flashcard")
+      |> Repo.update!()
+
+    {:ok, view, _} = live(conn, "/alice/controles/#{e.id}")
+    assert has_element?(view, "#flashcard-tom", excerpt)
+    assert has_element?(view, "#flashcard-tom", "Where was Tom born?")
+    assert has_element?(view, "#flashcard-tom input[type=radio]", "")
+  end
+
+  test "parents browse unanswered cards in both directions without grading", %{conn: conn} do
+    e = flash_exam(lesson(profile()))
+    {:ok, view, _} = live(conn, "/alice/controles/#{e.id}")
+
+    assert has_element?(view, "#previous-flashcard[disabled]")
+    refute has_element?(view, "#regenerate-flashcard .icon")
+    view |> element("#next-flashcard") |> render_click()
+    assert has_element?(view, "#flashcard-q2")
+    assert has_element?(view, "#next-flashcard[disabled]")
+    view |> element("#previous-flashcard") |> render_click()
+    assert has_element?(view, "#flashcard-q1")
+    updated = Study.get_exam!(profile().id, e.id)
+    assert updated.answers == %{}
+    assert updated.corrections == %{}
+    assert updated.status == "in_progress"
+    assert updated.score == nil
+  end
+
+  @tag account: "child-1"
+  test "children cannot browse cards even by sending the event", %{conn: conn} do
+    e = flash_exam(lesson(profile()))
+    {:ok, view, _} = live(conn, "/alice/controles/#{e.id}")
+    refute has_element?(view, "#previous-flashcard")
+    refute has_element?(view, "#next-flashcard")
+    refute has_element?(view, "#delete-exam")
+    refute has_element?(view, "#generation-duration")
+    render_click(view, "browse_card", %{"direction" => "next"})
+    assert has_element?(view, "#flashcard-q1")
+    assert Study.get_exam!(profile().id, e.id).card_index == 0
+  end
+
+  test "parents can delete flashcards without a generation duration link", %{conn: conn} do
+    l = lesson(profile())
+
+    e =
+      flash_exam(l)
+      |> Ecto.Changeset.change(generation_duration_ms: 12_000)
+      |> Repo.update!()
+
+    {:ok, view, _} = live(conn, "/alice/controles/#{e.id}")
+    refute has_element?(view, "#generation-duration")
+    assert has_element?(view, "#delete-exam[data-confirm]")
+    view |> element("#delete-exam") |> render_click()
+    assert_redirect(view, "/alice/lecons/#{l.id}")
+    refute Repo.get(Study.Exam, e.id)
+  end
+
+  test "browsing is bounded and blocked during grading", %{conn: conn} do
+    e = flash_exam(lesson(profile()))
+    {:ok, view, _} = live(conn, "/alice/controles/#{e.id}")
+    render_click(view, "browse_card", %{"direction" => "previous"})
+    assert Study.get_exam!(profile().id, e.id).card_index == 0
+
+    e
+    |> Ecto.Changeset.change(status: "grading", grading_started_at: DateTime.utc_now())
+    |> Repo.update!()
+
+    render_click(view, "browse_card", %{"direction" => "next"})
+    assert has_element?(view, "#next-flashcard[disabled]")
+    assert Study.get_exam!(profile().id, e.id).card_index == 0
+  end
+
+  test "answering the last card returns to skipped questions before finishing", %{conn: conn} do
+    e = flash_exam(lesson(profile()))
+    {:ok, view, _} = live(conn, "/alice/controles/#{e.id}")
+    view |> element("#next-flashcard") |> render_click()
+    assert {:ok, _} = Exams.Flashcards.submit(profile().id, e.id, "q2", "answer", sync: true)
+    send(view.pid, :refresh_exam)
+    assert has_element?(view, "#next-card[data-has-next=true]", "Question suivante")
+    view |> element("#next-card") |> render_click()
+    assert has_element?(view, "#flashcard-q1")
+    assert Study.get_exam!(profile().id, e.id).status == "in_progress"
+  end
+
   test "the stack shrinks to one card then none, preserving the final transition", %{conn: conn} do
     e = flash_exam(lesson(profile()), 4)
 
@@ -252,7 +350,7 @@ defmodule CaptainHomeworkWeb.FlashcardLiveTest do
     e = exam(l, [mcq, cloze]) |> Ecto.Changeset.change(format: "flashcard") |> Repo.update!()
     {:ok, list, _} = live(conn, "/alice/lecons/#{l.id}")
     assert has_element?(list, "#exam-format-#{classic.id}", "Classique")
-    assert has_element?(list, "#exam-format-#{e.id}", "Flashcard")
+    assert has_element?(list, "#exam-format-#{e.id}", "Flash cards")
     {:ok, view, _} = live(conn, "/alice/controles/#{e.id}")
     assert has_element?(view, "#flashcard-option-0[type=radio]")
     assert has_element?(view, "#flashcard-option-1[value=B]")

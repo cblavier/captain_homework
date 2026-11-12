@@ -43,8 +43,6 @@ defmodule CaptainHomeworkWeb.QuestionRenderingParityTest do
         content_kind: @content,
         content_presence: if(@content == "none", do: "none", else: "required"),
         instruction_kind: "dynamic",
-        help_classic: "Une aide commune.",
-        help_flashcard: "Une aide commune.",
         example: %{"audio" => "english"}
       }
 

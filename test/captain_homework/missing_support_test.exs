@@ -88,7 +88,11 @@ defmodule CaptainHomework.MissingSupportTest do
     assert AI.question_errors(q) == []
 
     hidden_diagram = Map.merge(q, %{"type" => "mcq", "options" => ["bat", "candle"]})
-    assert [_error] = AI.question_errors(hidden_diagram)
+
+    assert Enum.any?(
+             AI.question_errors(hidden_diagram),
+             &String.contains?(&1, "liste numérotée absente")
+           )
   end
 
   test "permits a shared list once it is attached as the question's visible support" do

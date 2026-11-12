@@ -9,12 +9,15 @@ defmodule CaptainHomework.ProcessingProgress do
 
     Phoenix.PubSub.broadcast(
       CaptainHomework.PubSub,
-      "lesson:#{source.lesson_id}",
+      topic(source),
       :lesson_updated
     )
 
     :ok
   end
+
+  defp topic(%{reference_exam_id: id}) when not is_nil(id), do: "reference:#{id}"
+  defp topic(source), do: "lesson:#{source.lesson_id}"
 
   def complete(source), do: update(source, 100, nil)
 
@@ -25,7 +28,7 @@ defmodule CaptainHomework.ProcessingProgress do
 
     Phoenix.PubSub.broadcast(
       CaptainHomework.PubSub,
-      "lesson:#{source.lesson_id}",
+      topic(source),
       :lesson_updated
     )
 

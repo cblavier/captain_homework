@@ -47,7 +47,7 @@ defmodule CaptainHomework.Exams.AnswerBasis do
     if Map.has_key?(q, "answer_basis") do
       case {q["answer_basis"], review["actual_basis"]} do
         {"knowledge", "knowledge"} -> review["answer_exposed"] == false
-        {"document", "document"} -> true
+        {"document", "document"} -> CaptainHomework.Exams.VisibleSupport.present?(q)
         # Naming what is visible also requires learned vocabulary. This label
         # disagreement alone is not a defect; consistency is reviewed separately.
         {"document", "knowledge"} -> (q["image_ids"] || []) != []

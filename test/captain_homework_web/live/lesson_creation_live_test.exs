@@ -62,7 +62,7 @@ defmodule CaptainHomeworkWeb.LessonCreationLiveTest do
     assert lesson.title == title
     assert page.filename == "page-2.png"
     assert File.read!(Uploads.path(page.storage_key)) == image
-    assert_redirect(view, "/alice/lecons/#{lesson.id}")
+    assert_redirect(view, "/alice/lecons/#{lesson.id}?onglet=cours")
   end
 
   test "keeps the submitted title when creation is rejected", %{view: view, child: child} do

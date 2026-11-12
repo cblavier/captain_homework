@@ -35,13 +35,34 @@ defmodule CaptainHomework.ExamShares do
 
   def create(_, _, _), do: {:error, :unavailable}
 
+  def revoke(profile_id, id) do
+    share =
+      Repo.one!(
+        from s in ExamShare,
+          join: e in assoc(s, :exam),
+          join: l in assoc(e, :lesson),
+          where: s.id == ^id and l.profile_id == ^profile_id
+      )
+
+    case share |> Ecto.Changeset.change(revoked_at: DateTime.utc_now()) |> Repo.update() do
+      {:ok, share} ->
+        Phoenix.PubSub.broadcast(CaptainHomework.PubSub, "exam_share:#{share.id}", :share_revoked)
+        {:ok, share}
+
+      error ->
+        error
+    end
+  end
+
   def fetch(token) when is_binary(token) and byte_size(token) == 43 do
     hash = digest(token)
     now = DateTime.utc_now()
 
     case Repo.one(
            from s in ExamShare,
-             where: s.token_hash == ^hash and (is_nil(s.expires_at) or s.expires_at > ^now),
+             where:
+               s.token_hash == ^hash and is_nil(s.revoked_at) and
+                 (is_nil(s.expires_at) or s.expires_at > ^now),
              preload: [exam: :lesson]
          ) do
       nil -> {:error, :unavailable}
@@ -63,6 +84,19 @@ defmodule CaptainHomework.ExamShares do
   end
 
   def open(_, _), do: {:error, :unavailable}
+
+  def get_owner_correction!(profile_id, id) do
+    Repo.one!(
+      from e in Exam,
+        join: s in ExamShare,
+        on: s.id == e.exam_share_id,
+        join: original in Exam,
+        on: original.id == s.exam_id,
+        join: l in assoc(original, :lesson),
+        where: e.id == ^id and l.profile_id == ^profile_id and e.status == "completed",
+        preload: [:lesson]
+    )
+  end
 
   def attempts_for_exam(exam_id) do
     Repo.all(

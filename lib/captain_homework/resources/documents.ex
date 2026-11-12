@@ -10,6 +10,13 @@ defmodule CaptainHomework.Resources.Documents do
   def type(<<"%PDF-", _::binary>>, _), do: {:ok, "application/pdf", ".pdf"}
 
   def type(data, hint) do
+    case CaptainHomework.Resources.Audio.type(data) do
+      {:ok, _, _} = result -> result
+      :not_media -> document_type(data, hint)
+    end
+  end
+
+  defp document_type(data, hint) do
     case Uploads.image_type(data) do
       {:ok, type, ext} ->
         {:ok, type, ext}
@@ -17,7 +24,9 @@ defmodule CaptainHomework.Resources.Documents do
       _ ->
         if hint == "text/html" and String.valid?(data),
           do: {:ok, "text/html", ".html"},
-          else: {:error, "Format non pris en charge : PDF, JPEG, PNG, WebP ou page web attendu."}
+          else:
+            {:error,
+             "Format non pris en charge : PDF, JPEG, PNG, WebP, MP3, MP4 ou page web attendu."}
     end
   end
 
@@ -35,6 +44,20 @@ defmodule CaptainHomework.Resources.Documents do
 
   def extract(%{content_type: "application/pdf"} = resource), do: pdf(resource)
   def extract(%{content_type: "text/html"} = resource), do: html(resource)
+
+  def extract(%{content_type: "text/plain"} = resource) do
+    {:ok,
+     [
+       %{
+         data: Uploads.read(resource),
+         type: "text/plain",
+         ext: ".txt",
+         kind: "resource",
+         name: resource.filename,
+         transcript: true
+       }
+     ]}
+  end
 
   def extract(resource) do
     data = Uploads.read(resource)

@@ -174,7 +174,7 @@ defmodule CaptainHomework.AI.ResourcePreflight do
     else
       error(
         :missing_asset,
-        "Une illustration obligatoire n’est plus disponible. Réimporte la ressource avant de reprendre le contrôle.",
+        "Une illustration obligatoire n’est plus disponible. Réimporte la ressource avant de reprendre l’évaluation.",
         %{"image_ids" => missing}
       )
     end
@@ -197,7 +197,7 @@ defmodule CaptainHomework.AI.ResourcePreflight do
     else
       error(
         :missing_asset,
-        "Une illustration conservée ne couvre pas le cadrage demandé. Réimporte sa source avant de reprendre le contrôle.",
+        "Une illustration conservée ne couvre pas le cadrage demandé. Réimporte sa source avant de reprendre l’évaluation.",
         %{"image_ids" => Enum.uniq(conflicts)}
       )
     end
@@ -219,7 +219,7 @@ defmodule CaptainHomework.AI.ResourcePreflight do
     else
       error(
         :stale_dependency,
-        "Une ressource a changé depuis la création d’une question conservée, ou sa version ne peut plus être vérifiée. Vérifie cette ressource avant de reprendre le contrôle.",
+        "Une ressource a changé depuis la création d’une question conservée, ou sa version ne peut plus être vérifiée. Vérifie cette ressource avant de reprendre l’évaluation.",
         %{"image_ids" => Enum.uniq(conflicts)}
       )
     end
@@ -282,7 +282,7 @@ defmodule CaptainHomework.AI.ResourcePreflight do
       else:
         error(
           :missing_asset,
-          "Le fichier d’une illustration obligatoire est indisponible. Réimporte la ressource avant de reprendre le contrôle.",
+          "Le fichier d’une illustration obligatoire est indisponible. Réimporte la ressource avant de reprendre l’évaluation.",
           %{"image_ids" => missing}
         )
   end

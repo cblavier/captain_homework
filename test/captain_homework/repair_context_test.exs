@@ -71,6 +71,28 @@ defmodule CaptainHomework.RepairContextTest do
     assert result.supports == plan["supports"]
   end
 
+  test "a document question without an image can use an authorized alternative" do
+    q = %{
+      "id" => "q1",
+      "answer_basis" => "document",
+      "image_ids" => [],
+      "source_page_ids" => ["course"]
+    }
+
+    entries = [entry("knowledge", ["course"], []), entry("visual", ["map"], ["map"])]
+
+    plan = %{
+      "questions" => [q],
+      "supports" => [],
+      "context" => Jason.encode!(%{"catalogue" => entries})
+    }
+
+    result = RepairContext.build(plan, [q], [%{id: "map"}, %{id: "excluded"}])
+
+    assert result.images == [%{id: "map"}]
+    assert Jason.decode!(result.content)["catalogue"] == entries
+  end
+
   test "an autonomous question keeps all its visible text" do
     q = %{"text" => "Une légende indispensable", "support_id" => ""}
     assert RepairContext.compact_support(q) == q

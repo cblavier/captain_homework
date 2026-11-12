@@ -16,10 +16,13 @@ defmodule CaptainHomework.AI.RepairContext do
 
     course_ids = if missing_course?, do: for({id, "lesson"} <- kinds, do: id), else: []
     # Standalone figures were already selected under the author's exclusions.
-    # Supply alternatives when repairing an illustrated question so an ambiguous
-    # image can be replaced instead of repeatedly rewriting around it.
+    # Document questions can need an illustration even if the rejected draft
+    # omitted it. Keep alternatives available to add or replace their support.
     alternative_ids =
-      if Enum.any?(rejected, &((Map.get(&1, "image_ids") || []) != [])) do
+      if Enum.any?(
+           rejected,
+           &(&1["answer_basis"] == "document" or (Map.get(&1, "image_ids") || []) != [])
+         ) do
         (decode(plan["context"])["catalogue"] || [])
         |> Enum.filter(&(&1["kind"] == "visual"))
         |> Enum.flat_map(& &1["source_page_ids"])

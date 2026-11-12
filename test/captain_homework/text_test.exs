@@ -5,7 +5,7 @@ defmodule CaptainHomework.TextTest do
   test "French count labels agree for zero, one and multiple items" do
     for {singular, plural} <- [
           {"type de question", "types de questions"},
-          {"contrôle", "contrôles"},
+          {"évaluation", "évaluations"},
           {"question prête", "questions prêtes"},
           {"réponse", "réponses"},
           {"page", "pages"}

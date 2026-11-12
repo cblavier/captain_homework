@@ -18,7 +18,11 @@ defmodule CaptainHomework.Exams.Flashcards do
              from(e in Exam,
                where:
                  e.id == ^exam.id and e.status == "in_progress" and
-                   e.updated_at == ^exam.updated_at
+                   e.updated_at == ^exam.updated_at and
+                   fragment(
+                     "COALESCE(json_extract(?, '$.status'), '') NOT IN ('generating', 'failed')",
+                     e.regeneration
+                   )
              ),
              set: [
                answers: answers,
@@ -79,6 +83,43 @@ defmodule CaptainHomework.Exams.Flashcards do
     notify(exam)
   end
 
+  def browse(profile_id, exam_id, direction) when direction in ["previous", "next"] do
+    exam = Study.get_exam!(profile_id, exam_id)
+    index = exam.card_index + if(direction == "previous", do: -1, else: 1)
+
+    if exam.format == "flashcard" and exam.status == "in_progress" and
+         index >= 0 and index < length(exam.questions) do
+      case Repo.update_all(
+             from(e in Exam,
+               where:
+                 e.id == ^exam.id and e.status == "in_progress" and
+                   e.updated_at == ^exam.updated_at and
+                   fragment(
+                     "COALESCE(json_extract(?, '$.status'), '') NOT IN ('generating', 'failed')",
+                     e.regeneration
+                   )
+             ),
+             set: [card_index: index, updated_at: DateTime.utc_now()]
+           ) do
+        {1, _} ->
+          notify(exam)
+          {:ok, Study.get_exam!(profile_id, exam_id)}
+
+        _ ->
+          {:error, :stale_card}
+      end
+    else
+      {:error, :stale_card}
+    end
+  end
+
+  def browse(_, _, _), do: {:error, :invalid_direction}
+
+  def finishable?(exam) do
+    exam.card_index + 1 == length(exam.questions) and
+      Enum.all?(exam.questions, &Map.has_key?(exam.corrections, &1["id"]))
+  end
+
   def advance(profile_id, exam_id, question_id) do
     exam = Study.get_exam!(profile_id, exam_id)
     question = current(exam)
@@ -86,7 +127,7 @@ defmodule CaptainHomework.Exams.Flashcards do
     if exam.format == "flashcard" and exam.status == "in_progress" and not is_nil(question) and
          question["id"] == question_id and Map.has_key?(exam.corrections, question_id) do
       attrs =
-        if exam.card_index + 1 == length(exam.questions) do
+        if finishable?(exam) do
           {earned, total} = Exams.raw_score(exam)
           score = Exams.round_score(20 * earned / total)
 
@@ -97,14 +138,24 @@ defmodule CaptainHomework.Exams.Flashcards do
             appreciation: appreciation(exam)
           ]
         else
-          [card_index: exam.card_index + 1]
+          index =
+            if exam.card_index + 1 < length(exam.questions),
+              do: exam.card_index + 1,
+              else:
+                Enum.find_index(exam.questions, &(not Map.has_key?(exam.corrections, &1["id"])))
+
+          [card_index: index]
         end
 
       case Repo.update_all(
              from(e in Exam,
                where:
                  e.id == ^exam.id and e.status == "in_progress" and
-                   e.updated_at == ^exam.updated_at
+                   e.updated_at == ^exam.updated_at and
+                   fragment(
+                     "COALESCE(json_extract(?, '$.status'), '') NOT IN ('generating', 'failed')",
+                     e.regeneration
+                   )
              ),
              set: attrs ++ [updated_at: DateTime.utc_now()]
            ) do
@@ -136,7 +187,7 @@ defmodule CaptainHomework.Exams.Flashcards do
 
         is_list(ids) and ids != [] and Enum.all?(ids, &MapSet.member?(source_ids, &1)) and
           q["response_effort"] == "direct" and
-          q["answer_basis"] == if(q["type"] == "listening", do: "document", else: "knowledge") and
+          valid_answer_basis?(q) and
           q["support_id"] in [nil, ""] and Map.get(q, "image_ids", []) == [] and
           not answer_repeated_in_text?(q)
       end)
@@ -145,10 +196,21 @@ defmodule CaptainHomework.Exams.Flashcards do
      if(invalid == [],
        do: [],
        else: [
-         "Chaque flashcard doit être rapide, autonome et fondée uniquement sur les pages de cours. Le champ text ne doit pas répéter la réponse attendue."
+         "Chaque flashcard doit être rapide, autonome et fondée uniquement sur les sources du chapitre retenues pour la révision. Le champ text ne doit pas répéter la réponse attendue."
        ]
      )}
   end
+
+  defp valid_answer_basis?(%{"type" => type, "answer_basis" => basis})
+       when type in ["listening", "pronunciation"],
+       do: basis == "document"
+
+  defp valid_answer_basis?(%{"answer_basis" => "document"} = question),
+    do: CaptainHomework.Exams.VisibleSupport.present?(question)
+
+  defp valid_answer_basis?(question), do: question["answer_basis"] == "knowledge"
+
+  def answer_repeated_in_text?(%{"type" => "pronunciation"}), do: false
 
   def answer_repeated_in_text?(question) do
     answer = normalize_answer(question["answer"])

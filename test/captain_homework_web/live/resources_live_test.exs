@@ -11,6 +11,51 @@ defmodule CaptainHomeworkWeb.ResourcesLiveTest do
     :ok
   end
 
+  test "audio imports use existing controls and show only the transcript", %{conn: conn} do
+    l = lesson(profile())
+    key = Ecto.UUID.generate() <> ".txt"
+    File.mkdir_p!(Uploads.directory())
+    File.write!(Uploads.path(key), "The weather is lovely today.")
+    on_exit(fn -> File.rm(Uploads.path(key)) end)
+
+    resource =
+      Repo.insert!(%Study.Resource{
+        lesson_id: l.id,
+        filename: "cours.txt",
+        storage_key: key,
+        content_type: "text/plain",
+        status: "ready"
+      })
+
+    {:ok, _} =
+      Study.add_page(l, %{
+        resource_id: resource.id,
+        kind: "resource",
+        filename: "cours.txt",
+        storage_key: key,
+        content_type: "text/plain",
+        text: "The weather is lovely today.",
+        status: "ready"
+      })
+
+    {:ok, view, _} = live(conn, "/alice/lecons/#{l.id}?onglet=ressources")
+
+    assert has_element?(
+             view,
+             "#upload-resources input[type=file][accept*='.mp3'][accept*='.mp4']"
+           )
+
+    assert has_element?(view, "#resource-text-#{resource.id} summary", "Transcription audio")
+    refute has_element?(view, "#resource-#{resource.id} audio")
+    refute has_element?(view, "#resource-photos-#{resource.id}")
+    assert has_element?(view, "#download-resource-#{resource.id}[download='cours.txt']")
+    view |> element("#open-resource-url") |> render_click()
+    assert has_element?(view, "#resource-url-modal", "YouTube")
+
+    assert response(get(conn, "/alice/ressources/#{resource.id}"), 200) ==
+             "The weather is lovely today."
+  end
+
   defp await_ready_resource(lesson) do
     case Study.get_lesson!(lesson.profile_id, lesson.id).resources do
       [%{status: "ready"}] ->
@@ -33,12 +78,12 @@ defmodule CaptainHomeworkWeb.ResourcesLiveTest do
     {:ok, view, _} = live(conn, path)
     selector = "#resource-progress-#{resource.id}"
     assert has_element?(view, selector <> " .spinner")
-    assert has_element?(view, selector <> " strong", "≈ 58 %")
+    refute has_element?(view, selector, "≈")
     assert has_element?(view, selector, "Lecture OCR — 2/4 pages")
     CaptainHomework.ProcessingProgress.update(resource, 90, "Analyse pédagogique")
     assert has_element?(view, selector, "Analyse pédagogique")
     {:ok, refreshed, _} = live(conn, path)
-    assert has_element?(refreshed, selector <> " strong", "≈ 90 %")
+    refute has_element?(refreshed, selector, "≈")
     assert has_element?(refreshed, selector, "Analyse pédagogique")
   end
 
@@ -49,7 +94,7 @@ defmodule CaptainHomeworkWeb.ResourcesLiveTest do
     {:ok, view, _} = live(conn, "/alice/lecons/#{l.id}?onglet=cours")
     selector = "#page-progress-#{course.id}"
     assert has_element?(view, selector <> " .spinner")
-    assert has_element?(view, selector, "≈ 90 %")
+    refute has_element?(view, selector, "≈")
     assert has_element?(view, selector, "Analyse pédagogique")
     CaptainHomework.ProcessingProgress.complete(course)
     refute has_element?(view, selector)

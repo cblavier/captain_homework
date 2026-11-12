@@ -37,7 +37,7 @@ defmodule CaptainHomework.Exams.ResponseEffort do
             {accepted,
              errors ++
                [
-                 "Question #{q["plan_id"]} : effort attendu #{q["response_effort"]}, effort constaté #{review["actual_effort"]}. Mode prévu #{q["answer_basis"]}, mode constaté #{review["actual_basis"]}, réponse exposée #{review["answer_exposed"]}. Corrige uniquement le défaut pédagogique décrit ci-dessous. La catégorie d’effort est descriptive, elle n’impose pas de réécriture à elle seule. Pour knowledge, choisis une notion enseignée dans le cours dont la réponse n'est pas fournie dans les supports du contrôle. Diagnostic : #{review["reason"]}"
+                 "Question #{q["plan_id"]} : effort attendu #{q["response_effort"]}, effort constaté #{review["actual_effort"]}. Mode prévu #{q["answer_basis"]}, mode constaté #{review["actual_basis"]}, réponse exposée #{review["answer_exposed"]}. Corrige uniquement le défaut pédagogique décrit ci-dessous. La catégorie d’effort est descriptive, elle n’impose pas de réécriture à elle seule. Pour knowledge, choisis une notion enseignée dans le cours dont la réponse n'est pas fournie dans les supports de l’évaluation. Diagnostic : #{review["reason"]}"
                ]}
           end
         end)

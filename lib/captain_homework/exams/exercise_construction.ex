@@ -91,6 +91,8 @@ defmodule CaptainHomework.Exams.ExerciseConstruction do
       images: images,
       supports: plan["supports"],
       types: plan["types"],
+      definitions: plan["type_context"]["definitions"] || [],
+      mode: plan["type_context"]["mode"] || "classic",
       subject: lesson.subject
     }
   end
@@ -238,6 +240,6 @@ defmodule CaptainHomework.Exams.ExerciseConstruction do
        BuildError.new(
          :invalid_contract,
          :construction,
-         "Le contrôle ne contient pas exactement un contrat par exercice."
+         "L’évaluation ne contient pas exactement un contrat par exercice."
        )}
 end

@@ -1,6 +1,6 @@
 defmodule CaptainHomework.AI.QuestionContract do
   @moduledoc "The application owns question identities; the model fills named entries."
-  @content_fields ~w(type prompt text audio_script options slots diagram answer rubric points image_ids image_regions)
+  @content_fields ~w(definition_id type_contract type prompt text audio_script options slots diagram answer rubric points image_ids image_regions)
 
   def content_fields, do: @content_fields
 

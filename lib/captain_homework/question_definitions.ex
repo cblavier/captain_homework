@@ -70,7 +70,9 @@ defmodule CaptainHomework.QuestionDefinitions do
   def exam_count(definition_id) do
     Repo.one(
       from r in ExamQuestionDefinition,
-        where: r.definition_id == ^definition_id,
+        join: e in CaptainHomework.Study.Exam,
+        on: e.id == r.exam_id,
+        where: r.definition_id == ^definition_id and is_nil(e.regeneration_source_id),
         select: count(r.exam_id, :distinct)
     )
   end
@@ -99,6 +101,7 @@ defmodule CaptainHomework.QuestionDefinitions do
 
   def engine_format(type) do
     case type.response_kind do
+      "recording" -> if(type.content_kind == "text", do: "pronunciation")
       "ordering" -> "ordering"
       "photo" -> "photo"
       "short_text" -> "definition"
@@ -145,12 +148,58 @@ defmodule CaptainHomework.QuestionDefinitions do
 
   def instructions(types, subject \\ nil) do
     Enum.map_join(types, "\n", fn t ->
-      "Type #{t.name} : format #{engine_format(t)}, consigne #{t.instruction_kind} : #{t.instruction}; contenu #{t.content_kind} #{t.content_presence}; durée de travail #{t.work_duration} (≈ #{CaptainHomework.WorkDuration.minutes(t.work_duration)} min). " <>
+      "Type #{t.name} : format #{engine_format(t)}, consigne #{t.instruction_kind}#{if t.instruction_kind == "fixed", do: " : #{t.instruction}", else: ""}; contenu #{t.content_kind} #{t.content_presence}; durée de travail #{t.work_duration} (≈ #{CaptainHomework.WorkDuration.minutes(t.work_duration)} min). " <>
         "Une consigne dynamique doit devenir une demande précise adaptée au document, pas le libellé générique du type. " <>
         "Un contenu requis peut être fourni par un document original lisible recadré : ne remplis pas text avec une paraphrase de l'image. " <>
         "Les aides de saisie et descriptions OCR internes ne sont pas le contenu à montrer. Ne révèle jamais la réponse attendue dans l’énoncé."
     end)
     |> CaptainHomework.QuestionTemplates.render(subject)
+  end
+
+  @doc "Projects catalogue data for AI without changing persisted snapshots or their hashes."
+  def ai_context(value, mode \\ nil)
+  def ai_context(value, mode) when is_list(value), do: Enum.map(value, &ai_context(&1, mode))
+
+  def ai_context(value, mode) when is_map(value) and not is_struct(value) do
+    value = Map.drop(value, ~w(help help_classic help_flashcard))
+    mode = value["mode"] || get_in(value, ["type_context", "mode"]) || mode
+
+    value =
+      if value["instruction_kind"] in ~w(fixed dynamic) do
+        example = indicative_example(value)
+
+        value
+        |> then(fn type ->
+          if type["instruction_kind"] == "dynamic",
+            do: Map.delete(type, "instruction"),
+            else: type
+        end)
+        |> Map.delete("example")
+        |> Map.put("indicative_example", %{
+          "usage" =>
+            "Exemple indicatif uniquement : adapter au cours, sans copier ni contraindre. Le contrat du type est prioritaire, notamment la consigne fixe et les champs interdits.",
+          "content" => example
+        })
+      else
+        value
+      end
+
+    Map.new(value, fn {key, nested} -> {key, ai_context(nested, mode)} end)
+  end
+
+  def ai_context(value, _mode), do: value
+
+  defp indicative_example(type) do
+    fields = if type["instruction_kind"] == "dynamic", do: ["prompt"], else: []
+
+    fields =
+      if type["content_presence"] != "none" and type["content_kind"] in ~w(text document),
+        do: [type["content_kind"] | fields],
+        else: fields
+
+    (type["example"] || %{})
+    |> Map.take(fields)
+    |> Map.reject(fn {_, value} -> not is_binary(value) or String.trim(value) == "" end)
   end
 
   def seed! do

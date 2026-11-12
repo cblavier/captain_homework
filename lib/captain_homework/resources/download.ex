@@ -26,6 +26,8 @@ defmodule CaptainHomework.Resources.Download do
 
   def validate_url(_), do: invalid_url()
 
+  def fetch_page(url), do: fetch(url, 0, true)
+
   def fetch(url) do
     with {:ok, uri} <- validate_url(url) do
       case GoogleDrive.prepare(uri) do
@@ -60,15 +62,19 @@ defmodule CaptainHomework.Resources.Download do
     end
   end
 
-  defp fetch(_, hops) when hops > 4, do: {:error, "Trop de redirections pour cette URL."}
+  defp fetch(url, hops), do: fetch(url, hops, false)
 
-  defp fetch(url, hops) do
+  defp fetch(_, hops, _) when hops > 4, do: {:error, "Trop de redirections pour cette URL."}
+
+  defp fetch(url, hops, metadata?) do
     with {:ok, uri} <- validate_url(url),
          {:ok, ip} <- resolve(uri.host) do
       # Pin the validated address, preserving the HTTP host and TLS certificate hostname.
       pinned = %{uri | host: ip |> :inet.ntoa() |> to_string(), fragment: nil}
       headers = [{"host", uri.host}, {"accept-encoding", "identity"}]
-      deadline = System.monotonic_time(:millisecond) + @transfer_timeout
+
+      deadline =
+        System.monotonic_time(:millisecond) + if(metadata?, do: 10_000, else: @transfer_timeout)
 
       response =
         Req.get(URI.to_string(pinned),
@@ -77,10 +83,12 @@ defmodule CaptainHomework.Resources.Download do
           retry: false,
           decode_body: false,
           compressed: false,
-          receive_timeout: 30_000,
+          receive_timeout: if(metadata?, do: 10_000, else: 30_000),
           connect_options: [hostname: uri.host, timeout: 5_000, protocols: [:http1]],
           into: fn {:data, chunk}, {request, response} ->
-            if System.monotonic_time(:millisecond) > deadline do
+            if System.monotonic_time(:millisecond) > deadline or
+                 (metadata? and
+                    IO.iodata_length(List.wrap(response.body)) + byte_size(chunk) > 1_000_000) do
               {:halt, {request, %{response | body: :download_timeout}}}
             else
               chunks = if is_list(response.body), do: response.body, else: []
@@ -96,8 +104,11 @@ defmodule CaptainHomework.Resources.Download do
 
         {:ok, %{status: status} = response} when status in [301, 302, 303, 307, 308] ->
           case Req.Response.get_header(response, "location") do
-            [location | _] -> fetch(URI.merge(uri, location) |> URI.to_string(), hops + 1)
-            _ -> {:error, "La redirection du document est invalide."}
+            [location | _] ->
+              fetch(URI.merge(uri, location) |> URI.to_string(), hops + 1, metadata?)
+
+            _ ->
+              {:error, "La redirection du document est invalide."}
           end
 
         {:ok, %{status: 200, body: chunks} = response}

@@ -163,6 +163,9 @@ defmodule CaptainHomework.GenerationTest do
   end
 
   test "three identical instructions on distinct images are retained", %{profile: p, lesson: l} do
+    [type_id] = question_type_ids(["long"])
+    type = CaptainHomework.QuestionDefinitions.get!(type_id)
+    {:ok, _} = CaptainHomework.QuestionDefinitions.save(type, %{content_kind: "image"})
     resource = Repo.insert!(%Study.Resource{lesson_id: l.id, filename: "images", status: "ready"})
 
     pages =

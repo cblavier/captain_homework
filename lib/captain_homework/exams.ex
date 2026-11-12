@@ -17,6 +17,7 @@ defmodule CaptainHomework.Exams do
               Repo.insert!(%Exam{
                 lesson_id: exam.lesson_id,
                 format: exam.format,
+                reference_exam_id: exam.reference_exam_id,
                 instructions: exam.instructions,
                 question_types: exam.question_types,
                 questions: questions
@@ -99,7 +100,20 @@ defmodule CaptainHomework.Exams do
 
     types = QuestionDefinitions.formats(selected)
     pages = Illustrations.content_pages(lesson)
-    examples = Enum.filter(lesson.pages, &(&1.kind == "example"))
+
+    reference =
+      CaptainHomework.ReferenceExams.selection(
+        profile_id,
+        lesson.subject,
+        Keyword.get(opts, :reference_exam_id),
+        format
+      )
+
+    {reference_id, examples} =
+      case reference do
+        {:ok, id, pages} -> {id, pages}
+        _ -> {nil, []}
+      end
 
     previous_exams =
       Repo.all(
@@ -107,7 +121,8 @@ defmodule CaptainHomework.Exams do
           join: l in assoc(e, :lesson),
           where:
             l.profile_id == ^profile_id and l.id == ^lesson.id and
-              e.status == "completed" and is_nil(e.exam_share_id)
+              e.status == "completed" and is_nil(e.exam_share_id) and
+              is_nil(e.regeneration_source_id)
       )
 
     retries =
@@ -127,8 +142,11 @@ defmodule CaptainHomework.Exams do
       end
 
     cond do
+      match?({:error, _}, reference) ->
+        reference
+
       format not in ["classic", "flashcard"] ->
-        {:error, "Choisis un format de contrôle valide."}
+        {:error, "Choisis un format d’évaluation valide."}
 
       unsupported? ->
         {:error,
@@ -139,13 +157,13 @@ defmodule CaptainHomework.Exams do
 
       Illustrations.resources_pending?(lesson) ->
         {:error,
-         "Attends la fin de l’analyse des ressources ou corrige les imports en erreur avant de créer le contrôle."}
+         "Attends la fin de l’analyse des ressources ou corrige les imports en erreur avant de créer l’évaluation."}
 
       pages == [] ->
-        {:error, "Ajoute au moins une page de cours ou une ressource lisible."}
+        {:error, "Ajoute au moins une page de leçon ou une ressource lisible."}
 
       Enum.any?(pages, &(String.trim(&1.text) == "")) ->
-        {:error, "Vérifie le texte de chaque page avant de créer le contrôle."}
+        {:error, "Vérifie le texte de chaque page avant de créer l’évaluation."}
 
       true ->
         with {:ok, draft} <-
@@ -153,6 +171,7 @@ defmodule CaptainHomework.Exams do
                  exam =
                    Repo.insert!(%Exam{
                      lesson_id: lesson.id,
+                     reference_exam_id: reference_id,
                      format: format,
                      instructions: instructions,
                      question_types: types,
@@ -176,13 +195,16 @@ defmodule CaptainHomework.Exams do
 
   def generate(_, _, _, _, _), do: {:error, "Choisis entre 1 et 30 questions."}
 
-  def generation_lesson(lesson, "flashcard"),
-    do: %{
-      lesson
-      | pages: Enum.filter(lesson.pages, &(&1.kind == "lesson")),
-        resources: [],
-        exams: []
-    }
+  def generation_lesson(lesson, "flashcard") do
+    course_pages = Enum.filter(lesson.pages, &(&1.kind == "lesson"))
+
+    if course_pages == [] do
+      # Preserve resource identities for source attribution and import-state checks.
+      %{lesson | pages: Illustrations.content_pages(lesson), exams: []}
+    else
+      %{lesson | pages: course_pages, resources: [], exams: []}
+    end
+  end
 
   def generation_lesson(lesson, _), do: lesson
 
@@ -198,32 +220,38 @@ defmodule CaptainHomework.Exams do
     exam = Study.get_exam!(profile_id, exam_id)
     now = DateTime.utc_now()
 
-    case Repo.update_all(
-           from(e in Exam, where: e.id == ^exam.id and e.status == "generation_partial"),
-           set: [status: "generating", generation_started_at: now, updated_at: now, error: nil]
-         ) do
-      {1, _} ->
-        lesson = Study.get_lesson!(profile_id, exam.lesson_id) |> generation_lesson(exam.format)
-        pages = Illustrations.content_pages(lesson)
+    lesson = Study.get_lesson!(profile_id, exam.lesson_id) |> generation_lesson(exam.format)
 
-        examples =
-          Enum.filter(lesson.pages, &(&1.kind == "example"))
+    with {:ok, _, examples} <-
+           CaptainHomework.ReferenceExams.selection(
+             profile_id,
+             lesson.subject,
+             exam.reference_exam_id,
+             exam.format
+           ) do
+      case Repo.update_all(
+             from(e in Exam, where: e.id == ^exam.id and e.status == "generation_partial"),
+             set: [status: "generating", generation_started_at: now, updated_at: now, error: nil]
+           ) do
+        {1, _} ->
+          pages = Illustrations.content_pages(lesson)
 
-        exam =
-          exam
-          |> Ecto.Changeset.change(generation_examples: Enum.map(examples, & &1.id))
-          |> Repo.update!()
+          exam =
+            exam
+            |> Ecto.Changeset.change(generation_examples: Enum.map(examples, & &1.id))
+            |> Repo.update!()
 
-        dispatch_generation(
-          %{exam | status: "generating", generation_started_at: now},
-          lesson,
-          pages,
-          examples,
-          opts
-        )
+          dispatch_generation(
+            %{exam | status: "generating", generation_started_at: now},
+            lesson,
+            pages,
+            examples,
+            opts
+          )
 
-      _ ->
-        {:error, "La génération est déjà en cours ou le contrôle est prêt."}
+        _ ->
+          {:error, "La génération est déjà en cours ou l’évaluation est prête."}
+      end
     end
   end
 
@@ -244,7 +272,11 @@ defmodule CaptainHomework.Exams do
            from(e in Exam,
              where:
                e.id == ^exam.id and e.status == "in_progress" and e.format == "classic" and
-                 e.updated_at == ^exam.updated_at
+                 e.updated_at == ^exam.updated_at and
+                 fragment(
+                   "COALESCE(json_extract(?, '$.status'), '') NOT IN ('generating', 'failed')",
+                   e.regeneration
+                 )
            ),
            set: [
              status: "grading",
@@ -356,7 +388,7 @@ defmodule CaptainHomework.Exams do
                ),
              "expected" => q["answer"],
              "language_errors" =>
-               if(q["type"] in ["mcq", "photo"],
+               if(q["type"] in ["mcq", "photo", "pronunciation"],
                  do: [],
                  else:
                    CaptainHomework.Exams.Language.validate(

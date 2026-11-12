@@ -13,9 +13,11 @@ defmodule CaptainHomeworkWeb.QuestionComponents do
   attr :exam, :map, default: nil
   attr :profile, :map, default: nil
   attr :shared_support, :boolean, default: false
-  attr :show_help, :boolean, default: true
+  attr :inline_response, :boolean, default: true
   attr :audio_src, :string, default: nil
   attr :images, :list, default: nil
+
+  slot :heading_actions
 
   def question_content(assigns) do
     {prompt, text} = content(assigns.question, assigns.mode)
@@ -36,7 +38,9 @@ defmodule CaptainHomeworkWeb.QuestionComponents do
         type_label={@type_label}
         index={@index}
         points={@question["points"] || 1}
-      />
+      >
+        <:actions>{render_slot(@heading_actions)}</:actions>
+      </.question_heading>
       <.question_images
         :if={!@shared_support}
         question={@question}
@@ -51,7 +55,8 @@ defmodule CaptainHomeworkWeb.QuestionComponents do
       />
       <.question_text
         :if={
-          @text != "" and (@shared_support or @text != @support_text) and
+          !(@inline_response and inline_cloze?(@question)) and
+            @text != "" and (@shared_support or @text != @support_text) and
             CaptainHomework.Exams.SupportGroups.question_text_visible?(
               Map.put(@question, "text", @text),
               @shared_support
@@ -63,13 +68,6 @@ defmodule CaptainHomeworkWeb.QuestionComponents do
         :if={@question["type"] == "diagram" and is_map(@question["diagram"])}
         question={@question}
       />
-      <p
-        :if={@show_help and @question["help"] not in [nil, ""]}
-        id={"question-help-#{@question["id"]}"}
-        class="preview-help"
-      >
-        {@question["help"]}
-      </p>
     </div>
     """
   end
@@ -83,6 +81,7 @@ defmodule CaptainHomeworkWeb.QuestionComponents do
   attr :context, :string, default: nil
   attr :upload, :any, default: nil
   attr :photo_src, :string, default: nil
+  attr :recording_src, :string, default: nil
   attr :completed, :boolean, default: false
   slot :text_actions
 
@@ -167,67 +166,84 @@ defmodule CaptainHomeworkWeb.QuestionComponents do
         completed={@completed}
       />
       <.question_recording
-        :if={@kind == "recording"}
+        :if={@kind == "recording" and @preview}
         id={if @preview, do: "preview-voice", else: "voice-#{@question["id"]}"}
+      />
+      <.recording_answer
+        :if={@kind == "recording" and not @preview}
+        question={@question}
+        upload={@upload}
+        src={@recording_src}
+        disabled={@disabled}
+        completed={@completed}
       />
       <.symbol_answer
         :if={@kind in ["short_text", "long_text", "cloze", "legends", "photo_justification"]}
         id={@symbols_id}
         context={@context}
         disabled={@disabled}
-        label={if @kind == "photo_justification", do: "Ta justification", else: "Ta réponse"}
+        label={
+          cond do
+            @kind == "photo_justification" -> "Ta justification"
+            @kind == "cloze" and inline_cloze?(@question) -> "Complète directement dans les cases"
+            true -> "Ta réponse"
+          end
+        }
       >
-        <%= if @kind in ["cloze", "legends"] do %>
-          <div class="slot-inputs">
-            <div :for={{slot, index} <- Enum.with_index(@question["slots"] || [])}>
-              <label
-                for={slot_id(@namespace, @question["id"], slot, index)}
-                class={@kind == "legends" && "slot-marker"}
-              >
-                {if @kind == "legends",
-                  do: String.replace(slot, ~r/^Repère\s+(\d+)$/iu, "\\1"),
-                  else: slot}
-              </label>
-              <.input
-                wrapper={false}
-                id={slot_id(@namespace, @question["id"], slot, index)}
-                name={if @preview, do: "answer[slot_#{index + 1}]", else: "#{@name}[#{slot}]"}
-                value={slot_value(@value, slot)}
-                disabled={@disabled}
-                maxlength="2000"
-                phx-debounce="300"
-                autocomplete={if @preview, do: "on", else: "off"}
-                autocorrect={if @preview, do: "on", else: "off"}
-                autocapitalize={if @preview, do: "sentences", else: "off"}
-                spellcheck={if @preview, do: "true", else: "false"}
-                writingsuggestions={if @preview, do: "true", else: "false"}
-              />
+        <%= cond do %>
+          <% @kind == "cloze" and inline_cloze?(@question) -> %>
+            <div class="reading-text cloze-passage" id={"#{@response_id}-passage"} phx-no-format><%= for part <- cloze_parts(@question) do %><%= case part do %><% {:text, text} -> %>{text}<% {:slot, slot, index} -> %><span class="cloze-field"><label for={slot_id(@namespace, @question["id"], slot, index)} class="cloze-marker"><span class="sr-only">Mot manquant </span>{index + 1}</label><.input wrapper={false} class="cloze-input" id={slot_id(@namespace, @question["id"], slot, index)} name={if @preview, do: "answer[slot_#{index + 1}]", else: "#{@name}[#{slot}]"} value={slot_value(@value, slot)} disabled={@disabled} maxlength="2000" phx-debounce="300" placeholder="…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" writingsuggestions="false" /></span><% end %><% end %></div>
+          <% @kind in ["cloze", "legends"] -> %>
+            <div class="slot-inputs">
+              <div :for={{slot, index} <- Enum.with_index(@question["slots"] || [])}>
+                <label
+                  for={slot_id(@namespace, @question["id"], slot, index)}
+                  class={@kind == "legends" && "slot-marker"}
+                >
+                  {if @kind == "legends",
+                    do: String.replace(slot, ~r/^Repère\s+(\d+)$/iu, "\\1"),
+                    else: slot}
+                </label>
+                <.input
+                  wrapper={false}
+                  id={slot_id(@namespace, @question["id"], slot, index)}
+                  name={if @preview, do: "answer[slot_#{index + 1}]", else: "#{@name}[#{slot}]"}
+                  value={slot_value(@value, slot)}
+                  disabled={@disabled}
+                  maxlength="2000"
+                  phx-debounce="300"
+                  autocomplete={if @preview, do: "on", else: "off"}
+                  autocorrect={if @preview, do: "on", else: "off"}
+                  autocapitalize={if @preview, do: "sentences", else: "off"}
+                  spellcheck={if @preview, do: "true", else: "false"}
+                  writingsuggestions={if @preview, do: "true", else: "false"}
+                />
+              </div>
             </div>
-          </div>
-        <% else %>
-          <label class="sr-only" for={@response_id}>
-            {if @kind == "photo_justification", do: "Ta justification", else: "Ta réponse"}
-          </label>
-          <.input
-            wrapper={false}
-            id={@response_id}
-            name={@field_name}
-            type={if @kind in ["long_text", "photo_justification"], do: "textarea", else: "text"}
-            rows={
-              if @kind in ["long_text", "photo_justification"],
-                do: if(@mode == "classic", do: 5, else: 3)
-            }
-            value={@value || ""}
-            disabled={@disabled}
-            maxlength="12000"
-            phx-debounce="300"
-            autocomplete={if @preview, do: "on", else: "off"}
-            autocorrect={if @preview, do: "on", else: "off"}
-            autocapitalize={if @preview, do: "sentences", else: "off"}
-            spellcheck={if @preview, do: "true", else: "false"}
-            writingsuggestions={if @preview, do: "true", else: "false"}
-          />
-          {render_slot(@text_actions)}
+          <% true -> %>
+            <label class="sr-only" for={@response_id}>
+              {if @kind == "photo_justification", do: "Ta justification", else: "Ta réponse"}
+            </label>
+            <.input
+              wrapper={false}
+              id={@response_id}
+              name={@field_name}
+              type={if @kind in ["long_text", "photo_justification"], do: "textarea", else: "text"}
+              rows={
+                if @kind in ["long_text", "photo_justification"],
+                  do: if(@mode == "classic", do: 5, else: 3)
+              }
+              value={@value || ""}
+              disabled={@disabled}
+              maxlength="12000"
+              phx-debounce="300"
+              autocomplete={if @preview, do: "on", else: "off"}
+              autocorrect={if @preview, do: "on", else: "off"}
+              autocapitalize={if @preview, do: "sentences", else: "off"}
+              spellcheck={if @preview, do: "true", else: "false"}
+              writingsuggestions={if @preview, do: "true", else: "false"}
+            />
+            {render_slot(@text_actions)}
         <% end %>
       </.symbol_answer>
     </div>
@@ -241,6 +257,7 @@ defmodule CaptainHomeworkWeb.QuestionComponents do
       "cloze" -> "cloze"
       "diagram" -> "legends"
       "photo" -> "photo"
+      "pronunciation" -> "recording"
       type when type in ["long", "reading"] -> "long_text"
       _ -> "short_text"
     end
@@ -251,6 +268,24 @@ defmodule CaptainHomeworkWeb.QuestionComponents do
   defp slot_id(_, id, slot, _), do: "answer-#{id}-#{slot}"
   defp slot_value(value, slot) when is_map(value), do: value[slot] || ""
   defp slot_value(_, _), do: ""
+
+  defp inline_cloze?(%{"type" => "cloze", "text" => text, "slots" => slots})
+       when is_binary(text) and is_list(slots) and slots != [] do
+    markers = Regex.scan(~r/\{\{([^}]+)\}\}/, text, capture: :all_but_first) |> List.flatten()
+    Enum.sort(markers) == Enum.sort(slots) and Enum.uniq(slots) == slots
+  end
+
+  defp inline_cloze?(_), do: false
+
+  defp cloze_parts(question) do
+    Regex.split(~r/(\{\{[^}]+\}\})/, question["text"], include_captures: true, trim: true)
+    |> Enum.map(fn part ->
+      case Regex.run(~r/^\{\{([^}]+)\}\}$/, part) do
+        [_, slot] -> {:slot, slot, Enum.find_index(question["slots"], &(&1 == slot))}
+        _ -> {:text, part}
+      end
+    end)
+  end
 
   defp content(question, "flashcard") do
     prompt = question["prompt"] || ""
@@ -299,6 +334,58 @@ defmodule CaptainHomeworkWeb.QuestionComponents do
       </button>
       <audio data-playback controls hidden />
       <p class="sample-source">Enregistrement local pour l’aperçu, non envoyé.</p>
+    </div>
+    """
+  end
+
+  attr :question, :map, required: true
+  attr :upload, :any, default: nil
+  attr :src, :string, default: nil
+  attr :disabled, :boolean, default: false
+  attr :completed, :boolean, default: false
+
+  def recording_answer(assigns) do
+    ~H"""
+    <div id={"recording-answer-#{@question["id"]}"} class="recording-answer">
+      <audio
+        :if={@src}
+        id={"recording-playback-#{@question["id"]}"}
+        src={@src}
+        controls
+        preload="metadata"
+        aria-label="Écouter ma réponse"
+      />
+      <div :if={@upload && not @completed}>
+        <.live_file_input upload={@upload} hidden aria-label="Enregistrement vocal" />
+        <div
+          id={"voice-#{@question["id"]}"}
+          phx-hook="PronunciationRecorder"
+          phx-update="ignore"
+          data-question-id={@question["id"]}
+          data-upload-name={@upload.name}
+          data-disabled={to_string(@disabled)}
+        >
+          <button type="button" class="button secondary" data-record disabled={@disabled}>
+            <.icon name="microphone" />
+            <span data-record-label>{if @src, do: "Recommencer", else: "Enregistrer ma voix"}</span>
+          </button>
+          <p data-status role="status"></p>
+        </div>
+        <p :for={_error <- upload_errors(@upload)} class="error" role="alert">
+          Enregistrement refusé. Réessaie avec un extrait de 60 secondes maximum.
+        </p>
+        <button
+          :if={@upload.entries != []}
+          id={"cancel-recording-upload-#{@question["id"]}"}
+          type="button"
+          class="button text-button"
+          phx-click="cancel_recording_upload"
+          phx-value-id={@question["id"]}
+        >
+          Annuler l’envoi
+        </button>
+      </div>
+      <p :if={@completed and is_nil(@src)} class="muted">Aucun enregistrement envoyé.</p>
     </div>
     """
   end

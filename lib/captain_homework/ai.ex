@@ -151,7 +151,13 @@ defmodule CaptainHomework.AI do
     errors = for {false, reason} <- checks, do: reason
 
     if errors == [],
-      do: type_errors(q) ++ support_errors(q) ++ CaptainHomework.Exams.Listening.errors(q),
+      do:
+        type_errors(q) ++
+          response_field_errors(q) ++
+          support_errors(q) ++
+          CaptainHomework.Exams.VisibleSupport.errors(q) ++
+          CaptainHomework.Exams.Listening.errors(q) ++
+          CaptainHomework.Exams.Pronunciation.errors(q),
       else: errors
   end
 
@@ -191,10 +197,24 @@ defmodule CaptainHomework.AI do
     Regex.match?(~r/(?:^|[\n\r;,:])[ \t]*#{number}[ \t]*[.):\-][ \t]*\S/u, prompt)
   end
 
+  defp response_field_errors(q) do
+    checks = [
+      {q["type"] in ~w(mcq ordering) or q["options"] == [],
+       "Les choix sont réservés aux QCM et classements."},
+      {q["type"] in ~w(cloze diagram) or q["slots"] == [],
+       "Les champs sont réservés aux textes à trous et schémas."},
+      {q["type"] == "diagram" or is_nil(q["diagram"]),
+       "Le diagramme est réservé aux questions à légendes."}
+    ]
+
+    for {false, message} <- checks, do: message
+  end
+
   defp type_errors(q) do
     case q["type"] do
       "mcq" ->
-        if length(q["options"]) in 2..6 and Enum.uniq(q["options"]) == q["options"] and
+        if length(q["options"]) in 2..6 and Enum.all?(q["options"], &(String.trim(&1) != "")) and
+             Enum.uniq(q["options"]) == q["options"] and
              q["answer"] in q["options"],
            do: [],
            else: ["QCM : 2 à 6 choix distincts et réponse identique à un choix requis"]

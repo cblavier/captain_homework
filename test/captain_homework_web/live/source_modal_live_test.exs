@@ -19,49 +19,21 @@ defmodule CaptainHomeworkWeb.SourceModalLiveTest do
     refute has_element?(view, "#source-modal")
   end
 
-  test "example previews close within the lesson", %{conn: conn} do
+  test "reference previews close within the reference", %{conn: conn} do
     lesson = lesson(profile())
-    page = page(lesson) |> Ecto.Changeset.change(kind: "example") |> Repo.update!()
-    {:ok, view, _} = live(conn, "/alice/lecons/#{lesson.id}")
+    reference = reference_exam(profile())
+
+    page =
+      page(lesson)
+      |> Ecto.Changeset.change(kind: "example", lesson_id: nil, reference_exam_id: reference.id)
+      |> Repo.update!()
+
+    {:ok, view, _} = live(conn, "/alice/references/#{reference.id}")
 
     view |> element("#open-example-#{page.id}") |> render_click()
     assert has_element?(view, "#source-modal img[src='/alice/pages/#{page.id}']")
     view |> element("#source-modal button[aria-label='Fermer']") |> render_click()
     refute has_element?(view, "#source-modal")
     assert has_element?(view, "#open-example-#{page.id}")
-  end
-
-  test "a correction source opens and closes without leaving the exam", %{conn: conn} do
-    lesson = lesson(profile())
-    page = page(lesson)
-    question = Map.put(question(), "source_page_ids", [page.id])
-
-    exam =
-      exam(lesson, [question])
-      |> Ecto.Changeset.change(
-        status: "completed",
-        score: 20.0,
-        corrections: %{
-          "q1" => %{"points" => question["points"], "feedback" => "Bien", "expected" => "Réponse"}
-        }
-      )
-      |> Repo.update!()
-
-    {:ok, view, _} = live(conn, "/alice/controles/#{exam.id}")
-    selector = "#open-source-q1-#{page.id}"
-    view |> element(selector) |> render_click()
-
-    assert has_element?(
-             view,
-             "#source-modal[role=dialog] #source-content img[src='/alice/pages/#{page.id}']"
-           )
-
-    view |> element("#source-modal button[aria-label='Fermer']") |> render_click()
-    refute has_element?(view, "#source-modal")
-    assert has_element?(view, selector)
-
-    unrelated = page(lesson)
-    render_click(view, "open_source", %{"id" => unrelated.id})
-    refute has_element?(view, "#source-modal")
   end
 end

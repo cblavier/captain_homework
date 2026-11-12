@@ -6,7 +6,7 @@ defmodule CaptainHomework.QuestionTemplates do
     "francais" => "français",
     "latin" => "latin"
   }
-  @fields ~w(prompt text document support_text support_title answer rubric help options)
+  @fields ~w(prompt text document support_text support_title answer rubric options)
 
   def render(nil, _), do: nil
 
@@ -18,7 +18,7 @@ defmodule CaptainHomework.QuestionTemplates do
   end
 
   def question(question, subject) do
-    Map.new(question, fn {key, value} ->
+    Map.new(Map.drop(question, ~w(help help_classic help_flashcard)), fn {key, value} ->
       {key, if(key in @fields, do: render_value(value, subject), else: value)}
     end)
     |> then(fn resolved ->

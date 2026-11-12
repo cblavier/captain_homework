@@ -6,16 +6,20 @@ import topbar from "../vendor/topbar"
 import {ThemeSettings} from "./theme_settings"
 import {ExamAnswers} from "./exam_answers"
 import {SymbolPalette} from "./symbol_palette"
+import "./cloze_sizing"
 import {FlashcardViewport} from "./flashcard_viewport"
 import {FlashcardStack} from "./flashcard_stack"
+import {PronunciationRecorder} from "./pronunciation_recorder"
 import {QuestionPreviewRecorder, QuestionPreviewPhoto} from "./question_preview"
 import {WebcamCapture} from "./webcam_capture"
 import {CopyShareLink} from "./copy_share_link"
 import "./viewport"
+import "./question_regeneration"
 const Hooks = {
   CopyShareLink,
   SymbolPalette,
   WebcamCapture,
+  PronunciationRecorder,
   QuestionPreviewRecorder,
   QuestionPreviewPhoto,
   ThemeSettings,

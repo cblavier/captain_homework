@@ -19,7 +19,7 @@ defmodule CaptainHomework.Exams.Constraints do
   doivent imposer le même travail, sans raison supplémentaire cachée dans le corrigé.
   Compte uniquement les éléments obligatoires du barème, pas les alternatives acceptables.
   Pour photo, developed désigne une construction graphique en plusieurs étapes, sans exiger de rédaction.
-  knowledge : mobiliser les connaissances apprises dans les leçons, sans réponse fournie dans le contrôle.
+  knowledge : mobiliser les connaissances apprises dans les leçons, sans réponse fournie dans l’évaluation.
   document : lire, analyser ou déduire à partir d'un support affiché, même s'il provient d'une leçon.
   Un QCM de connaissances reste knowledge quand ses propres options contiennent la bonne réponse
   parmi des distracteurs sans la désigner : ces choix ne sont ni un document ni une fuite de réponse.
@@ -39,6 +39,10 @@ defmodule CaptainHomework.Exams.Constraints do
   sans indice superficiel qui désigne la réponse. La reconnaissance de lettres ou de sons reste
   pertinente si cette compétence est explicitement enseignée et constitue l'objectif du cours.
   Pour un document, relever une information reste valide quand cela vérifie sa compréhension.
+  Les détails particuliers d’un récit, dialogue ou témoignage ne sont pas des connaissances à
+  mémoriser : une question sur le narrateur exige un extrait visible (document), même sans renvoi
+  explicite au texte. Si le type interdit ce contenu, choisis une notion autonome de vocabulaire
+  ou de grammaire. Les sources cachées ne remplacent jamais ce support de compréhension.
   """
   def definitions, do: @definitions
 
@@ -53,7 +57,7 @@ defmodule CaptainHomework.Exams.Constraints do
   defp cells(types, course?) do
     types
     |> Enum.flat_map(fn
-      "listening" ->
+      type when type in ["listening", "pronunciation"] ->
         [{"direct", "document"}]
 
       "reading" ->

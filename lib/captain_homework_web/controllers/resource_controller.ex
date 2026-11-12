@@ -7,7 +7,8 @@ defmodule CaptainHomeworkWeb.ResourceController do
     if is_nil(profile), do: raise(Ecto.NoResultsError, queryable: CaptainHomework.Study.Profile)
     resource = Resources.get!(profile.id, id)
 
-    if resource.storage_key && File.regular?(Uploads.path(resource.storage_key)) do
+    if resource.storage_key && not CaptainHomework.Resources.Audio.media?(resource) &&
+         File.regular?(Uploads.path(resource.storage_key)) do
       conn
       |> put_resp_header("cache-control", "private, no-store")
       |> put_resp_header("x-content-type-options", "nosniff")

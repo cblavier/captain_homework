@@ -124,6 +124,9 @@ defmodule CaptainHomework.Exams.ExercisePipelineTest do
   defp stub(context, callback) do
     Req.Test.stub(__MODULE__, fn conn ->
       {:ok, raw, conn} = Plug.Conn.read_body(conn)
+      refute raw =~ "HIDDEN_STATIC_SENTINEL"
+      refute raw =~ "HIDDEN_EXAMPLE_DOCUMENT"
+      refute raw =~ "HIDDEN_FLASHCARD_HELP"
       request = Jason.decode!(raw)
       properties = get_in(request, ["text", "format", "schema", "properties"])
       stage = request_stage(properties)
@@ -161,14 +164,190 @@ defmodule CaptainHomework.Exams.ExercisePipelineTest do
     }
   end
 
-  test "one classic question is specified, drafted with locked content, then audited", context do
-    slot = specification(context.source)
+  test "an invalid definition preserves the other contract and resumes only the invalid slot",
+       context do
+    [id] = question_type_ids(["definition"])
+    type = CaptainHomework.QuestionDefinitions.get!(id)
+
+    {:ok, _} =
+      CaptainHomework.QuestionDefinitions.save(type, %{
+        instruction_kind: "fixed",
+        instruction: "Définis la notion suivante :",
+        content_presence: "required"
+      })
+
+    rounds = start_supervised!({Agent, fn -> 0 end}, id: :specification_rounds)
 
     stub(context, fn
       :catalogue, _, _ ->
         catalogue(context.source)
 
       :specification, properties, _ ->
+        round = Agent.get_and_update(rounds, &{&1, &1 + 1})
+        schemas = properties["questions"]["properties"]
+        assert Enum.sort(Map.keys(schemas)) == if(round == 0, do: ["q1", "q2"], else: ["q1"])
+
+        questions =
+          Map.new(schemas, fn {key, schema} ->
+            fields = schema["properties"]
+
+            for fixed <- ~w(prompt task audio_script image_ids slots options diagram support_id),
+                do: refute(Map.has_key?(fields, fixed))
+
+            assert fields["text"]["pattern"] == "\\S"
+            text = if key == "q1", do: "Membrane", else: "Noyau"
+
+            question =
+              specification(context.source)
+              |> Map.merge(%{
+                "definition_id" => id,
+                "text" => if(key == "q1" and round < 2, do: "", else: text),
+                "objective" => text,
+                "expected_elements" => [text],
+                "answer" => "Définition de #{text}"
+              })
+              |> Map.take(Map.keys(fields))
+
+            {key, question}
+          end)
+
+        %{"questions" => questions, "supports" => []}
+
+      :audit, _, _ ->
+        %{
+          "reviews" =>
+            for(id <- ["q1", "q2"], do: Map.put(hd(accepted_review()["reviews"]), "plan_id", id))
+        }
+
+      unexpected, _, _ ->
+        flunk("Unnecessary API call: #{inspect(unexpected)}")
+    end)
+
+    assert {:ok, partial} =
+             Exams.generate(context.lesson.profile_id, context.lesson.id, 2, "",
+               question_types: [id]
+             )
+
+    assert partial.status == "generation_partial"
+    rejected = partial.generation_plan["rejected_plan"]
+    assert Map.keys(rejected["exercise_specs"]) == ["q2"]
+    assert Map.keys(rejected["specification_diagnostics"]) == ["q1"]
+    assert rejected["rejected_response"]["questions"]["q1"]["text"] == ""
+    hash = rejected["exercise_specs"]["q2"]["hash"]
+
+    assert {:ok, complete} = Exams.resume_generation(context.lesson.profile_id, partial.id)
+    assert complete.status == "in_progress", inspect(complete.generation_errors)
+    assert complete.generation_plan["exercise_specs"]["q2"]["hash"] == hash
+    assert Enum.map(complete.questions, & &1["text"]) == ["Membrane", "Noyau"]
+
+    assert Agent.get(context.calls, & &1) == [
+             :catalogue,
+             :specification,
+             :specification,
+             :specification,
+             :audit
+           ]
+  end
+
+  test "fixed instructions survive repair with their catalogue snapshot", context do
+    [id] = question_type_ids(["definition"])
+    type = CaptainHomework.QuestionDefinitions.get!(id)
+
+    {:ok, type} =
+      CaptainHomework.QuestionDefinitions.save(type, %{
+        instruction_kind: "fixed",
+        instruction: "Définis le terme suivant.",
+        content_presence: "required"
+      })
+
+    rounds = start_supervised!({Agent, fn -> 0 end}, id: :fixed_rounds)
+
+    slot =
+      specification(context.source)
+      |> Map.merge(%{
+        "definition_id" => id,
+        "text" => "Membrane",
+        "task" => "Définir la membrane",
+        "answer" => "Enveloppe qui délimite la cellule.",
+        "rubric" => "Mentionner la délimitation de la cellule."
+      })
+
+    stub(context, fn
+      :catalogue, _, _ ->
+        catalogue(context.source)
+
+      :specification, properties, _ ->
+        fields = properties["questions"]["properties"]["q1"]["properties"]
+        refute Map.has_key?(fields, "prompt")
+        %{"questions" => %{"q1" => Map.take(slot, Map.keys(fields))}, "supports" => []}
+
+      :audit, _, request ->
+        prompt = get_in(request, ["input", Access.at(0), "content", Access.at(0), "text"])
+        assert prompt =~ "Définis le terme suivant."
+        round = Agent.get_and_update(rounds, &{&1, &1 + 1})
+
+        if round == 0 do
+          {:ok, _} =
+            CaptainHomework.QuestionDefinitions.save(type, %{instruction: "Nouvelle consigne."})
+
+          %{
+            "reviews" => [
+              Map.merge(hd(accepted_review()["reviews"]), %{
+                "consistent" => false,
+                "reason" => "Préciser la réponse modèle."
+              })
+            ]
+          }
+        else
+          accepted_review()
+        end
+
+      unexpected, _, _ ->
+        flunk("Fixed questions must not call drafting: #{inspect(unexpected)}")
+    end)
+
+    assert {:ok, exam} =
+             Exams.generate(context.lesson.profile_id, context.lesson.id, 1, "",
+               question_types: [id]
+             )
+
+    assert exam.status == "in_progress", inspect(exam.generation_errors)
+    assert [question] = exam.questions
+    assert question["definition_id"] == id
+    assert question["prompt"] == "Définis le terme suivant."
+    assert question["type_contract"]["revision"] == type.revision
+
+    assert Agent.get(context.calls, & &1) == [
+             :catalogue,
+             :specification,
+             :audit,
+             :specification,
+             :audit
+           ]
+  end
+
+  test "one classic question is specified, drafted with locked content, then audited", context do
+    [type_id] = question_type_ids(["definition"])
+    type = CaptainHomework.QuestionDefinitions.get!(type_id)
+
+    {:ok, _} =
+      CaptainHomework.QuestionDefinitions.save(type, %{
+        instruction: "HIDDEN_STATIC_SENTINEL",
+        example: %{
+          "prompt" => "INDICATIVE_PROMPT_SENTINEL",
+          "document" => "HIDDEN_EXAMPLE_DOCUMENT"
+        }
+      })
+
+    slot = specification(context.source)
+
+    stub(context, fn
+      :catalogue, _, _ ->
+        catalogue(context.source)
+
+      :specification, properties, request ->
+        assert Jason.encode!(request) =~ "INDICATIVE_PROMPT_SENTINEL"
+        assert Jason.encode!(request) =~ "indicative_example"
         fields = get_in(properties, ["questions", "properties", "q1", "properties"])
         assert fields["task"]["type"] == "string"
         refute Map.has_key?(fields, "prompt")
@@ -204,6 +383,7 @@ defmodule CaptainHomework.Exams.ExercisePipelineTest do
     refute exam.generation_plan["construction_pending"]
     assert [question] = exam.questions
     assert question["prompt"] == "Quel élément délimite la cellule ?"
+    assert question["type_contract"]["instruction"] == "HIDDEN_STATIC_SENTINEL"
 
     for key <- ~w(type answer rubric points options slots diagram text source_page_ids image_ids) do
       assert question[key] == slot[key], "Drafting changed locked field #{key}"
@@ -213,6 +393,92 @@ defmodule CaptainHomework.Exams.ExercisePipelineTest do
     assert question["exercise_spec_hash"] == spec["hash"]
     assert question["exercise_spec_id"] == "q1"
     assert question["structural_validation"] == "valid"
+  end
+
+  test "a document reference forbidden by the type is rejected before drafting or audit",
+       context do
+    [id] = question_type_ids(["definition"])
+
+    {:ok, _} =
+      CaptainHomework.QuestionDefinitions.save(CaptainHomework.QuestionDefinitions.get!(id), %{
+        content_presence: "none"
+      })
+
+    slot =
+      specification(context.source)
+      |> Map.put("task", "À l’aide du document 3 ci-dessous, définis cette théorie.")
+      |> Map.drop(~w(answer_basis text image_ids image_regions options slots diagram support_id))
+
+    stub(context, fn
+      :catalogue, _, _ -> catalogue(context.source)
+      :specification, _, _ -> %{"questions" => %{"q1" => slot}, "supports" => []}
+      unexpected, _, _ -> flunk("Invalid document task reached #{inspect(unexpected)}")
+    end)
+
+    assert {:ok, result} =
+             Exams.generate(context.lesson.profile_id, context.lesson.id, 1, "",
+               question_types: [id]
+             )
+
+    assert result.status == "generation_partial"
+    assert result.questions == []
+    refute :construction in Agent.get(context.calls, & &1)
+    refute :audit in Agent.get(context.calls, & &1)
+  end
+
+  test "replacement uses the full pipeline and audits preserved questions without changing them",
+       context do
+    other =
+      question("other")
+      |> Map.put("prompt", "Définis un organisme.")
+      |> Map.put("answer", "Un être vivant.")
+
+    control = exam(context.lesson, [other, question("target")])
+
+    stub(context, fn
+      :catalogue, _, _ ->
+        catalogue(context.source)
+
+      :specification, _, request ->
+        assert Jason.encode!(request) =~ "Questions conservées"
+        %{"questions" => %{"q1" => specification(context.source)}, "supports" => []}
+
+      :construction, properties, _ ->
+        %{"questions" => %{"q1" => draft(properties)}}
+
+      :audit, _, request ->
+        assert Jason.encode!(request) =~ "surrounding-other"
+
+        accepted_review()
+        |> Map.put("exposure_checks", [
+          %{
+            "plan_id" => "surrounding-other",
+            "answer_exposed" => false,
+            "exposure_source_id" => "",
+            "exposure_quote" => ""
+          }
+        ])
+
+      unexpected, _, _ ->
+        flunk("Unexpected API stage: #{inspect(unexpected)}")
+    end)
+
+    assert {:ok, result} =
+             CaptainHomework.Exams.QuestionRegeneration.start(
+               CaptainHomework.Accounts.get("parent-1"),
+               context.lesson.profile_id,
+               control.id,
+               "target",
+               question_type_ids(["definition"]),
+               "",
+               sync: true
+             )
+
+    job = CaptainHomework.Exams.QuestionRegeneration.job(result)
+    assert result.regeneration["status"] == "ready", inspect(job.generation_errors)
+    assert [^other, replacement] = result.questions
+    assert replacement["pedagogical_audit"] == "accepted"
+    assert replacement["type"] == "definition"
   end
 
   test "a drafting response cannot change the locked answer or trigger a repair loop", context do

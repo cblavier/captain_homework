@@ -4,12 +4,13 @@ defmodule CaptainHomework.Study do
   alias CaptainHomework.Study.{Profile, Lesson, Page, Exam}
 
   @subjects [
-    %{id: "anglais", name: "Anglais", icon: "flag-uk", color: "blue"},
-    %{id: "espagnol", name: "Espagnol", icon: "flag-es", color: "red"},
+    %{id: "anglais", name: "Anglais", preposition: "d’", icon: "flag-uk", color: "blue"},
+    %{id: "espagnol", name: "Espagnol", preposition: "d’", icon: "flag-es", color: "red"},
     %{id: "francais", name: "Français", icon: "flag-fr", color: "pink"},
     %{
       id: "histoire-geo",
       name: "Histoire-Géographie",
+      preposition: "d’",
       short_name: "Histoire Géo",
       icon: "globe",
       color: "orange"
@@ -45,6 +46,15 @@ defmodule CaptainHomework.Study do
     }
   ]
   def subject_short_name(subject), do: Map.get(subject, :short_name, subject.name)
+
+  def subject_with_preposition(subject) do
+    name =
+      if subject.name == String.upcase(subject.name),
+        do: subject.name,
+        else: String.downcase(subject.name)
+
+    Map.get(subject, :preposition, "de ") <> name
+  end
 
   def subjects, do: @subjects
   def subject_ids, do: Enum.map(@subjects, & &1.id)
@@ -176,7 +186,9 @@ defmodule CaptainHomework.Study do
     Repo.all(
       from e in Exam,
         join: l in assoc(e, :lesson),
-        where: l.profile_id == ^profile_id and is_nil(e.exam_share_id),
+        where:
+          l.profile_id == ^profile_id and is_nil(e.exam_share_id) and
+            is_nil(e.regeneration_source_id),
         group_by: l.subject,
         select: {l.subject, count(e.id)}
     )
@@ -203,7 +215,9 @@ defmodule CaptainHomework.Study do
     Repo.one!(
       from e in Exam,
         join: l in assoc(e, :lesson),
-        where: e.id == ^id and l.profile_id == ^profile_id and is_nil(e.exam_share_id),
+        where:
+          e.id == ^id and l.profile_id == ^profile_id and is_nil(e.exam_share_id) and
+            is_nil(e.regeneration_source_id),
         preload: [lesson: l]
     )
   end
@@ -235,6 +249,8 @@ defmodule CaptainHomework.Study do
 
     if count == 1 do
       CaptainHomework.Exams.Illustrations.delete_exam_images(exam)
+      CaptainHomework.Exams.RecordingAnswers.delete_files(exam)
+      Enum.each(shared_attempts, &CaptainHomework.Exams.RecordingAnswers.delete_files/1)
       CaptainHomework.Exams.PhotoAnswers.delete_files(exam)
       Enum.each(shared_attempts, &CaptainHomework.Exams.PhotoAnswers.delete_files/1)
       {:ok, exam}
@@ -246,7 +262,7 @@ defmodule CaptainHomework.Study do
   def delete_lesson(profile_id, id) do
     lesson = get_lesson!(profile_id, id)
 
-    pages = from p in Page, select: p.lesson_id
+    pages = from p in Page, where: not is_nil(p.lesson_id), select: p.lesson_id
     exams = from e in Exam, select: e.lesson_id
     resources = from r in CaptainHomework.Study.Resource, select: r.lesson_id
 
@@ -270,8 +286,9 @@ defmodule CaptainHomework.Study do
 
     Repo.one!(
       from p in Page,
-        join: l in assoc(p, :lesson),
-        where: p.id == ^id and l.profile_id == ^profile_id
+        left_join: l in assoc(p, :lesson),
+        left_join: r in assoc(p, :reference_exam),
+        where: p.id == ^id and (l.profile_id == ^profile_id or r.profile_id == ^profile_id)
     )
   end
 
@@ -387,6 +404,14 @@ defmodule CaptainHomework.Study do
 
     answers = sanitize_answers(exam, answers)
 
+    answers =
+      Enum.reduce(CaptainHomework.Exams.QuestionRegeneration.states(exam), answers, fn {id, state},
+                                                                                       acc ->
+        if state["status"] in ~w(generating failed),
+          do: Map.put(acc, id, exam.answers[id]),
+          else: acc
+      end)
+
     case Repo.update_all(
            from(e in Exam,
              where:
@@ -405,7 +430,7 @@ defmodule CaptainHomework.Study do
 
       clean =
         cond do
-          q["type"] == "photo" ->
+          q["type"] in ["photo", "pronunciation"] ->
             Map.get(exam.answers, q["id"], "")
 
           q["type"] == "ordering" ->

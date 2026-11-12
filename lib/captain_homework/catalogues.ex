@@ -7,6 +7,16 @@ defmodule CaptainHomework.Catalogues do
   alias CaptainHomework.AI.ResourceImages
 
   @version 1
+  @visual_support_version 2
+
+  # Old saved plans may have excluded every imported image before selection.
+  # Refresh those contexts once, including the author's exclusions, on repair.
+  def current_context?(content, lesson) do
+    case Jason.decode(content) do
+      {:ok, %{"visual_support_version" => version}} -> version == @visual_support_version
+      _ -> MapSet.size(image_resource_ids(lesson.resources)) == 0
+    end
+  end
 
   def prepare_resource(resource), do: prepare(Resource, resource.id)
 
@@ -61,7 +71,7 @@ defmodule CaptainHomework.Catalogues do
 
                 _ ->
                   {:error,
-                   "Le document a changé pendant sa préparation. Relance la création du contrôle."}
+                   "Le document a changé pendant sa préparation. Relance la création de l’évaluation."}
               end
             after
               if source.status == "ready", do: CaptainHomework.ProcessingProgress.clear(source)
@@ -151,7 +161,7 @@ defmodule CaptainHomework.Catalogues do
       Enum.all?(values, &MapSet.member?(ids, &1))
   end
 
-  def context(lesson, pages, examples, count, instructions, retries) do
+  def context(lesson, pages, examples, count, instructions, retries, opts \\ []) do
     instructions = CaptainHomework.Exams.Instructions.custom(instructions)
 
     sources =
@@ -160,16 +170,18 @@ defmodule CaptainHomework.Catalogues do
       |> Enum.uniq()
 
     with {:ok, entries} <- collect(sources),
-         entries <- include_visual_supports(entries, pages),
+         entries <- include_visual_supports(entries, pages, lesson.resources),
          {:ok, entries, use_examples?} <- select_requested_content(entries, pages, instructions) do
-      select(entries, lesson, examples, count, instructions, retries, use_examples?)
+      select(entries, lesson, examples, count, instructions, retries, use_examples?, opts)
     end
   end
 
-  # A cropped figure can support a question about the course without containing
-  # an exercise or teaching a fact itself. Keep this separate from knowledge,
-  # including for cached catalogues that classified standalone figures unusable.
-  defp include_visual_supports(entries, pages) do
+  # Imported images and cropped figures remain visual supports even when a cached
+  # catalogue only describes them as text. Use the imported image's content page,
+  # not its duplicate illustration, so source IDs and transmitted pixels agree.
+  defp include_visual_supports(entries, pages, resources) do
+    image_resources = image_resource_ids(resources)
+
     indexed =
       entries
       |> Enum.filter(& &1["usable"])
@@ -178,7 +190,8 @@ defmodule CaptainHomework.Catalogues do
 
     figures =
       for page <- pages,
-          Illustrations.extracted?(page),
+          Illustrations.extracted?(page) or
+            (page.kind == "resource" and MapSet.member?(image_resources, page.resource_id)),
           page.status == "ready",
           String.starts_with?(page.content_type, "image/"),
           not MapSet.member?(indexed, page.id) do
@@ -196,6 +209,14 @@ defmodule CaptainHomework.Catalogues do
       end
 
     entries ++ figures
+  end
+
+  defp image_resource_ids(resources) do
+    resources
+    |> Enum.filter(
+      &(&1.status == "ready" and String.starts_with?(&1.content_type || "", "image/"))
+    )
+    |> MapSet.new(& &1.id)
   end
 
   defp select_requested_content(entries, pages, instructions) do
@@ -218,7 +239,7 @@ defmodule CaptainHomework.Catalogues do
     end)
   end
 
-  defp select(entries, lesson, examples, count, instructions, retries, use_examples?) do
+  defp select(entries, lesson, examples, count, instructions, retries, use_examples?, opts) do
     examples = if use_examples?, do: examples, else: []
     images = Illustrations.sources(lesson)
     visual_ids = MapSet.new(images, & &1.id)
@@ -226,6 +247,7 @@ defmodule CaptainHomework.Catalogues do
     query = words(lesson.title <> " " <> instructions)
     used = words(Enum.map_join(retries, " ", & &1["prompt"]))
     seed = length(Map.get(lesson, :exams, []))
+    preferred_sources = MapSet.new(Keyword.get(opts, :preferred_source_ids, []))
 
     ranked =
       entries
@@ -268,31 +290,21 @@ defmodule CaptainHomework.Catalogues do
         end)
       end)
 
-    # Reserve the best feasible visual exercise, then keep relevance order. Rejected
-    # candidates do not consume the number of exercises we may still select.
-    {visual, _} =
+    # Reserve visual dependencies before optional resource text consumes the budget.
+    # Only author-authorized entries reach this point, including during repairs.
+    {visual, text} =
       Enum.split_with(resource_bundles, fn bundle ->
         Enum.any?(bundle, &(&1["kind"] in ["exercise", "visual"] and &1["visual_page_ids"] != []))
       end)
 
-    first_visual =
-      Enum.find(visual, fn bundle ->
-        ids = bundle |> Enum.flat_map(& &1["visual_page_ids"]) |> Enum.uniq()
-
-        byte_size(Jason.encode!(bundle)) <= resource_budget(count) and length(ids) <= 8 and
-          match?(
-            {:ok, _, _},
-            ResourceImages.select(images, examples, ids, image_metadata, include_figures: false)
-          )
+    {preferred_visual, other_visual} =
+      Enum.split_with(visual, fn bundle ->
+        Enum.any?(bundle, fn entry ->
+          Enum.any?(entry["source_page_ids"], &MapSet.member?(preferred_sources, &1))
+        end)
       end)
 
-    bundles =
-      if first_visual do
-        remaining = Enum.reject(resource_bundles, &(&1 == first_visual))
-        [first_visual | interleave(course_bundles, remaining)]
-      else
-        interleave(course_bundles, resource_bundles)
-      end
+    bundles = preferred_visual ++ other_visual ++ interleave(course_bundles, text)
 
     {selected, page_ids, _} =
       Enum.reduce(bundles, {[], [], 0}, fn bundle, {selected, page_ids, bytes} = acc ->
@@ -342,8 +354,17 @@ defmodule CaptainHomework.Catalogues do
 
         {:ok,
          Jason.encode!(%{
+           "visual_support_version" => @visual_support_version,
+           "image_selection" => %{
+             "preferred_source_ids" => Enum.sort(preferred_sources),
+             "authorized_image_ids" =>
+               ranked |> Enum.flat_map(& &1["visual_page_ids"]) |> Enum.uniq(),
+             "selected_image_ids" => Enum.map(images, & &1.id),
+             "resource_budget_bytes" => resource_budget(count)
+           },
            "catalogue" => selected,
            "source_kinds" => source_kinds,
+           "lesson_page_numbers" => CaptainHomework.Exams.LessonPages.numbers(lesson.pages),
            "allowed_image_ids" => ranked |> Enum.flat_map(& &1["visual_page_ids"]) |> Enum.uniq(),
            "allowed_source_page_ids" =>
              ranked |> Enum.flat_map(& &1["source_page_ids"]) |> Enum.uniq(),

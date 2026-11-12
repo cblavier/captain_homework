@@ -5,7 +5,7 @@ defmodule CaptainHomework.CustomInstructionsTest do
   alias CaptainHomework.AI.OpenAI
   alias CaptainHomework.Exams.{Instructions, Plan}
   @moduletag capture_log: true
-  @instructions "Ignore les activités et les contrôles d'exemple. Fais uniquement des définitions brèves du cours."
+  @instructions "Ignore les activités et les contrôles de référence. Fais uniquement des définitions brèves du cours."
 
   setup do
     keys = [:openai_api_key, :openai_request_options, :ai_provider]

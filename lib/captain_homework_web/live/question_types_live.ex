@@ -23,7 +23,6 @@ defmodule CaptainHomeworkWeb.QuestionTypesLive do
        modal: nil,
        delete_type: nil,
        type: nil,
-       tab: "definition",
        preview_mode: "classic",
        preview_subject: nil,
        preview_corrected: false,
@@ -66,11 +65,11 @@ defmodule CaptainHomeworkWeb.QuestionTypesLive do
           mode = if "flashcard" in type.modes, do: "flashcard", else: "classic"
 
           example = %{
-            "prompt" =>
-              type.example["prompt"] || type.instruction || "Écris la consigne de cette question.",
+            "prompt" => type.example["prompt"] || "",
             "text" => type.example["text"] || "",
             "document" =>
-              "Chaque matin, les habitants du village traversent la rivière pour rejoindre leurs champs. Le soir, ils se retrouvent sur la place pour échanger leurs récoltes.\n\nLes maisons sont regroupées près du pont. Un chemin relie le village aux terres cultivées."
+              type.example["document"] ||
+                "Chaque matin, les habitants du village traversent la rivière pour rejoindre leurs champs. Le soir, ils se retrouvent sur la place pour échanger leurs récoltes.\n\nLes maisons sont regroupées près du pont. Un chemin relie le village aux terres cultivées."
           }
 
           {:noreply,
@@ -78,7 +77,6 @@ defmodule CaptainHomeworkWeb.QuestionTypesLive do
            |> assign(
              type: type,
              usage_count: QuestionDefinitions.exam_count(type.id),
-             tab: "definition",
              preview_mode: mode,
              example: example,
              example_form: to_form(example, as: :example),
@@ -153,15 +151,14 @@ defmodule CaptainHomeworkWeb.QuestionTypesLive do
      )}
   end
 
-  def handle_event("tab", %{"tab" => tab}, socket) when tab in ~w(definition aides),
-    do: {:noreply, assign(socket, tab: tab)}
-
   def handle_event("validate_type", %{"type" => attrs}, socket) do
     cs = QuestionDefinitions.change(socket.assigns.type, attrs) |> Map.put(:action, :validate)
     {:noreply, socket |> clear_flash(:error) |> edit_form(cs) |> assign(preview_corrected: false)}
   end
 
   def handle_event("save_type", %{"type" => attrs}, socket) do
+    attrs = Map.put(attrs, "example", socket.assigns.example)
+
     case QuestionDefinitions.save(socket.assigns.type, attrs) do
       {:ok, _} ->
         {:noreply,
@@ -179,7 +176,6 @@ defmodule CaptainHomeworkWeb.QuestionTypesLive do
         {:noreply,
          socket
          |> edit_form(cs)
-         |> assign(tab: "definition")
          |> put_flash(:error, message)}
     end
   end

@@ -127,7 +127,7 @@ defmodule CaptainHomework.QuestionDefinitionsTest do
     {:ok, voice} =
       QuestionDefinitions.save(
         %QuestionDefinition{},
-        attrs(%{name: "Oral", response_kind: "recording"})
+        attrs(%{name: "Oral", response_kind: "recording", content_kind: "audio"})
       )
 
     assert {:error, message} = Exams.generate(p.id, l.id, 1, "", question_types: [voice.id])

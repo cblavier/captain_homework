@@ -31,6 +31,7 @@ defmodule CaptainHomework.AI.Trace do
       end
 
       result = fun.()
+      log_provider_error(result)
       record(body, result, started)
       result
     rescue
@@ -43,6 +44,18 @@ defmodule CaptainHomework.AI.Trace do
         :erlang.raise(kind, value, __STACKTRACE__)
     end
   end
+
+  defp log_provider_error({:ok, %Req.Response{status: status} = response})
+       when status not in 200..299 do
+    details = CaptainHomework.AI.ProviderError.details(response)
+
+    Logger.warning(
+      "ai_provider_error exam_id=#{Process.get({__MODULE__, :exam_id})} " <>
+        "stage=#{Process.get({__MODULE__, :stage})} details=#{Jason.encode!(details)}"
+    )
+  end
+
+  defp log_provider_error(_), do: :ok
 
   defp with_context(key, value, fun) do
     key = {__MODULE__, key}

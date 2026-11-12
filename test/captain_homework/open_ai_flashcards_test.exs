@@ -20,6 +20,198 @@ defmodule CaptainHomework.OpenAIFlashcardsTest do
     :ok
   end
 
+  test "resource-only flashcards explicitly use transcripts as learning material" do
+    l = lesson(profile(), "anglais")
+
+    source = %{
+      id: Ecto.UUID.generate(),
+      kind: "resource",
+      text: "The weather is lovely today.",
+      position: 1
+    }
+
+    owner = self()
+
+    Req.Test.stub(__MODULE__, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      request = Jason.decode!(body)
+      prompt = get_in(request, ["input", Access.at(0), "content", Access.at(0), "text"])
+      send(owner, {:transcript_prompt, prompt})
+      Plug.Conn.send_resp(conn, 503, "unavailable")
+    end)
+
+    assert {:error, _} = AI.OpenAI.generate_flashcards(l, [source], 1, "", [], ["definition"])
+    assert_receive {:transcript_prompt, prompt}
+    assert prompt =~ "Ce chapitre ne contient pas de page de leçon"
+    assert prompt =~ "transcriptions audio"
+    assert prompt =~ source.text
+    assert prompt =~ source.id
+    refute prompt =~ "N’utilise aucun contrôle de référence, ressource externe"
+  end
+
+  test "narrative comprehension is repaired with a visible excerpt instead of hidden recall" do
+    l = lesson(profile(), "anglais")
+    excerpt = "Hi, I'm Tom. I come from Yorkshire, and I was born in Leeds."
+    source = page(l) |> Ecto.Changeset.change(text: excerpt) |> Repo.update!()
+    calls = start_supervised!({Agent, fn -> 0 end})
+
+    Req.Test.stub(__MODULE__, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      request = Jason.decode!(body)
+      [%{"content" => [%{"text" => prompt}]}] = request["input"]
+      properties = request["text"]["format"]["schema"]["properties"]
+
+      result =
+        if properties["questions"] do
+          assert properties["questions"]["items"]["properties"]["answer_basis"]["enum"] ==
+                   ["knowledge", "document"]
+
+          assert prompt =~ "Les détails personnels du narrateur ne sont pas des connaissances"
+          attempt = Agent.get_and_update(calls, &{&1, &1 + 1})
+
+          q =
+            question("tom", "mcq")
+            |> Map.merge(%{
+              "prompt" => "Where was Tom born?",
+              "text" => if(attempt == 0, do: "", else: excerpt),
+              "answer_basis" => if(attempt == 0, do: "knowledge", else: "document"),
+              "options" => ["London", "Leeds", "Yorkshire"],
+              "answer" => "Leeds",
+              "rubric" => "1 point for Leeds.",
+              "source_page_ids" => [source.id]
+            })
+
+          %{"questions" => [q]}
+        else
+          assert prompt =~ "Même sans renvoi"
+          assert prompt =~ "Where was Tom born?"
+          [q] = prompt |> String.trim() |> String.split("\n") |> List.last() |> Jason.decode!()
+          visible? = q["text"] == excerpt
+
+          %{
+            "reviews" => [
+              %{
+                "plan_id" => q["plan_id"],
+                "actual_effort" => "direct",
+                "actual_basis" => "document",
+                "answer_exposed" => false,
+                "content_consistent" => visible?,
+                "consistent" => visible?,
+                "reason" =>
+                  if(visible?,
+                    do: "Compréhension autonome.",
+                    else: "Le témoignage est caché : fournir un extrait visible."
+                  )
+              }
+            ]
+          }
+        end
+
+      Req.Test.json(conn, %{
+        "status" => "completed",
+        "output" => [
+          %{"content" => [%{"type" => "output_text", "text" => Jason.encode!(result)}]}
+        ]
+      })
+    end)
+
+    assert {:ok, generated} =
+             Exams.generate(l.profile_id, l.id, 1, "",
+               format: "flashcard",
+               question_types: question_type_ids(["mcq"])
+             )
+
+    assert generated.status == "in_progress", inspect(generated.generation_errors)
+    assert [q] = generated.questions
+    assert q["text"] == excerpt
+    assert q["answer_basis"] == "document"
+    assert q["verified_answer_basis"] == "document"
+    assert Agent.get(calls, & &1) == 2
+  end
+
+  test "a fixed flashcard instruction is assembled locally before audit" do
+    l = lesson(profile())
+    source = page(l)
+    [id] = question_type_ids(["definition"])
+    type = CaptainHomework.QuestionDefinitions.get!(id)
+
+    {:ok, type} =
+      CaptainHomework.QuestionDefinitions.save(type, %{
+        instruction_kind: "fixed",
+        instruction: "Définis le terme suivant.",
+        content_presence: "required"
+      })
+
+    calls = start_supervised!({Agent, fn -> [] end})
+
+    Req.Test.stub(__MODULE__, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      request = Jason.decode!(body)
+      properties = request["text"]["format"]["schema"]["properties"]
+
+      result =
+        if properties["questions"] do
+          fields = properties["questions"]["items"]["properties"]
+          assert fields["definition_id"]["enum"] == [id]
+          refute Map.has_key?(fields, "prompt")
+          assert fields["text"]["pattern"] == "\\S"
+          Agent.update(calls, &(&1 ++ [:generation]))
+
+          %{
+            "questions" => [
+              question("q1", "definition")
+              |> Map.merge(%{
+                "definition_id" => id,
+                "prompt" => type.instruction,
+                "text" => "Membrane",
+                "points" => 1,
+                "source_page_ids" => [source.id]
+              })
+              |> Map.drop(["prompt", "options", "slots", "diagram"])
+            ]
+          }
+        else
+          Agent.update(calls, &(&1 ++ [:audit]))
+          [%{"content" => [%{"text" => prompt}]}] = request["input"]
+
+          questions =
+            prompt |> String.trim() |> String.split("\n") |> List.last() |> Jason.decode!()
+
+          assert Enum.all?(questions, &(&1["prompt"] == type.instruction))
+
+          %{
+            "reviews" =>
+              Enum.map(questions, fn q ->
+                %{
+                  "plan_id" => q["plan_id"],
+                  "actual_effort" => "direct",
+                  "actual_basis" => "knowledge",
+                  "answer_exposed" => false,
+                  "consistent" => true,
+                  "reason" => "Définition cohérente."
+                }
+              end)
+          }
+        end
+
+      Req.Test.json(conn, %{
+        "status" => "completed",
+        "output" => [
+          %{"content" => [%{"type" => "output_text", "text" => Jason.encode!(result)}]}
+        ]
+      })
+    end)
+
+    assert {:ok, generated} =
+             Exams.generate(l.profile_id, l.id, 1, "", format: "flashcard", question_types: [id])
+
+    assert generated.status == "in_progress", inspect(generated.generation_errors)
+    assert [q] = generated.questions
+    assert q["prompt"] == type.instruction
+    assert q["type_contract"]["revision"] == type.revision
+    assert Agent.get(calls, & &1) == [:generation, :audit]
+  end
+
   test "chronological flashcards use numbered events and a permutation as their expected answer" do
     {:ok, _} = CaptainHomework.QuestionDefinitions.seed!()
 
@@ -228,7 +420,7 @@ defmodule CaptainHomework.OpenAIFlashcardsTest do
 
       result =
         if schema["questions"] do
-          assert prompt =~ "Les pages de cours et leur OCR ne sont pas affichés"
+          assert prompt =~ "Les documents sources et leur texte reconnu ne sont pas affichés"
 
           case Agent.get_and_update(drafts, &{&1, &1 + 1}) do
             0 ->

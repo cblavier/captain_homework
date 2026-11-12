@@ -51,7 +51,83 @@ defmodule CaptainHomework.FlashcardsTest do
     assert context.pages == pages
   end
 
-  test "server rejects nonquick types and courses without lesson pages" do
+  test "resource-only chapters generate and resume flashcards from their transcript" do
+    p = profile()
+    l = lesson(p, "anglais")
+
+    resource =
+      Repo.insert!(%Study.Resource{
+        lesson_id: l.id,
+        filename: "transcription.txt",
+        content_type: "text/plain",
+        status: "ready"
+      })
+
+    {:ok, transcript} =
+      Study.add_page(l, %{
+        resource_id: resource.id,
+        kind: "resource",
+        filename: "transcription.txt",
+        storage_key: "transcription.txt",
+        content_type: "text/plain",
+        text: "The weather is lovely today.",
+        status: "ready"
+      })
+
+    assert {:ok, generated} =
+             Exams.generate(p.id, l.id, 2, "",
+               format: "flashcard",
+               question_types: question_type_ids(["definition"])
+             )
+
+    assert generated.status == "in_progress", inspect(generated.generation_errors)
+    assert_receive {:flashcard_sources, context, [source], ["definition"]}
+    assert source.id == transcript.id
+    assert source.kind == "resource"
+    assert Enum.map(context.resources, & &1.id) == [resource.id]
+    assert Enum.all?(generated.questions, &(&1["source_page_ids"] == [transcript.id]))
+
+    generated
+    |> Ecto.Changeset.change(
+      status: "generation_partial",
+      questions: Enum.take(generated.questions, 1)
+    )
+    |> Repo.update!()
+
+    assert {:ok, resumed} = Exams.resume_generation(p.id, generated.id)
+    assert resumed.status == "in_progress"
+    assert length(resumed.questions) == 2
+    assert_receive {:flashcard_sources, _, [source], ["definition"]}
+    assert source.id == transcript.id
+  end
+
+  test "resource-only flashcards reject pending imports and empty text" do
+    p = profile()
+    l = lesson(p)
+
+    r =
+      Repo.insert!(%Study.Resource{lesson_id: l.id, filename: "audio.mp3", status: "processing"})
+
+    assert {:error, message} = Exams.generate(p.id, l.id, 1, "", format: "flashcard")
+    assert message =~ "analyse des ressources"
+    r |> Ecto.Changeset.change(status: "ready") |> Repo.update!()
+
+    {:ok, _} =
+      Study.add_page(l, %{
+        resource_id: r.id,
+        kind: "resource",
+        filename: "empty.txt",
+        storage_key: "empty.txt",
+        content_type: "text/plain",
+        text: "",
+        status: "ready"
+      })
+
+    assert {:error, message} = Exams.generate(p.id, l.id, 1, "", format: "flashcard")
+    assert message =~ "texte de chaque page"
+  end
+
+  test "server rejects nonquick types and chapters without usable sources" do
     p = profile()
     l = lesson(p)
     page(l)
@@ -155,6 +231,25 @@ defmodule CaptainHomework.FlashcardsTest do
     refute Flashcards.answer_repeated_in_text?(%{"text" => "-2", "answer" => "+2"})
     refute Flashcards.answer_repeated_in_text?(%{"text" => "1,5", "answer" => "15"})
     refute Flashcards.answer_repeated_in_text?(%{"text" => "", "answer" => ""})
+  end
+
+  test "document flashcards require their own visible support" do
+    pg = page(lesson(profile()))
+
+    q =
+      question("tom", "mcq")
+      |> Map.merge(%{
+        "prompt" => "Where was Tom born?",
+        "text" => "Hi, I'm Tom. I was born in Leeds.",
+        "answer" => "Leeds",
+        "answer_basis" => "document",
+        "support_id" => "",
+        "source_page_ids" => [pg.id],
+        "response_effort" => "direct"
+      })
+
+    assert {[_], []} = Flashcards.validate_candidates([q], [pg])
+    assert {[], [_]} = Flashcards.validate_candidates([Map.put(q, "text", "")], [pg])
   end
 
   test "source and effort validation rejects cards outside the lesson" do

@@ -86,7 +86,7 @@ defmodule CaptainHomework.OpenAIPlanCheckpointTest do
     Req.Test.stub(__MODULE__, fn conn ->
       {:ok, body, conn} = Plug.Conn.read_body(conn)
       prompt = Jason.decode!(body)["input"] |> hd() |> Map.fetch!("content") |> hd()
-      assert prompt["text"] =~ "Reprends ce contrôle déjà rédigé"
+      assert prompt["text"] =~ "Reprends cette évaluation déjà rédigée"
       assert prompt["text"] =~ Jason.encode!(ctx.plan)
       assert prompt["text"] =~ rejected["reason"]
       send(owner, :repair_request)

@@ -4,11 +4,14 @@ defmodule CaptainHomeworkWeb.SharedExamLive do
   alias CaptainHomeworkWeb.HomeworkLive
 
   @read_events ~w(close_modal explain_language)
-  @answer_events ~w(save_answers order_answer validate_card next_card confirm_submit cancel_submit submit_exam remove_drawing_photo open_ocr transcribe_answer use_transcription cancel_upload)
+  @answer_events ~w(recording_state cancel_recording_upload remove_recording save_answers order_answer validate_card next_card confirm_submit cancel_submit submit_exam remove_drawing_photo open_ocr transcribe_answer use_transcription cancel_upload)
 
   @impl true
   def mount(%{"token" => token}, session, socket) do
     with {:ok, share, exam} <- ExamShares.open(token, session["shared_visitor"]) do
+      if connected?(socket),
+        do: Phoenix.PubSub.subscribe(CaptainHomework.PubSub, "exam_share:#{share.id}")
+
       owner =
         Study.get_profile(exam.lesson.profile_id) || Repo.preload(exam.lesson, :profile).profile
 
@@ -31,7 +34,8 @@ defmodule CaptainHomeworkWeb.SharedExamLive do
       {:ok,
        socket
        |> assign(share_mode: share.mode, share_available: true)
-       |> HomeworkLive.load_shared_exam(exam, profile)}
+       |> HomeworkLive.load_shared_exam(exam, profile)
+       |> assign(:page_title, CaptainHomeworkWeb.SharedExamMetadata.title(exam, share.mode))}
     else
       _ -> {:ok, assign(socket, share_available: false, page_title: "Lien indisponible")}
     end
@@ -46,7 +50,7 @@ defmodule CaptainHomeworkWeb.SharedExamLive do
       <main class="app shared-exam" id="share-unavailable">
         <section class="panel">
           <h1>Ce lien n’est plus disponible</h1>
-          <p>Le lien a expiré ou le contrôle a été supprimé.</p>
+          <p>Le lien a expiré ou a été supprimé.</p>
         </section>
       </main>
     </Layouts.app>
@@ -73,6 +77,8 @@ defmodule CaptainHomeworkWeb.SharedExamLive do
   def handle_event(_, _, socket), do: {:noreply, socket}
 
   @impl true
+  def handle_info(:share_revoked, socket), do: {:noreply, expire(socket)}
+
   def handle_info(:share_expired, socket), do: {:noreply, expire(socket)}
 
   def handle_info(message, %{assigns: %{share_available: true}} = socket)

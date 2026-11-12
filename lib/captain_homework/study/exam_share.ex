@@ -6,6 +6,7 @@ defmodule CaptainHomework.Study.ExamShare do
   schema "exam_shares" do
     belongs_to :exam, CaptainHomework.Study.Exam
     field :token_hash, :binary
+    field :revoked_at, :utc_datetime_usec
     field :mode, :string
     field :expires_at, :utc_datetime_usec
     timestamps(type: :utc_datetime_usec)

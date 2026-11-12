@@ -7,7 +7,7 @@
           id="question-types-title"
           ancestors={[
             {:home, child_path(@profile, "/")},
-            {"Paramètres", child_path(@profile, "/matieres/parametres")}
+            {"Paramètres", child_path(@profile, "/parametres")}
           ]}
         >
           Types de questions
@@ -47,7 +47,11 @@
           field={@filter_form[:mode]}
           type="select"
           label="Mode"
-          options={[{"Tous les modes", ""}, {"Classique", "classic"}, {"Flashcard", "flashcard"}]}
+          options={[
+            {"Tous les modes", ""},
+            {"Classique", "classic"},
+            {"Flash cards", "flashcard"}
+          ]}
         />
       </.form>
       <div class="admin-table-wrap">
@@ -83,7 +87,7 @@
               <td class="duration-column">{duration_label(type.work_duration)}</td>
               <td>
                 <span :for={mode <- type.modes} class="mode-label">
-                  {if mode == "classic", do: "Classique", else: "Flashcard"}
+                  {if mode == "classic", do: "Classique", else: "Flash cards"}
                 </span>
               </td>
               <td>
@@ -135,7 +139,7 @@
               <.icon name="arrow" class="breadcrumb-separator" />
             </li>
             <li>
-              <.link navigate={child_path(@profile, "/matieres/parametres")}>Paramètres</.link>
+              <.link navigate={child_path(@profile, "/parametres")}>Paramètres</.link>
               <.icon name="arrow" class="breadcrumb-separator" />
             </li>
             <li>
@@ -175,29 +179,19 @@
           phx-submit="save_type"
           novalidate
         >
-          <nav class="lesson-navigation" aria-label="Configuration du type">
-            <button
-              :for={{id, label} <- [{"definition", "Définition"}, {"aides", "Aides"}]}
-              id={"type-tab-#{id}"}
-              type="button"
-              class="navigation-tab"
-              aria-current={if @tab == id, do: "page"}
-              phx-click="tab"
-              phx-value-tab={id}
-            >
-              {label}
-            </button>
-          </nav>
+          <header class="lesson-navigation">
+            <h3 class="navigation-tab">Définition</h3>
+          </header>
           <div
             id="type-definition-fields"
             class="form-fields"
             role="group"
             aria-label="Définition du type"
-            hidden={@tab != "definition"}
           >
             <.input
               field={@type_form[:name]}
               label="Nom du type"
+              placeholder="Traduction en {langue}"
               maxlength="80"
               aria-invalid={
                 to_string(@type_form[:name].errors != [] or @type_form[:name_key].errors != [])
@@ -226,7 +220,10 @@
               <div class="subject-checkbox-grid">
                 <label
                   :for={
-                    {id, label} <- [{"classic", "Contrôle classique"}, {"flashcard", "Flashcard"}]
+                    {id, label} <- [
+                      {"classic", "Évaluation classique"},
+                      {"flashcard", "Flash cards"}
+                    ]
                   }
                   class="subject-checkbox"
                 >
@@ -303,21 +300,6 @@
               </div>
             </fieldset>
           </div>
-          <div class="form-fields" hidden={@tab != "aides"}>
-            <.input
-              field={@type_form[:help_classic]}
-              type="textarea"
-              label="Aide en contrôle classique"
-              placeholder="Aucune aide"
-              rows="3"
-            /><.input
-              field={@type_form[:help_flashcard]}
-              type="textarea"
-              label="Aide en flashcard"
-              placeholder="Aucune aide"
-              rows="3"
-            />
-          </div>
         </.form>
         <aside class="admin-preview" aria-label="Aperçu de la question">
           <header class="lesson-navigation">
@@ -330,7 +312,7 @@
           >
             <div class="settings-choices two">
               <label :for={
-                {value, label} <- [{"classic", "Classique"}, {"flashcard", "Flashcard"}]
+                {value, label} <- [{"classic", "Classique"}, {"flashcard", "Flash cards"}]
               }>
                 <input type="radio" name="mode" value={value} checked={@preview_mode == value} />
                 <span>
@@ -386,10 +368,9 @@
             <.input
               :if={@preview_type.instruction_kind == "dynamic"}
               field={@example_form[:prompt]}
-              label="Exemple de consigne"
+              label="Exemple indicatif de consigne"
               type="textarea"
               rows="2"
-              phx-debounce="200"
             />
             <.input
               :if={
@@ -401,17 +382,19 @@
                   if(@preview_type.content_kind == "document", do: :document, else: :text)
                 ]
               }
-              label="Exemple de contenu"
+              label="Exemple indicatif de contenu"
               type="textarea"
               rows="4"
-              phx-debounce="200"
             />
+            <p class="muted">
+              Ces exemples sont enregistrés avec le type et guident l’IA sans remplacer ses règles.
+            </p>
           </.form>
         </aside>
       </div>
       <footer :if={@type.id} id="type-editor-footer" class="type-editor-footer">
         <p id="type-usage-count" class="muted">
-          Utilisé dans {count_label(@usage_count, "contrôle", "contrôles")}
+          Utilisé dans {count_label(@usage_count, "évaluation", "évaluations")}
         </p>
         <button
           type="button"
@@ -426,7 +409,7 @@
     </section>
     <.modal :if={@modal == "delete"} id="delete-type-modal" title="Supprimer ce type ?">
       <p>
-        « {@delete_type.name} » ne sera plus proposé pour les nouveaux contrôles. Les contrôles existants seront conservés.
+        « {@delete_type.name} » ne sera plus proposé pour les nouvelles évaluations. Les évaluations existantes seront conservées.
       </p>
       <div class="form-actions">
         <button class="button secondary" phx-click="close_modal">Annuler</button><button

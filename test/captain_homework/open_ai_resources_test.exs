@@ -613,7 +613,7 @@ defmodule CaptainHomework.OpenAIResourcesTest do
       kind = generation_stage(props)
 
       kind =
-        if kind == :plan and String.contains?(prompt, "Reprends ce contrôle"),
+        if kind == :plan and String.contains?(prompt, "Reprends cette évaluation"),
           do: :repair,
           else: kind
 

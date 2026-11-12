@@ -244,11 +244,13 @@ defmodule CaptainHomeworkWeb.CoreComponents do
   attr :index, :integer, default: 1
   attr :points, :integer, default: 1
 
+  slot :actions
+
   def question_heading(assigns) do
     ~H"""
     <div class="question-meta">
       <span class="question-number">{@index}</span>
-      <span>{@type_label}</span>
+      <span class="question-type-label">{@type_label}{render_slot(@actions)}</span>
       <span class="points">{count_label(@points, "point", "points")}</span>
     </div>
     <h2>{@prompt}</h2>
@@ -289,6 +291,9 @@ defmodule CaptainHomeworkWeb.CoreComponents do
       stroke-linejoin="round"
       aria-hidden="true"
     >
+      <g :if={@name == "refresh"}>
+        <path d="M20 7v5h-5M4 17v-5h5M6 6a8 8 0 0 1 13 3l1 3M4 12l1 3a8 8 0 0 0 13 3" />
+      </g>
       <g :if={@name == "home"}>
         <path d="m3 10 9-7 9 7M5 9v12h5v-7h4v7h5V9" />
       </g>
@@ -352,8 +357,12 @@ defmodule CaptainHomeworkWeb.CoreComponents do
       </g>
       <path :if={@name == "arrows-right-left"} d="m16 3 4 4-4 4M4 7h16M8 21l-4-4 4-4m12 4H4" />
       <path :if={@name == "arrow"} d="m9 5 7 7-7 7" />
+      <path :if={@name == "arrow-left"} d="M20 12H4m7-7-7 7 7 7" />
       <path :if={@name == "back"} d="m15 5-7 7 7 7" />
       <g :if={@name == "upload"}><path d="M12 16V3m-5 5 5-5 5 5M4 16v5h16v-5" /></g>
+      <g :if={@name == "external-link"}>
+        <path d="M15 3h6v6m0-6L10 14M9 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-4" />
+      </g>
       <g :if={@name == "download"}><path d="M12 3v13m-5-5 5 5 5-5M4 16v5h16v-5" /></g>
       <g :if={@name == "camera"}>
         <path d="M3 6h4l2-3h6l2 3h4v15H3Z" /><circle cx="12" cy="13" r="4" />
@@ -448,7 +457,7 @@ defmodule CaptainHomeworkWeb.CoreComponents do
           </.form>
           <hr class="child-picker-separator" />
           <.link
-            navigate={child_path(@profile, ~p"/parametres")}
+            navigate={child_path(@profile, ~p"/apparence")}
             id="settings-link"
             class="child-picker-option"
             aria-current={if @settings_active, do: "page"}
@@ -465,7 +474,7 @@ defmodule CaptainHomeworkWeb.CoreComponents do
           </div>
         </div>
       </details>
-      <.link :if={!@profile} navigate={child_path(@profile, ~p"/parametres")} id="settings-link">
+      <.link :if={!@profile} navigate={child_path(@profile, ~p"/apparence")} id="settings-link">
         Paramètres
       </.link>
     </div>
@@ -539,16 +548,18 @@ defmodule CaptainHomeworkWeb.CoreComponents do
   end
 
   attr :id, :string, required: true
-  attr :percent, :integer, required: true
   attr :stage, :string, required: true
+  attr :hint, :string, default: nil
 
   def processing_progress(assigns) do
     ~H"""
-    <span id={@id} class="processing-progress" role="status" aria-live="polite">
-      <span class="spinner" aria-hidden="true" />
-      <strong title="Avancement total estimé">≈ {@percent} %</strong>
-      <span>{@stage}</span>
-    </span>
+    <div id={@id} class="processing-progress" role="status" aria-live="polite">
+      <p class="processing-stage">
+        <span class="spinner" aria-hidden="true" />
+        <span>{@stage}</span>
+      </p>
+      <p :if={@hint} class="processing-hint muted">{@hint}</p>
+    </div>
     """
   end
 

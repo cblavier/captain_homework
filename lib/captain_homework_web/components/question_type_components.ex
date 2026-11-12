@@ -19,6 +19,7 @@ defmodule CaptainHomeworkWeb.QuestionTypeComponents do
 
     assigns =
       assign(assigns,
+        type_label: QuestionTemplates.render(assigns.type.name, subject),
         example:
           QuestionTemplates.question(Map.merge(assigns.type.example, assigns.example), subject)
       )
@@ -29,11 +30,6 @@ defmodule CaptainHomeworkWeb.QuestionTypeComponents do
           if(assigns.type.instruction_kind == "fixed",
             do: QuestionTemplates.render(assigns.type.instruction, subject),
             else: assigns.example["prompt"]
-          ),
-        help:
-          if(assigns.mode == "classic",
-            do: QuestionTemplates.render(assigns.type.help_classic, subject),
-            else: QuestionTemplates.render(assigns.type.help_flashcard, subject)
           ),
         subject_name:
           Enum.find_value(Study.subjects(), "Matière", fn s ->
@@ -64,7 +60,7 @@ defmodule CaptainHomeworkWeb.QuestionTypeComponents do
           question={@question}
           mode={@mode}
           subject={@subject_name}
-          type_label={@type.name}
+          type_label={@type_label}
           audio_src={preview_audio(@type)}
           images={preview_images(@type)}
         />
@@ -125,7 +121,6 @@ defmodule CaptainHomeworkWeb.QuestionTypeComponents do
       "id" => "preview",
       "type" => QuestionDefinitions.engine_format(type),
       "prompt" => assigns.prompt,
-      "help" => assigns.help,
       "text" => text,
       "options" =>
         if(type.response_kind == "ordering",
@@ -136,9 +131,13 @@ defmodule CaptainHomeworkWeb.QuestionTypeComponents do
         ),
       "slots" =>
         example["slots"] ||
-          Enum.map(1..3, fn i ->
-            "#{if type.response_kind == "legends", do: "Repère", else: "Mot manquant"} #{i}"
-          end)
+          if(type.response_kind == "cloze" and String.contains?(text, "{{"),
+            do: Regex.scan(~r/\{\{([^}]+)\}\}/, text, capture: :all_but_first) |> List.flatten(),
+            else:
+              Enum.map(1..3, fn i ->
+                "#{if type.response_kind == "legends", do: "Repère", else: "Mot manquant"} #{i}"
+              end)
+          )
     }
   end
 

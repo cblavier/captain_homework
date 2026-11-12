@@ -47,7 +47,7 @@ defmodule CaptainHomeworkWeb.ListeningLiveTest do
 
       if format == "flashcard" do
         assert has_element?(view, "input#flashcard-response[type=text]")
-        assert has_element?(view, "#question-audio-q1 + #question-help-q1")
+        refute has_element?(view, "#question-help-q1")
 
         view
         |> form("#flashcard-answer", answers: %{"q1" => "She goes to the park."})

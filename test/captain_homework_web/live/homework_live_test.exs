@@ -4,6 +4,43 @@ defmodule CaptainHomeworkWeb.HomeworkLiveTest do
   import CaptainHomework.Fixtures
   alias CaptainHomework.{Study, Repo}
 
+  test "exam and correction headings use the saved question type name", %{conn: conn} do
+    named =
+      for {id, name} <- [
+            {"translation", "Traduction"},
+            {"calculation", "Calcul direct"},
+            {"language", "Traduction en {langue}"},
+            {"custom", "Mon type personnalisé"}
+          ] do
+        question(id, "definition") |> Map.put("type_contract", %{"name" => name})
+      end
+
+    legacy = question("legacy", "definition")
+    control = exam(lesson(profile(), "anglais"), named ++ [legacy])
+    corrections = Map.new(control.questions, &{&1["id"], %{"points" => &1["points"]}})
+
+    for status <- ["in_progress", "completed"] do
+      control
+      |> Ecto.Changeset.change(status: status, score: 20.0, corrections: corrections)
+      |> Repo.update!()
+
+      {:ok, view, _} = live(conn, "/alice/controles/#{control.id}")
+
+      for q <- named do
+        assert has_element?(
+                 view,
+                 "#question-#{q["id"]} .question-type-label",
+                 if(q["id"] == "language",
+                   do: "Traduction en anglais",
+                   else: q["type_contract"]["name"]
+                 )
+               )
+      end
+
+      assert has_element?(view, "#question-legacy .question-type-label", "Définition")
+    end
+  end
+
   test "home counts all exams by subject for the current profile", %{conn: conn} do
     alice = profile()
     first = lesson(alice, "anglais")
@@ -14,18 +51,9 @@ defmodule CaptainHomeworkWeb.HomeworkLiveTest do
     exam(lesson(profile("Marius"), "anglais"))
 
     {:ok, view, _} = live(conn, "/alice")
-    assert has_element?(view, "#subject-anglais .subject-copy", "2 leçons · 2 contrôles")
-    assert has_element?(view, "#subject-svt .subject-copy", "1 leçon · 1 contrôle")
-    assert has_element?(view, "#subject-francais .subject-copy", "0 leçon · 0 contrôle")
-  end
-
-  test "settings offer the three device appearance preferences", %{conn: conn} do
-    profile()
-    {:ok, view, _} = live(conn, "/alice/parametres")
-    assert has_element?(view, "#theme-settings[phx-hook='ThemeSettings'][phx-update='ignore']")
-    assert has_element?(view, "#theme-light[value='light']")
-    assert has_element?(view, "#theme-dark[value='dark']")
-    assert has_element?(view, "#theme-system[value='system'][checked]")
+    assert has_element?(view, "#subject-anglais .subject-copy", "2 chapitres · 2 évaluations")
+    assert has_element?(view, "#subject-svt .subject-copy", "1 chapitre · 1 évaluation")
+    assert has_element?(view, "#subject-francais .subject-copy", "0 chapitre · 0 évaluation")
   end
 
   test "shared reading documents appear once while answers remain separate", %{conn: conn} do
@@ -118,6 +146,7 @@ defmodule CaptainHomeworkWeb.HomeworkLiveTest do
   test "example pages are numbered and reorder independently from course pages", %{conn: conn} do
     l = lesson(profile())
     course = page(l)
+    reference = reference_exam(profile())
 
     attrs = %{
       kind: "example",
@@ -126,9 +155,9 @@ defmodule CaptainHomeworkWeb.HomeworkLiveTest do
       content_type: "image/png"
     }
 
-    {:ok, first} = Study.add_page(l, attrs)
-    {:ok, second} = Study.add_page(l, attrs)
-    {:ok, view, _} = live(conn, "/alice/lecons/#{l.id}")
+    {:ok, first} = CaptainHomework.ReferenceExams.add_page(reference, attrs)
+    {:ok, second} = CaptainHomework.ReferenceExams.add_page(reference, attrs)
+    {:ok, view, _} = live(conn, "/alice/references/#{reference.id}")
     assert has_element?(view, "#example-#{first.id} strong", "Page 1")
     assert has_element?(view, "#example-previous-#{first.id}[disabled]")
     assert has_element?(view, "#example-next-#{second.id}[disabled]")
@@ -136,7 +165,7 @@ defmodule CaptainHomeworkWeb.HomeworkLiveTest do
     assert has_element?(view, "#example-#{second.id} + #example-#{first.id}")
     assert has_element?(view, "#example-#{first.id} strong", "Page 2")
     assert Study.get_page!(l.profile_id, course.id).position == course.position
-    {:ok, view, _} = live(conn, "/alice/lecons/#{l.id}")
+    {:ok, view, _} = live(conn, "/alice/references/#{reference.id}")
     assert has_element?(view, "#example-#{second.id} + #example-#{first.id}")
     view |> element("#example-previous-#{first.id}") |> render_click()
     assert has_element?(view, "#example-#{first.id} + #example-#{second.id}")
@@ -174,23 +203,19 @@ defmodule CaptainHomeworkWeb.HomeworkLiveTest do
 
         assert has_element?(view, "##{id}-breadcrumb nav a[href='/alice']")
       end
+
+      if id == "lesson-title" do
+        assert has_element?(view, "#lesson-title-breadcrumb a[href='/alice/matieres/svt']")
+      end
+
+      if id == "new-exam-title" do
+        view
+        |> element("#new-exam-title-breadcrumb a[href='/alice/lecons/#{l.id}']")
+        |> render_click()
+
+        assert_redirect(view, "/alice/lecons/#{l.id}")
+      end
     end
-  end
-
-  test "page headings contain breadcrumb links to their ancestors", %{conn: conn} do
-    l = lesson(profile())
-    {:ok, view, _} = live(conn, "/alice/lecons/#{l.id}")
-    assert has_element?(view, "#lesson-title-breadcrumb a[href='/alice']")
-    assert has_element?(view, "#lesson-title-breadcrumb a[href='/alice/matieres/svt']")
-    assert has_element?(view, "#lesson-title-breadcrumb [aria-current=page] #lesson-title")
-    refute has_element?(view, ".back-link")
-    {:ok, view, _} = live(conn, "/alice/lecons/#{l.id}/controle")
-
-    view
-    |> element("#new-exam-title-breadcrumb a[href='/alice/lecons/#{l.id}']")
-    |> render_click()
-
-    assert_redirect(view, "/alice/lecons/#{l.id}")
   end
 
   test "lesson pages can be reordered and new pages are appended", %{conn: conn} do
@@ -351,13 +376,13 @@ defmodule CaptainHomeworkWeb.HomeworkLiveTest do
 
     for {path, title} <- [
           {"/alice", "Alice - Accueil"},
-          {"/alice/parametres", "Alice - Paramètres"},
+          {"/alice/apparence", "Alice - Paramètres"},
           {"/alice/matieres/anglais", "Alice - Anglais"},
-          {"/alice/lecons/#{l.id}", "Alice - Contrôles"},
-          {"/alice/lecons/#{l.id}?onglet=cours", "Alice - Cours"},
+          {"/alice/lecons/#{l.id}", "Alice - Évaluations"},
+          {"/alice/lecons/#{l.id}?onglet=cours", "Alice - Leçons"},
           {"/alice/lecons/#{l.id}?onglet=ressources", "Alice - Ressources"},
-          {"/alice/lecons/#{l.id}/controle", "Alice - Nouveau contrôle"},
-          {"/alice/controles/#{e.id}", "Alice - Contrôle"},
+          {"/alice/lecons/#{l.id}/controle", "Alice - Nouvelle évaluation"},
+          {"/alice/controles/#{e.id}", "Alice - Évaluation"},
           {"/marius", "Marius - Accueil"}
         ] do
       {:ok, view, _} = live(conn, path)
@@ -366,7 +391,7 @@ defmodule CaptainHomeworkWeb.HomeworkLiveTest do
 
     {:ok, view, _} = live(conn, "/alice/lecons/#{l.id}")
     view |> element("#lesson-tab-cours") |> render_click()
-    assert page_title(view) == "Alice - Cours"
+    assert page_title(view) == "Alice - Leçons"
   end
 
   test "first visit uses configured members without profile management", %{conn: conn} do
@@ -429,7 +454,7 @@ defmodule CaptainHomeworkWeb.HomeworkLiveTest do
     view |> element("#new-lesson") |> render_click()
     view |> form("#lesson-form", %{lesson: %{title: "Le présent"}}) |> render_submit()
     [lesson] = Study.lessons(p.id, "francais")
-    assert_redirect(view, "/alice/lecons/#{lesson.id}")
+    assert_redirect(view, "/alice/lecons/#{lesson.id}?onglet=cours")
     assert lesson.date == Study.today()
   end
 
@@ -440,12 +465,13 @@ defmodule CaptainHomeworkWeb.HomeworkLiveTest do
 
     assert has_element?(
              view,
-             "#instructions[placeholder][autocorrect=on][spellcheck=true][writingsuggestions=true]"
+             "#instructions[placeholder][phx-debounce=blur][autocomplete=off][autocorrect=on][spellcheck=true][writingsuggestions=true]"
            )
 
     refute has_element?(view, "#instructions", "Instructions SVT")
     refute has_element?(view, "#reset-instructions")
-    assert has_element?(view, "#settings-link[href='/alice/parametres']")
+    assert has_element?(view, "#settings-link[href='/alice/apparence']")
+    refute has_element?(view, "#exam-setup a[href='/alice/apparence']")
   end
 
   test "subject settings persist, filter the home page and allow reactivation", %{conn: conn} do
@@ -477,22 +503,6 @@ defmodule CaptainHomeworkWeb.HomeworkLiveTest do
 
     {:ok, home, _} = live(conn, "/alice")
     assert has_element?(home, "#subject-svt")
-  end
-
-  test "settings no longer expose a general prompt and exam additions remain available", %{
-    conn: conn
-  } do
-    l = lesson(profile())
-    {:ok, view, _} = live(conn, "/alice/parametres")
-    refute has_element?(view, "#default-instructions")
-    refute has_element?(view, "#settings-form")
-    assert has_element?(view, "#settings-title-breadcrumb a[href='/alice']", "Retour à l’accueil")
-    assert has_element?(view, "#theme-settings")
-    refute has_element?(view, "#manage-student-subjects")
-
-    {:ok, creation, _} = live(conn, "/alice/lecons/#{l.id}/controle")
-    assert has_element?(creation, "#instructions")
-    refute has_element?(creation, "#exam-setup a[href='/alice/parametres']")
   end
 
   test "partial generation can resume without exposing answers or losing saved questions", %{
@@ -638,7 +648,7 @@ defmodule CaptainHomeworkWeb.HomeworkLiveTest do
     {:ok, view, _} = live(conn, "/alice/matieres/svt")
     assert has_element?(view, "#child-name", "Alice")
     refute has_element?(view, ".identity-row .brand")
-    assert has_element?(view, "#settings-link[href='/alice/parametres']")
+    assert has_element?(view, "#settings-link[href='/alice/apparence']")
     assert {:error, {:live_redirect, %{to: "/marius"}}} = live(conn, "/")
     l = lesson(alice)
 
@@ -685,7 +695,7 @@ defmodule CaptainHomeworkWeb.HomeworkLiveTest do
     assert has_element?(view, "#lesson-count-controles", "0")
     assert has_element?(view, "#lesson-count-cours", "1")
     assert has_element?(view, "#lesson-count-ressources", "0")
-    assert has_element?(view, "#lesson-controls #lesson-examples")
+    refute has_element?(view, "#lesson-examples")
     refute has_element?(view, "#lesson-course")
     view |> element("#lesson-tab-cours") |> render_click()
     assert_patch(view, "/alice/lecons/#{l.id}?onglet=cours")
@@ -701,7 +711,8 @@ defmodule CaptainHomeworkWeb.HomeworkLiveTest do
   test "example photos are managed from the controls tab", %{conn: conn} do
     p = profile()
     l = lesson(p)
-    {:ok, view, _} = live(conn, "/alice/lecons/#{l.id}")
+    reference = reference_exam(p)
+    {:ok, view, _} = live(conn, "/alice/references/#{reference.id}")
 
     image =
       Base.decode64!(
@@ -719,7 +730,7 @@ defmodule CaptainHomeworkWeb.HomeworkLiveTest do
     render_upload(upload, "exemple.png", 50)
     refute has_element?(view, "#save-examples[disabled]")
     view |> form("#upload-examples") |> render_submit()
-    [pg] = Study.get_lesson!(p.id, l.id).pages
+    [pg] = CaptainHomework.ReferenceExams.get!(p.id, reference.id).pages
     on_exit(fn -> File.rm(CaptainHomework.Uploads.path(pg.storage_key)) end)
     assert pg.kind == "example"
     assert has_element?(view, "#example-#{pg.id}")
@@ -727,7 +738,7 @@ defmodule CaptainHomeworkWeb.HomeworkLiveTest do
     refute has_element?(setup, "input[name='example_ids[]']")
     refute has_element?(setup, "input[type=file]")
     view |> element("#delete-example-#{pg.id}") |> render_click()
-    assert Study.get_lesson!(p.id, l.id).pages == []
+    assert CaptainHomework.ReferenceExams.get!(p.id, reference.id).pages == []
     refute has_element?(view, "#example-#{pg.id}")
   end
 

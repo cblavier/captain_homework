@@ -48,15 +48,15 @@ defmodule CaptainHomework.AI.ResourceImages do
       cond do
         not available?(mandatory ++ examples, info) ->
           {:error,
-           "Une image sélectionnée est indisponible. Réimporte la ressource avant de générer le contrôle."}
+           "Une image sélectionnée est indisponible. Réimporte la ressource avant de générer l’évaluation."}
 
         not fits?(examples, info) ->
           {:error,
-           "Les contrôles d’exemple dépassent 24 images ou 24 Mo. Réduis leur nombre dans l’onglet Contrôles."}
+           "Les contrôles de référence dépassent 24 images ou 24 Mo. Réduis le nombre de pages du contrôle de référence."}
 
         not fits?(mandatory ++ examples, info) ->
           {:error,
-           "Les pages sélectionnées et contrôles d’exemple dépassent 24 images ou 24 Mo. Réduis le nombre de pages ou d’exemples ; aucune page sélectionnée n’a été omise."}
+           "Les pages sélectionnées et contrôles de référence dépassent 24 images ou 24 Mo. Réduis le nombre de pages ou d’exemples ; aucune page sélectionnée n’a été omise."}
 
         true ->
           selected =
@@ -103,7 +103,7 @@ defmodule CaptainHomework.AI.ResourceImages do
       {:ok, pages, illustrations}
     else
       {:error,
-       "Une page sélectionnée n’appartient pas aux ressources disponibles de cette leçon."}
+       "Une page sélectionnée n’appartient pas aux ressources disponibles de ce chapitre."}
     end
   end
 

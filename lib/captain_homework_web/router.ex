@@ -58,35 +58,44 @@ defmodule CaptainHomeworkWeb.Router do
         CaptainHomeworkWeb.GenerationNotifications
       ] do
       live "/", HomeworkLive, :home
-      live "/parametres", HomeworkLive, :settings
-      live "/matieres/parametres", HomeworkLive, :subjects_settings
+      live "/apparence", HomeworkLive, :settings
+      live "/parametres", HomeworkLive, :subjects_settings
+      live "/parametres/partages", SharedEvaluationsLive, :index
+      live "/parametres/partages/:id", SharedEvaluationsLive, :exam
       live "/parametres/matieres", HomeworkLive, :subject_preferences
       live "/parametres/types", QuestionTypesLive, :index
       live "/parametres/types/nouveau", QuestionTypesLive, :new
       live "/parametres/types/:id", QuestionTypesLive, :edit
       live "/matieres/:subject", HomeworkLive, :subject
+      live "/references/:id", HomeworkLive, :reference
       live "/lecons/:id", HomeworkLive, :lesson
       live "/lecons/:id/controle", HomeworkLive, :new_exam
       live "/controles/:id", HomeworkLive, :exam
       live "/enfants/:child", HomeworkLive, :home
-      live "/enfants/:child/parametres", HomeworkLive, :settings
-      live "/enfants/:child/matieres/parametres", HomeworkLive, :subjects_settings
+      live "/enfants/:child/apparence", HomeworkLive, :settings
+      live "/enfants/:child/parametres", HomeworkLive, :subjects_settings
+      live "/enfants/:child/parametres/partages", SharedEvaluationsLive, :index
+      live "/enfants/:child/parametres/partages/:id", SharedEvaluationsLive, :exam
       live "/enfants/:child/parametres/matieres", HomeworkLive, :subject_preferences
       live "/enfants/:child/parametres/types", QuestionTypesLive, :index
       live "/enfants/:child/parametres/types/nouveau", QuestionTypesLive, :new
       live "/enfants/:child/parametres/types/:id", QuestionTypesLive, :edit
       live "/enfants/:child/matieres/:subject", HomeworkLive, :subject
+      live "/enfants/:child/references/:id", HomeworkLive, :reference
       live "/enfants/:child/lecons/:id", HomeworkLive, :lesson
       live "/enfants/:child/lecons/:id/controle", HomeworkLive, :new_exam
       live "/enfants/:child/controles/:id", HomeworkLive, :exam
       live "/:child", HomeworkLive, :home
-      live "/:child/parametres", HomeworkLive, :settings
-      live "/:child/matieres/parametres", HomeworkLive, :subjects_settings
+      live "/:child/apparence", HomeworkLive, :settings
+      live "/:child/parametres", HomeworkLive, :subjects_settings
+      live "/:child/parametres/partages", SharedEvaluationsLive, :index
+      live "/:child/parametres/partages/:id", SharedEvaluationsLive, :exam
       live "/:child/parametres/matieres", HomeworkLive, :subject_preferences
       live "/:child/parametres/types", QuestionTypesLive, :index
       live "/:child/parametres/types/nouveau", QuestionTypesLive, :new
       live "/:child/parametres/types/:id", QuestionTypesLive, :edit
       live "/:child/matieres/:subject", HomeworkLive, :subject
+      live "/:child/references/:id", HomeworkLive, :reference
       live "/:child/lecons/:id", HomeworkLive, :lesson
       live "/:child/lecons/:id/controle", HomeworkLive, :new_exam
       live "/:child/controles/:id", HomeworkLive, :exam

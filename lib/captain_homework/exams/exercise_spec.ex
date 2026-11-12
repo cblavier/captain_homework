@@ -14,9 +14,11 @@ defmodule CaptainHomework.Exams.ExerciseSpec do
   alias CaptainHomework.{AI, ImageCrops, ResponseFormats}
   alias CaptainHomework.Exams.{AnswerBasis, BuildError, Constraints, Plan}
 
-  @version 1
-  @fields ~w(type objective skill response_effort answer_basis expected_elements source_page_ids support_id image_ids image_regions support_text support_title answer rubric points options slots diagram audio_script text metadata)
+  @version 2
+  @fields ~w(definition_id type_contract type objective skill response_effort answer_basis expected_elements source_page_ids support_id image_ids image_regions support_text support_title answer rubric points options slots diagram audio_script text metadata)
   @defaults %{
+    "definition_id" => nil,
+    "type_contract" => nil,
     "support_id" => "",
     "image_ids" => [],
     "image_regions" => [],
@@ -46,14 +48,17 @@ defmodule CaptainHomework.Exams.ExerciseSpec do
     with :ok <- identity(id, task, initial_prompt),
          :ok <- json_value(question),
          {:ok, question} <- attach_support(question, context),
+         {:ok, question} <- CaptainHomework.Exams.TypeContract.validate(question, context, :spec),
          :ok <- validate_question(question, context),
+         :ok <- validate_visible_task(question, task),
          {:ok, dependencies} <- dependencies(question, context),
          :ok <- validate_compatibility(question, context) do
       spec = %__MODULE__{
         id: id,
         hash: "",
         task: task,
-        initial_prompt: initial_prompt,
+        initial_prompt:
+          CaptainHomework.Exams.TypeContract.fixed_prompt(question) || initial_prompt,
         question: question,
         dependencies: dependencies
       }
@@ -73,7 +78,11 @@ defmodule CaptainHomework.Exams.ExerciseSpec do
          true <- spec.version == @version and spec.hash == fingerprint(spec),
          true <-
            is_map(spec.question) and Enum.sort(Map.keys(spec.question)) == Enum.sort(@fields),
+         {:ok, bound} <-
+           CaptainHomework.Exams.TypeContract.validate(spec.question, context, :spec),
+         true <- bound == spec.question,
          :ok <- validate_question(spec.question, context),
+         :ok <- validate_visible_task(spec.question, spec.task),
          {:ok, current} <- dependencies(spec.question, context) do
       if current == spec.dependencies,
         do: validate_compatibility(spec.question, context),
@@ -231,6 +240,13 @@ defmodule CaptainHomework.Exams.ExerciseSpec do
 
   defp validate_question(_, _), do: failure(:invalid_contract, "Contenu du contrat invalide.")
 
+  defp validate_visible_task(question, task) do
+    case CaptainHomework.Exams.VisibleSupport.errors(Map.put(question, "task", task)) do
+      [] -> :ok
+      errors -> failure(:invalid_contract, Enum.join(errors, " "))
+    end
+  end
+
   defp validate_compatibility(question, context) do
     sources = Map.get(context, :sources, [])
 
@@ -245,7 +261,8 @@ defmodule CaptainHomework.Exams.ExerciseSpec do
         else: []
 
     basis_errors =
-      AnswerBasis.validation_errors([Map.put(question, "id", "exercise")], pages, [])
+      AnswerBasis.validation_errors([Map.put(question, "id", "exercise")], pages, []) ++
+        CaptainHomework.Exams.VisibleSupport.errors(question)
 
     if basis_errors == [] and
          Constraints.compatible?(

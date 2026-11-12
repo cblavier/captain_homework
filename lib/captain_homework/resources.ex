@@ -4,7 +4,7 @@ defmodule CaptainHomework.Resources do
   import Ecto.Query
   alias CaptainHomework.{AI, Repo, Study, Uploads}
   alias CaptainHomework.Study.{Resource, Page}
-  alias CaptainHomework.Resources.{Download, Documents}
+  alias CaptainHomework.Resources.{Audio, Download, Documents}
 
   @processing_timeout 2 * 60 * 60
 
@@ -53,13 +53,16 @@ defmodule CaptainHomework.Resources do
   end
 
   defp upload_type(path) do
-    with {:ok, %{type: :regular}} <- File.stat(path),
+    with {:ok, %{type: :regular, size: size}} <- File.stat(path),
          {:ok, header} when is_binary(header) <-
            File.open(path, [:read, :binary], &IO.binread(&1, 512)),
-         {:ok, type, ext} <- Documents.type(header) do
+         {:ok, type, ext} <- Documents.type(header),
+         true <- type not in ["audio/mpeg", "video/mp4"] or size <= 512 * 1024 * 1024 do
       {:ok, type, ext}
     else
-      _ -> {:error, "Choisis un PDF, JPEG, PNG ou WebP."}
+      _ ->
+        {:error,
+         "Choisis un PDF, JPEG, PNG, WebP, MP3 ou MP4 (512 Mo maximum pour l’audio et la vidéo)."}
     end
   end
 
@@ -80,9 +83,23 @@ defmodule CaptainHomework.Resources do
     lesson = Study.get_lesson!(profile_id, lesson_id)
 
     with {:ok, uri} <- Download.validate_url(url) do
-      name = uri.path |> to_string() |> Path.basename()
-      name = if name in ["", ".", "/"], do: uri.host, else: name
-      insert(%Resource{lesson_id: lesson.id, source_url: URI.to_string(uri), filename: name})
+      case Audio.youtube_url(uri) do
+        {:ok, canonical, id} ->
+          insert(%Resource{
+            lesson_id: lesson.id,
+            source_url: canonical,
+            filename: "YouTube-#{id}.mp3",
+            content_type: "application/x-youtube"
+          })
+
+        :not_youtube ->
+          name = uri.path |> to_string() |> Path.basename() |> URI.decode()
+          name = if name in ["", ".", "/"], do: uri.host, else: name
+          insert(%Resource{lesson_id: lesson.id, source_url: URI.to_string(uri), filename: name})
+
+        error ->
+          error
+      end
     end
   end
 
@@ -130,11 +147,15 @@ defmodule CaptainHomework.Resources do
     result =
       with {:ok, resource} <- obtain_original(resource),
            {:ok, resource} <- name_document(resource),
+           {:ok, resource} <- transcribe_media(resource),
            :ok <-
              CaptainHomework.ProcessingProgress.update(
                resource,
                20,
-               "Extraction des pages et illustrations"
+               if(resource.content_type == "text/plain",
+                 do: "Enregistrement de la transcription",
+                 else: "Extraction des pages et illustrations"
+               )
              ),
            {:ok, parts} <- Documents.extract(resource),
            :ok <- import_parts(resource, parts),
@@ -251,6 +272,7 @@ defmodule CaptainHomework.Resources do
   end
 
   defp obtain_original(%{storage_key: key} = resource) when is_binary(key), do: {:ok, resource}
+  defp obtain_original(%{content_type: "application/x-youtube"} = resource), do: {:ok, resource}
 
   defp obtain_original(resource) do
     with {:ok, data, type, final_url} <- Download.fetch(resource.source_url),
@@ -270,17 +292,18 @@ defmodule CaptainHomework.Resources do
     end
   end
 
+  defp transcribe_media(resource) do
+    if Audio.media?(resource), do: Audio.transcribe(resource), else: {:ok, resource}
+  end
+
   defp name_document(%{source_url: url} = resource) when is_binary(url) do
-    case Documents.title(resource) do
-      nil ->
-        {:ok, resource}
+    title = CaptainHomework.Resources.Naming.title(resource)
 
-      title ->
-        filename =
-          if String.ends_with?(String.downcase(title), ".pdf"), do: title, else: title <> ".pdf"
+    # A title entered while the import was running always takes precedence.
+    from(r in Resource, where: r.id == ^resource.id and is_nil(r.title))
+    |> Repo.update_all(set: [title: title])
 
-        resource |> Ecto.Changeset.change(filename: filename) |> Repo.update()
-    end
+    {:ok, Repo.get!(Resource, resource.id)}
   end
 
   defp name_document(resource), do: {:ok, resource}
@@ -342,6 +365,14 @@ defmodule CaptainHomework.Resources do
     end
   end
 
+  defp report_ocr_progress(%{content_type: "text/plain"} = resource, _done, _total),
+    do:
+      CaptainHomework.ProcessingProgress.update(
+        resource,
+        85,
+        "Enregistrement de la transcription"
+      )
+
   defp report_ocr_progress(resource, done, total) do
     percent = 30 + round(55 * done / max(total, 1))
 
@@ -351,6 +382,9 @@ defmodule CaptainHomework.Resources do
       "Lecture OCR — #{done}/#{count_label(total, "page", "pages")}"
     )
   end
+
+  defp analyze_part(%{transcript: true} = part),
+    do: {part, {:ok, %{"text" => part.data, "document_kind" => "other"}}}
 
   defp analyze_part(part) do
     result =

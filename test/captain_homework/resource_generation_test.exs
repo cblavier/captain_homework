@@ -24,10 +24,12 @@ defmodule CaptainHomework.ResourceGenerationTest do
     l = lesson(p)
     course = page(l)
 
+    reference = reference_exam(p)
+
     examples =
       for n <- 1..2 do
         {:ok, example} =
-          Study.add_page(l, %{
+          CaptainHomework.ReferenceExams.add_page(reference, %{
             kind: "example",
             filename: "example-#{n}.png",
             storage_key: "example-#{n}.png",
@@ -39,12 +41,22 @@ defmodule CaptainHomework.ResourceGenerationTest do
         example
       end
 
-    {:ok, result} = Exams.generate(p.id, l.id, 1, "")
+    {:ok, result} = Exams.generate(p.id, l.id, 1, "", reference_exam_id: reference.id)
     assert_receive {:resource_generation, content_pages, []}
     assert Enum.map(content_pages, & &1.id) == [course.id]
     assert_receive {:style_examples, supplied}
     assert Enum.map(supplied, & &1.id) == Enum.map(examples, & &1.id)
     assert result.generation_examples == Enum.map(examples, & &1.id)
+    assert result.reference_exam_id == reference.id
+
+    result
+    |> Ecto.Changeset.change(status: "generation_partial", questions: [], generation_plan: nil)
+    |> Repo.update!()
+
+    assert {:ok, resumed} = Exams.resume_generation(p.id, result.id)
+    assert_receive {:style_examples, resumed_examples}
+    assert Enum.map(resumed_examples, & &1.id) == Enum.map(examples, & &1.id)
+    assert resumed.reference_exam_id == reference.id
   end
 
   defp resource(lesson, attrs \\ []) do
@@ -102,6 +114,9 @@ defmodule CaptainHomework.ResourceGenerationTest do
   test "question illustrations are byte-identical copies surviving source removal" do
     p = profile()
     l = lesson(p)
+    [type_id] = question_type_ids(["long"])
+    type = CaptainHomework.QuestionDefinitions.get!(type_id)
+    {:ok, _} = CaptainHomework.QuestionDefinitions.save(type, %{content_kind: "image"})
     r = resource(l)
     resource_page(l, r, "resource")
     illustration = resource_page(l, r, "illustration")
@@ -144,6 +159,9 @@ defmodule CaptainHomework.ResourceGenerationTest do
   test "forged source image ids are rejected and cannot be persisted" do
     p = profile()
     l = lesson(p)
+    [type_id] = question_type_ids(["long"])
+    type = CaptainHomework.QuestionDefinitions.get!(type_id)
+    {:ok, _} = CaptainHomework.QuestionDefinitions.save(type, %{content_kind: "image"})
     page(l)
     Application.put_env(:captain_homework, :resource_test_image_ids, [Ecto.UUID.generate()])
     {:ok, result} = Exams.generate(p.id, l.id, 1, "", [])

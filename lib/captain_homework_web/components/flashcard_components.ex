@@ -15,6 +15,8 @@ defmodule CaptainHomeworkWeb.FlashcardComponents do
   attr :subject, :string, required: true
   attr :close_path, :string, default: nil
   attr :error, :string, default: nil
+  attr :uploads, :map, default: %{}
+  attr :recording_pending, :boolean, default: false
   slot :footer
 
   def flashcard(assigns) do
@@ -104,6 +106,14 @@ defmodule CaptainHomeworkWeb.FlashcardComponents do
                     mode="flashcard"
                     value={@answers[@question["id"]]}
                     disabled={@grading or @flipped}
+                    upload={
+                      @uploads[
+                        CaptainHomeworkWeb.HomeworkLive.recording_upload_name(@exam, @question["id"])
+                      ]
+                    }
+                    recording_src={
+                      CaptainHomeworkWeb.HomeworkLive.recording_src(@profile, @exam, @question["id"])
+                    }
                   />
                 </fieldset>
               </.form>
@@ -116,7 +126,7 @@ defmodule CaptainHomeworkWeb.FlashcardComponents do
                 class="button primary question-submit"
                 type="submit"
                 form="flashcard-answer"
-                disabled={@grading}
+                disabled={@grading or @recording_pending}
                 aria-busy={to_string(@grading)}
                 aria-label={if @grading, do: "Correction en cours", else: "Valider ma réponse"}
               >
@@ -168,9 +178,9 @@ defmodule CaptainHomeworkWeb.FlashcardComponents do
                 type="button"
                 phx-click="next_card"
                 phx-value-id={@question["id"]}
-                data-has-next={to_string(@remaining > 0)}
+                data-has-next={to_string(not Flashcards.finishable?(@exam))}
               >
-                {if @exam.card_index + 1 == length(@exam.questions),
+                {if Flashcards.finishable?(@exam),
                   do: "Voir mon résultat",
                   else: "Question suivante"}
                 <.icon name="arrow" />

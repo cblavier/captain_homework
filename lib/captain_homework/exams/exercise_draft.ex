@@ -17,6 +17,12 @@ defmodule CaptainHomework.Exams.ExerciseDraft do
       not is_binary(payload["prompt"]) or String.trim(payload["prompt"]) == "" ->
         failure(:invalid_draft, "La consigne du brouillon est vide ou invalide.")
 
+      CaptainHomework.Exams.TypeContract.fixed_prompt(spec.question) not in [
+        nil,
+        payload["prompt"]
+      ] ->
+        failure(:invalid_draft, "La consigne fixe ne peut pas être réécrite.")
+
       true ->
         {:ok, %__MODULE__{spec_id: spec.id, spec_hash: spec.hash, prompt: payload["prompt"]}}
     end

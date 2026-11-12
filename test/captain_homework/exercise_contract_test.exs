@@ -56,7 +56,7 @@ defmodule CaptainHomework.ExerciseContractTest do
     assert question["prompt"] == draft.prompt
     assert question["exercise_spec_hash"] == spec.hash
     assert question["exercise_spec_id"] == "q1"
-    assert question["exercise_spec_version"] == 1
+    assert question["exercise_spec_version"] == 2
     assert question["structural_validation"] == "valid"
     assert question["pedagogical_audit"] == "pending"
     assert exercise.structural_validation == :valid

@@ -4,21 +4,25 @@ defmodule CaptainHomeworkWeb.GenerationComponents do
   alias Phoenix.LiveView.JS
   import CaptainHomeworkWeb.CoreComponents, only: [icon: 1]
 
+  attr :question_id, :string, default: nil
+  attr :cancel_job_id, :string, default: nil
   attr :questions, :any, required: true
   attr :id, :string, default: "generation-questions"
+  attr :number_class, :string, default: "generation-question-number"
 
   def generation_questions(assigns) do
     ~H"""
     <div id={@id} phx-update="stream" class="generation-questions">
       <details
         :for={{dom_id, question} <- @questions}
+        :if={is_nil(@question_id) or question["question_id"] == @question_id}
         id={dom_id}
         class="generation-question"
         data-status={question["status"]}
         phx-mounted={JS.ignore_attributes("open")}
       >
         <summary>
-          <span class="generation-question-number">{question["position"]}</span>
+          <span class={@number_class}>{question["position"]}</span>
           <span class="generation-question-copy">
             <strong>{question["title"]}</strong>
             <span class="generation-question-reason">{reason(question)}</span>
@@ -36,14 +40,19 @@ defmodule CaptainHomeworkWeb.GenerationComponents do
               name={status_icon(question["status"])}
             />
             {status_label(question)}
+            <button
+              :if={@cancel_job_id}
+              type="button"
+              class="cancel-regeneration"
+              phx-click="cancel_regeneration"
+              phx-value-job={@cancel_job_id}
+            >
+              Annuler
+            </button>
           </span>
           <.icon name="chevron-down" class="generation-question-chevron" />
         </summary>
         <div class="generation-question-detail">
-          <div :if={last_rejection(question)} class="generation-question-diagnostic">
-            <h3>Pourquoi cette question a-t-elle été revue ?</h3>
-            <p>{last_rejection(question)}</p>
-          </div>
           <ol class="generation-events" id={dom_id <> "-events"}>
             <li
               :for={{event, index} <- Enum.with_index(question["events"])}
@@ -79,6 +88,32 @@ defmodule CaptainHomeworkWeb.GenerationComponents do
           </details>
         </div>
       </details>
+    </div>
+    """
+  end
+
+  attr :question_id, :string, default: nil
+  attr :cancel_job_id, :string, default: nil
+  attr :questions, :any, required: true
+
+  def replacement_progress(assigns) do
+    ~H"""
+    <div
+      id={if @question_id, do: "replacement-progress-#{@question_id}", else: "replacement-progress"}
+      class="replacement-progress"
+      aria-live="polite"
+    >
+      <.generation_questions
+        id={
+          if @question_id,
+            do: "replacement-generation-questions-#{@question_id}",
+            else: "replacement-generation-questions"
+        }
+        question_id={@question_id}
+        number_class="question-number"
+        questions={@questions}
+        cancel_job_id={@cancel_job_id}
+      />
     </div>
     """
   end

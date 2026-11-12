@@ -83,7 +83,7 @@ defmodule CaptainHomework.AI.VisibleImages do
       do: :ok,
       else:
         {:error,
-         "Les extraits du contrôle dépassent 24 images ou 24 Mo. Réduis le nombre de questions documentaires."}
+         "Les extraits de l’évaluation dépassent 24 images ou 24 Mo. Réduis le nombre de questions documentaires."}
   end
 
   defp visible_id(id, region, %{snapshot?: true} = page) do

@@ -92,7 +92,7 @@ defmodule CaptainHomework.ExampleStyles do
         {:ok, profile}
       else
         {:error, reason} -> fail(page, AI.message(reason))
-        _ -> fail(page, "Le contrôle d’exemple a changé pendant son analyse. Réessaie.")
+        _ -> fail(page, "Le contrôle de référence a changé pendant son analyse. Réessaie.")
       end
     end
   end
@@ -122,7 +122,7 @@ defmodule CaptainHomework.ExampleStyles do
       do: :ok,
       else:
         {:error,
-         "La structure du contrôle d’exemple est illisible ou invalide. Vérifie la photo puis réessaie."}
+         "La structure du contrôle de référence est illisible ou invalide. Vérifie la photo puis réessaie."}
   end
 
   def validate(_), do: {:error, "Le profil de forme reçu est invalide."}

@@ -41,7 +41,7 @@ defmodule CaptainHomework.QuestionTemplatesTest do
     assert resolved["text"] == "Mot anglais"
     assert resolved["options"] == ["En anglais"]
     assert resolved["answer"] == "En anglais"
-    assert resolved["help"] == "Écris en anglais"
+    refute Map.has_key?(resolved, "help")
     assert resolved["audio_script"]["text"] == "Un extrait en anglais"
   end
 end

@@ -4,6 +4,7 @@ defmodule CaptainHomework.Study.Page do
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
   schema "pages" do
+    belongs_to :reference_exam, CaptainHomework.Study.ReferenceExam
     belongs_to :lesson, CaptainHomework.Study.Lesson
     belongs_to :resource, CaptainHomework.Study.Resource
     field :document_kind, :string, default: "other"

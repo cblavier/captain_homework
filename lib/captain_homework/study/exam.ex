@@ -3,8 +3,11 @@ defmodule CaptainHomework.Study.Exam do
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
   schema "exams" do
+    belongs_to :reference_exam, CaptainHomework.Study.ReferenceExam
     belongs_to :lesson, CaptainHomework.Study.Lesson
     belongs_to :exam_share, CaptainHomework.Study.ExamShare
+    field :regeneration, :map, default: %{}
+    field :regeneration_source_id, :binary_id
     field :shared_visitor_hash, :binary
     field :format, :string, default: "classic"
     field :card_index, :integer, default: 0

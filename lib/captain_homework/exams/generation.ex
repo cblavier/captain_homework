@@ -16,6 +16,7 @@ defmodule CaptainHomework.Exams.Generation do
     RepairProgress
   }
 
+  alias CaptainHomework.Exams.QuestionRegeneration
   alias CaptainHomework.AI.Trace
 
   def identify(q) do
@@ -68,11 +69,11 @@ defmodule CaptainHomework.Exams.Generation do
               exam.generation_plan["instruction_priority_version"] != 1))
 
     if needs_plan? do
-      progress(exam, opts, "Préparation du contrôle…")
+      progress(exam, opts, "Préparation de l’évaluation…")
 
       track_history(
         exam,
-        &GenerationHistory.pending(&1, "writing", "Rédaction des questions en cours")
+        &GenerationHistory.pending(&1, "writing", "Rédaction de la question en cours")
       )
 
       kept = Enum.map(exam.questions, &ensure_plan_id/1)
@@ -150,7 +151,8 @@ defmodule CaptainHomework.Exams.Generation do
           exam.generation_target,
           Instructions.compose(
             CaptainHomework.QuestionTemplates.render(exam.instructions, lesson.subject),
-            definition_instructions(exam, lesson.subject)
+            definition_instructions(exam, lesson.subject),
+            type_context(exam, lesson.subject)
           ),
           kept,
           exam.question_types
@@ -204,8 +206,18 @@ defmodule CaptainHomework.Exams.Generation do
     end
   end
 
+  defp type_context(exam, subject),
+    do:
+      CaptainHomework.Exams.TypeContract.context(
+        QuestionDefinitions.for_exam(exam),
+        exam.format,
+        subject
+      )
+
   defp definition_instructions(exam, subject),
-    do: exam |> QuestionDefinitions.for_exam() |> QuestionDefinitions.instructions(subject)
+    do:
+      (exam |> QuestionDefinitions.for_exam() |> QuestionDefinitions.instructions(subject)) <>
+        QuestionRegeneration.guidance(exam)
 
   defp request_signature(exam) do
     {Plan.version(), exam.generation_target, exam.question_types, exam.instructions}
@@ -276,7 +288,8 @@ defmodule CaptainHomework.Exams.Generation do
         instructions =
           Instructions.compose(
             CaptainHomework.QuestionTemplates.render(exam.instructions, lesson.subject),
-            definition_instructions(exam, lesson.subject) <> "\n" <> guidance
+            definition_instructions(exam, lesson.subject) <> "\n" <> guidance,
+            type_context(exam, lesson.subject)
           )
 
         if is_nil(exam.generation_plan) do
@@ -357,6 +370,7 @@ defmodule CaptainHomework.Exams.Generation do
             {review_input, refreshed_image_errors, refreshed_diagnostics} =
               validate_refreshed_images(
                 refresh_supports(audit_kept, exam.generation_plan) ++ valid,
+                exam,
                 lesson
               )
 
@@ -369,6 +383,12 @@ defmodule CaptainHomework.Exams.Generation do
             {kept, valid} = Enum.split_with(reviewed, &MapSet.member?(kept_ids, &1["id"]))
             errors = errors ++ effort_errors
             errors = errors ++ refreshed_image_errors
+
+            {valid, contract_errors, contract_diagnostics} =
+              validate_candidates(valid, kept, allowed, exam, lesson, pages)
+
+            errors = errors ++ contract_errors
+            diagnostics = Map.merge(diagnostics, contract_diagnostics)
             {accepted, errors} = accept_unique(valid, kept, errors, allowed)
             accepted = Enum.take(accepted, exam.generation_target - length(kept))
 
@@ -429,35 +449,7 @@ defmodule CaptainHomework.Exams.Generation do
               end)
             end
 
-            definitions = QuestionDefinitions.for_exam(exam)
-
-            accepted =
-              Enum.map(accepted, fn q ->
-                helps =
-                  definitions
-                  |> Enum.filter(&(QuestionDefinitions.engine_format(&1) == q["type"]))
-                  |> Enum.map(fn type ->
-                    if exam.format == "flashcard",
-                      do: type.help_flashcard,
-                      else: type.help_classic
-                  end)
-                  |> Enum.uniq()
-
-                q =
-                  case helps do
-                    [help] ->
-                      Map.put(
-                        q,
-                        "help",
-                        CaptainHomework.QuestionTemplates.render(help, lesson.subject)
-                      )
-
-                    _ ->
-                      q
-                  end
-
-                render_question(q, lesson.subject)
-              end)
+            accepted = Enum.map(accepted, &render_question(&1, lesson.subject))
 
             snapshots = Illustrations.snapshot_questions(accepted, lesson)
             questions = kept ++ Enum.map(snapshots, &identify/1)
@@ -615,11 +607,36 @@ defmodule CaptainHomework.Exams.Generation do
       RepairProgress.stalled?(exam.generation_plan["repair_progress"] || %{})
   end
 
-  defp validate_refreshed_images(questions, lesson) do
+  defp validate_refreshed_images(questions, exam, lesson) do
     Enum.reduce(questions, {[], [], %{}}, fn question, {accepted, errors, diagnostics} ->
-      case Illustrations.validate([question], lesson, allow_snapshots: true) do
-        {[_], []} ->
-          {accepted ++ [question], errors, diagnostics}
+      # Previously accepted, unchanged legacy questions keep their files and content.
+      # New drafts and repaired questions always pass the catalogue contract.
+      legacy_retained? =
+        is_nil(question["type_contract"]) and
+          Enum.any?(
+            exam.questions,
+            &(&1["id"] == question["id"] and
+                comparable_content(&1) == comparable_content(question))
+          )
+
+      typed =
+        if legacy_retained?,
+          do: {:ok, question},
+          else: validate_type(question, exam, lesson.subject)
+
+      validation =
+        with {:ok, bound} <- typed,
+             do: Illustrations.validate([bound], lesson, allow_snapshots: true)
+
+      validation =
+        case validation do
+          {:error, error} -> {[], [error.message]}
+          result -> result
+        end
+
+      case validation do
+        {[bound], []} ->
+          {accepted ++ [bound], errors, diagnostics}
 
         {[], reasons} ->
           {accepted, errors ++ reasons,
@@ -644,7 +661,7 @@ defmodule CaptainHomework.Exams.Generation do
               question,
               Map.take(
                 draft,
-                ~w(objective skill response_effort answer_basis expected_elements source_page_ids support_id exercise_spec_id exercise_spec_hash exercise_spec_version structural_validation pedagogical_audit)
+                ~w(definition_id type_contract objective skill response_effort answer_basis expected_elements source_page_ids support_id exercise_spec_id exercise_spec_hash exercise_spec_version structural_validation pedagogical_audit)
               )
             )
 
@@ -776,7 +793,7 @@ defmodule CaptainHomework.Exams.Generation do
             {:ok, [], [], %{}}
           else
             Trace.with_stage("audit", fn ->
-              provider.audit_response_effort_detailed(targets, context)
+              audit_with_surroundings(provider, targets, context, exam)
             end)
           end
 
@@ -811,6 +828,43 @@ defmodule CaptainHomework.Exams.Generation do
       end
     else
       {questions, [], %{}, %{}}
+    end
+  end
+
+  defp audit_with_surroundings(provider, targets, context, exam) do
+    surrounding = QuestionRegeneration.surrounding(exam)
+
+    context =
+      if surrounding == [] do
+        context
+      else
+        Map.merge(context, %{
+          exposure_only_questions: context.exposure_only_questions ++ surrounding,
+          images:
+            Enum.uniq_by(
+              context.images ++ QuestionRegeneration.images(exam, surrounding),
+              & &1.id
+            ),
+          replacement: true
+        })
+      end
+
+    case provider.audit_response_effort_detailed(targets, context) do
+      {:ok, accepted, errors, diagnostics} when surrounding != [] ->
+        ids = MapSet.new(surrounding, & &1["plan_id"])
+
+        if Enum.any?(Map.keys(diagnostics), &MapSet.member?(ids, &1)) do
+          reason =
+            "La nouvelle question dévoile une réponse d’une question conservée. Choisis un autre contenu."
+
+          {:ok, [], errors ++ [reason],
+           Map.new(targets, &{&1["plan_id"], %{"kind" => "content", "reason" => reason}})}
+        else
+          {:ok, Enum.reject(accepted, &MapSet.member?(ids, &1["plan_id"])), errors, diagnostics}
+        end
+
+      result ->
+        result
     end
   end
 
@@ -973,9 +1027,36 @@ defmodule CaptainHomework.Exams.Generation do
       else: persist(exam, generation_history: updated.generation_history)
   end
 
+  defp validate_type(question, exam, subject) do
+    with {:ok, bound} <-
+           CaptainHomework.Exams.TypeContract.validate(question, type_context(exam, subject)) do
+      slot =
+        Enum.find(
+          (exam.generation_plan || %{})["questions"] || [],
+          &(&1["id"] == question["plan_id"])
+        )
+
+      if slot && slot["definition_id"] && slot["definition_id"] != bound["definition_id"],
+        do:
+          {:error,
+           BuildError.new(
+             :invalid_type_contract,
+             :validation,
+             "Une réparation ne peut pas changer le type choisi pour une question."
+           )},
+        else: {:ok, bound}
+    end
+  end
+
   defp validate_candidates(candidates, kept, allowed, exam, lesson, pages) do
     Enum.reduce(candidates, {[], [], %{}}, fn q, {accepted, errors, diagnostics} ->
-      reasons = AI.question_errors(q)
+      {q, type_errors} =
+        case validate_type(q, exam, lesson.subject) do
+          {:ok, bound} -> {bound, []}
+          {:error, error} -> {q, [error.message]}
+        end
+
+      reasons = type_errors ++ AI.question_errors(q)
       valid = if reasons == [], do: [q], else: []
 
       {valid, flashcard_errors} =
@@ -988,7 +1069,7 @@ defmodule CaptainHomework.Exams.Generation do
       {valid, reasons} =
         accept_unique(
           valid,
-          kept ++ accepted,
+          kept ++ accepted ++ QuestionRegeneration.surrounding(exam),
           reasons ++ flashcard_errors ++ image_errors,
           allowed
         )
@@ -1025,7 +1106,10 @@ defmodule CaptainHomework.Exams.Generation do
     ids = Enum.map(questions, & &1["id"])
 
     diagnostics =
-      Plan.diagnostics(raw, ids, exam.question_types, pages, Illustrations.sources(lesson))
+      if is_map(raw) and is_map(raw["specification_diagnostics"]),
+        do: raw["specification_diagnostics"],
+        else:
+          Plan.diagnostics(raw, ids, exam.question_types, pages, Illustrations.sources(lesson))
 
     track_history(exam, fn current ->
       current
@@ -1096,7 +1180,7 @@ defmodule CaptainHomework.Exams.Generation do
         "draft" -> "Rédaction de #{questions}…"
         "repair" -> "Ajustement de #{questions}…"
         "audit" -> "Vérification des questions modifiées et de leurs documents…"
-        _ -> "Préparation du contrôle…"
+        _ -> "Préparation de l’évaluation…"
       end
 
     progress(exam, opts, message)
@@ -1117,11 +1201,14 @@ defmodule CaptainHomework.Exams.Generation do
   end
 
   defp notify(exam) do
+    if exam.regeneration_source_id, do: QuestionRegeneration.notify(exam.regeneration_source_id)
     Phoenix.PubSub.broadcast(CaptainHomework.PubSub, "exam:#{exam.id}", :exam_updated)
     Phoenix.PubSub.broadcast(CaptainHomework.PubSub, "lesson:#{exam.lesson_id}", :lesson_updated)
   end
 
   defp notify_finished(exam) do
+    QuestionRegeneration.finished(exam)
+
     Phoenix.PubSub.broadcast(
       CaptainHomework.PubSub,
       "exam_generation",

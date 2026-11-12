@@ -1,4 +1,5 @@
 ARG ELIXIR_IMAGE=elixir:1.19.4-otp-28-slim
+FROM node:22-bookworm-slim AS audio_node
 FROM ${ELIXIR_IMAGE} AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential git ca-certificates \
@@ -21,8 +22,13 @@ RUN mix release
 
 # Same base guarantees compatibility with the Erlang runtime in the release.
 FROM ${ELIXIR_IMAGE} AS runner
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates tzdata curl poppler-utils imagemagick \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates tzdata curl poppler-utils imagemagick ffmpeg python3-venv \
     && rm -rf /var/lib/apt/lists/*
+COPY --from=audio_node /usr/local/bin/node /usr/local/bin/node
+ARG YT_DLP_VERSION=2026.10.26
+RUN python3 -m venv /opt/media-tools \
+    && /opt/media-tools/bin/pip install --no-cache-dir "yt-dlp[default]==${YT_DLP_VERSION}"
+ENV PATH="/opt/media-tools/bin:${PATH}"
 WORKDIR /app
 COPY --from=builder --chown=nobody:nogroup /app/_build/prod/rel/captain_homework ./
 RUN mkdir -p /app/data && chown nobody:nogroup /app/data && chmod 700 /app/data

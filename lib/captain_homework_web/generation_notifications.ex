@@ -40,7 +40,7 @@ defmodule CaptainHomeworkWeb.GenerationNotifications do
       success? = exam.status == "in_progress"
 
       put_flash(socket, if(success?, do: :info, else: :error), %{
-        "title" => if(success?, do: "Contrôle prêt", else: "Création du contrôle échouée"),
+        "title" => if(success?, do: "Évaluation prête", else: "Création de l’évaluation échouée"),
         "message" => "#{profile.name} · #{lesson.title}",
         "href" => ProfilePath.child_path(profile, "/controles/#{exam.id}")
       })

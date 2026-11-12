@@ -4,7 +4,9 @@ defmodule CaptainHomeworkWeb.CorrectionSourcesLiveTest do
   import CaptainHomework.Fixtures
   alias CaptainHomework.{Repo, Study}
 
-  test "lesson sources open original pages only after the control is corrected", %{conn: conn} do
+  test "corrected lesson sources open and close in place, rejecting unrelated pages", %{
+    conn: conn
+  } do
     p = profile()
     l = lesson(p)
     first = page(l)
@@ -29,13 +31,27 @@ defmodule CaptainHomeworkWeb.CorrectionSourcesLiveTest do
     assert has_element?(
              corrected,
              "#open-source-q1-#{pg.id}[phx-click='open_source'][aria-haspopup='dialog']",
-             "Leçon : La cellule"
+             "Chapitre : La cellule"
            )
 
     assert has_element?(corrected, "#question-q1 .expected + .correction-sources")
     assert has_element?(corrected, "#question-q1 .correction-correct", "4 / 4")
     assert has_element?(corrected, "#question-sources-q1 .source-page-number", "(page 2)")
     assert length(CaptainHomework.Exams.Sources.for_exam(e, p.id)["q1"]) == 1
+
+    corrected |> element("#open-source-q1-#{pg.id}") |> render_click()
+
+    assert has_element?(
+             corrected,
+             "#source-modal[role=dialog] #source-content img[src='/alice/pages/#{pg.id}']"
+           )
+
+    corrected |> element("#source-modal button[aria-label='Fermer']") |> render_click()
+    refute has_element?(corrected, "#source-modal")
+    assert has_element?(corrected, "#open-source-q1-#{pg.id}")
+
+    render_click(corrected, "open_source", %{"id" => first.id})
+    refute has_element?(corrected, "#source-modal")
 
     Repo.delete!(first)
     assert [%{page_number: 1}] = CaptainHomework.Exams.Sources.for_exam(e, p.id)["q1"]

@@ -42,7 +42,7 @@ defmodule CaptainHomeworkWeb.Layouts do
               navigate={message["href"]}
               phx-click={JS.push("lv:clear-flash", value: %{key: kind})}
             >
-              Voir le contrôle
+              Voir l’évaluation
             </.link>
           <% else %>
             <p>{message}</p>

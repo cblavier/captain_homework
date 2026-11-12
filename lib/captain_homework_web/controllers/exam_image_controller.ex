@@ -9,7 +9,17 @@ defmodule CaptainHomeworkWeb.ExamImageController do
         else: conn.assigns.profile
 
     if profile do
-      exam = Study.get_exam!(profile.id, exam_id)
+      exam =
+        try do
+          Study.get_exam!(profile.id, exam_id)
+        rescue
+          Ecto.NoResultsError ->
+            if CaptainHomework.Accounts.parent?(conn.assigns.account) do
+              CaptainHomework.ExamShares.get_owner_correction!(profile.id, exam_id)
+            else
+              raise Ecto.NoResultsError, queryable: CaptainHomework.Study.Exam
+            end
+        end
 
       asset =
         exam.questions
