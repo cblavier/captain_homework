@@ -284,7 +284,7 @@
       >
         <fieldset aria-describedby="subjects-settings-help">
           <legend>Matières de {@profile.name}</legend>
-          <p id="subjects-settings-help" class="muted">
+          <p id="subjects-settings-help" class="muted page-help">
             Choisis les matières à afficher. Les chapitres et les évaluations des matières décochées sont conservées.
           </p>
           <input type="hidden" name="subjects[enabled_ids][]" value="" />
@@ -329,35 +329,102 @@
             <.icon name="hero-cog-6-tooth" />
           </.link>
         </div>
-        <div :if={@subjects == []} id="no-enabled-subjects" class="empty-state">
-          <p>Aucune matière activée.</p>
-          <.link
-            navigate={child_path(@profile, ~p"/parametres")}
-            class="button secondary"
-          >
-            Choisir les matières
-          </.link>
-        </div>
-        <div class="subject-grid">
-          <.link
-            :for={s <- @subjects}
-            navigate={child_path(@profile, ~p"/matieres/#{s.id}")}
-            class={["subject-card", s.color]}
-            id={"subject-#{s.id}"}
-          >
-            <div class="icon-tile"><.icon name={s.icon} /></div>
-            <div class="subject-copy">
-              <h2>{s.name}</h2>
-              <span>
-                {count_label(Map.get(@counts, s.id, 0), "chapitre", "chapitres")} · {count_label(
-                  Map.get(@exam_counts, s.id, 0),
-                  "évaluation",
-                  "évaluations"
-                )}
-              </span>
+        <div id="home-dashboard" class="home-dashboard" data-panel={@home_panel}>
+          <nav id="home-subnav" aria-label="Affichage de l’accueil">
+            <button
+              :for={{panel, label} <- [{"subjects", "Matières"}, {"exams", "Évaluations"}]}
+              id={"home-panel-#{panel}"}
+              type="button"
+              phx-click="home_panel"
+              phx-value-panel={panel}
+              aria-pressed={to_string(@home_panel == panel)}
+              aria-controls={"home-#{panel}"}
+            >
+              {label}
+            </button>
+          </nav>
+          <section id="home-subjects" aria-labelledby="home-subjects-title">
+            <h2 id="home-subjects-title" class="home-section-title">Les matières</h2>
+            <div :if={@subjects == []} id="no-enabled-subjects" class="empty-state">
+              <p>Aucune matière activée.</p>
+              <.link
+                navigate={child_path(@profile, ~p"/parametres")}
+                class="button secondary"
+              >
+                Choisir les matières
+              </.link>
             </div>
-            <.icon name="arrow" class="card-arrow" />
-          </.link>
+            <div id="home-subject-grid" class="subject-grid">
+              <.link
+                :for={s <- @subjects}
+                navigate={child_path(@profile, ~p"/matieres/#{s.id}")}
+                class={["subject-card", s.color]}
+                id={"subject-#{s.id}"}
+              >
+                <div class="subject-card-heading">
+                  <div class="icon-tile"><.icon name={s.icon} /></div>
+                  <h2>{s.name}</h2>
+                </div>
+                <div class="subject-copy">
+                  <span>{count_label(Map.get(@counts, s.id, 0), "chapitre", "chapitres")}</span>
+                  <span id={"subject-#{s.id}-exam-summary"}>
+                    {subject_exam_summary(
+                      Map.get(@exam_counts, s.id, %{corrected: 0, unsubmitted: 0})
+                    )}
+                  </span>
+                </div>
+              </.link>
+            </div>
+          </section>
+          <section id="home-exams" aria-labelledby="home-exams-title">
+            <h2 id="home-exams-title" class="home-section-title">Dernières évaluations</h2>
+            <p :if={@home_exam_count == 0} id="home-exams-empty" class="empty-state compact">
+              Aucune évaluation pour le moment.
+            </p>
+            <div id="home-exam-list" phx-update="stream" class="home-exam-list">
+              <.link
+                :for={{dom_id, exam} <- @streams.home_exams}
+                id={dom_id}
+                navigate={child_path(@profile, ~p"/controles/#{exam.id}")}
+                class="home-exam-card"
+              >
+                <% subject = Study.subject!(exam.lesson.subject) %>
+                <div class="home-exam-subject">
+                  <span class={["icon-tile small", subject.color]}>
+                    <.icon name={subject.icon} />
+                  </span>
+                  <h3>{subject.name}</h3>
+                </div>
+                <p class="home-exam-chapter">{exam.lesson.title}</p>
+                <p class="home-exam-meta">
+                  <time datetime={DateTime.to_iso8601(exam.inserted_at)}>
+                    {date(exam.inserted_at)}
+                  </time>
+                  <span>·</span> {count_label(length(exam.questions), "question", "questions")}
+                </p>
+                <div class="home-exam-footer">
+                  <span class={[
+                    "exam-format-badge",
+                    exam.format == "flashcard" && "flashcard-badge"
+                  ]}>
+                    {if exam.format == "flashcard", do: "Flash cards", else: "Classique"}
+                  </span>
+                  <.exam_status exam={exam} id={"home-exam-status-#{exam.id}"} />
+                </div>
+              </.link>
+            </div>
+            <button
+              :if={@home_exams_more?}
+              id="home-exams-more"
+              type="button"
+              class="button secondary home-exams-more"
+              phx-click="more_home_exams"
+              phx-disable-with="Chargement…"
+              aria-controls="home-exam-list"
+            >
+              Voir plus
+            </button>
+          </section>
         </div>
       </section>
 
@@ -504,6 +571,30 @@
           <div class="section-heading history-heading">
             <h2>Pages du contrôle de référence</h2>
           </div>
+          <.form
+            for={@form}
+            id="upload-examples"
+            phx-change="validate"
+            phx-submit="upload_examples"
+          >
+            <.upload_field
+              upload={@uploads.examples}
+              name="examples"
+              label="Ajouter des pages"
+            />
+            <p class="muted upload-help page-help">
+              Ces pages guident la forme et la répartition des questions, sans utiliser leur contenu pédagogique.
+            </p>
+            <div :if={@uploads.examples.entries != []} class="form-actions">
+              <button
+                id="save-examples"
+                class="button primary"
+                disabled={Enum.any?(@uploads.examples.entries, &(!&1.done?))}
+              >
+                Enregistrer les pages
+              </button>
+            </div>
+          </.form>
           <div class="pages-grid">
             <article
               :for={
@@ -574,30 +665,6 @@
               />
             </article>
           </div>
-          <.form
-            for={@form}
-            id="upload-examples"
-            phx-change="validate"
-            phx-submit="upload_examples"
-          >
-            <.upload_field
-              upload={@uploads.examples}
-              name="examples"
-              label="Ajouter des pages"
-            />
-            <p class="muted upload-help">
-              Ces pages guident la forme et la répartition des questions, sans utiliser leur contenu pédagogique.
-            </p>
-            <div :if={@uploads.examples.entries != []} class="form-actions">
-              <button
-                id="save-examples"
-                class="button primary"
-                disabled={Enum.any?(@uploads.examples.entries, &(!&1.done?))}
-              >
-                Enregistrer les pages
-              </button>
-            </div>
-          </.form>
         </section>
         <button
           id="delete-reference"
@@ -630,7 +697,7 @@
               {tab, label, icon, count} <- [
                 {"controles", "Évaluations", "paper", length(@lesson.exams)},
                 {"cours", "Leçons", "book", Enum.count(@lesson.pages, &(&1.kind == "lesson"))},
-                {"ressources", "Ressources", "book", length(@lesson.resources)}
+                {"ressources", "Ressources", "book", length(Pages.originals(@lesson, "resource"))}
               ]
             }
             id={"lesson-tab-#{tab}"}
@@ -687,93 +754,27 @@
                   <span>·</span> {count_label(length(exam.questions), "question", "questions")}
                 </p>
               </div>
-              <span
-                :if={exam.status == "completed"}
-                class={["score-badge", score_class(Exams.round_score(exam.score))]}
-              >
-                {number(Exams.round_score(exam.score))}<small>/20</small>
-              </span>
-              <span :if={exam.status != "completed"} class="status-badge">
-                {case exam.status do
-                  "grading" -> "Correction…"
-                  "generating" -> "Préparation…"
-                  "generation_partial" -> "À compléter"
-                  _ -> "Reprendre"
-                end}
-              </span>
+              <.exam_status exam={exam} id={"exam-status-#{exam.id}"} />
               <.icon name="arrow" />
             </.link>
           </div>
         </div>
-        <div :if={@lesson_tab == "cours"} id="lesson-course">
-          <p id="lesson-course-help" class="muted resource-intro">
-            Prends des photos de ton cahier de cours.
+        <div
+          :if={@lesson_tab in ["cours", "ressources"] && !@detail_page}
+          id={if @lesson_tab == "cours", do: "lesson-course", else: "lesson-resources"}
+        >
+          <p class="muted resource-intro" id="lesson-course-help">
+            {if @lesson_tab == "cours",
+              do: "Prends des photos de ton cahier de cours ou importe un PDF.",
+              else: "Ajoute des documents ou des liens pour enrichir les évaluations."}
           </p>
-          <div :if={Enum.all?(@lesson.pages, &(&1.kind != "lesson"))} class="empty-state compact">
-            <.icon name="paper" />
-            <p>Aucune page</p>
-          </div>
-          <div class="pages-grid">
-            <article
-              :for={
-                {page, index} <-
-                  @lesson.pages |> Enum.filter(&(&1.kind == "lesson")) |> Enum.with_index(1)
-              }
-              id={"lesson-page-#{page.id}"}
-              class="page-card"
-            >
-              <div class="page-thumbnail">
-                <button
-                  type="button"
-                  class="page-preview"
-                  phx-click="edit_page"
-                  phx-value-id={page.id}
-                  aria-label={"Vérifier la page #{index}"}
-                >
-                  <img
-                    src={child_path(@profile, ~p"/pages/#{page.id}")}
-                    alt={"Page #{index} du chapitre"}
-                  />
-                </button>
-                <.page_order_actions
-                  prefix="page"
-                  page_id={page.id}
-                  index={index}
-                  count={Enum.count(@lesson.pages, &(&1.kind == "lesson"))}
-                  label={"la page #{index}"}
-                />
-              </div>
-              <div class="page-caption">
-                <div>
-                  <strong>
-                    Page {index}
-                  </strong>
-
-                  <span
-                    :if={page.status != "pending" and page.processing_stage == nil}
-                    class={if page.status == "error", do: "warning-text", else: "muted"}
-                  >
-                    {page_status(page)}
-                  </span>
-                </div>
-                <button
-                  class="icon-button"
-                  phx-click="delete_page"
-                  phx-value-id={page.id}
-                  data-confirm="Supprimer cette page ?"
-                  aria-label={"Supprimer la page #{index}"}
-                >
-                  <.icon name="close" />
-                </button>
-              </div>
-              <.processing_progress
-                :if={page.status == "pending" or page.processing_stage != nil}
-                id={"page-progress-#{page.id}"}
-                stage={page.processing_stage || "Lecture OCR"}
-              />
-            </article>
-          </div>
-          <.form for={@form} phx-change="validate" phx-submit="upload_pages" id="upload-pages">
+          <.form
+            :if={@lesson_tab == "cours"}
+            for={@form}
+            phx-change="validate"
+            phx-submit="upload_pages"
+            id="upload-pages"
+          >
             <.upload_field upload={@uploads.pages} name="pages" label="Ajouter des pages" />
             <p :if={@error} class="error" role="alert">{@error}</p>
             <div :if={@uploads.pages.entries != []} class="form-actions">
@@ -782,246 +783,7 @@
               </button>
             </div>
           </.form>
-        </div>
-        <div :if={@lesson_tab == "ressources"} id="lesson-resources">
-          <p class="muted resource-intro">
-            Ajoute des documents ou des liens pour enrichir les évaluations.
-          </p>
-          <div :if={@lesson.resources == []} class="empty-state compact">
-            <p>Aucune ressource pour ce chapitre.</p>
-          </div>
-          <div id="resource-list" class="resource-list" phx-update="stream">
-            <article
-              :for={{dom_id, resource} <- @streams.resources}
-              id={dom_id}
-              class="panel resource-card"
-            >
-              <div class="section-heading">
-                <div>
-                  <h2>
-                    {if resource.status == "processing" or resource.processing_stage != nil,
-                      do: "Import en cours",
-                      else: resource_title(resource)}
-                  </h2>
-                  <p
-                    :if={
-                      resource.status not in ["ready", "processing"] and
-                        resource.processing_stage == nil
-                    }
-                    class="muted"
-                    role="status"
-                  >
-                    {resource_status(resource)}
-                  </p>
-                </div>
-                <div class="form-actions">
-                  <button
-                    id={"rename-resource-#{resource.id}"}
-                    type="button"
-                    class="icon-button"
-                    phx-click="rename_resource"
-                    phx-value-id={resource.id}
-                    title="Renommer"
-                    aria-label={"Renommer #{resource_title(resource)}"}
-                  >
-                    <.icon name="pencil" />
-                  </button>
-                  <.link
-                    :if={resource.source_url}
-                    id={"open-resource-source-#{resource.id}"}
-                    href={resource.source_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="icon-button"
-                    aria-label="Ouvrir la source dans un nouvel onglet"
-                    title="Ouvrir la source dans un nouvel onglet"
-                  >
-                    <.icon name="external-link" />
-                  </.link>
-                  <.link
-                    :if={
-                      is_nil(resource.source_url) && resource.storage_key &&
-                        not CaptainHomework.Resources.Audio.media?(resource)
-                    }
-                    id={"download-resource-#{resource.id}"}
-                    href={child_path(@profile, "/ressources/#{resource.id}")}
-                    class="icon-button"
-                    download={resource.filename}
-                    aria-label={
-                      if resource.content_type == "text/plain",
-                        do: "Télécharger la transcription",
-                        else: "Télécharger le document original"
-                    }
-                    title={
-                      if resource.content_type == "text/plain",
-                        do: "Télécharger la transcription",
-                        else: "Télécharger le document original"
-                    }
-                  >
-                    <.icon name="download" />
-                  </.link>
-                  <button
-                    id={"delete-resource-#{resource.id}"}
-                    class="icon-button"
-                    phx-click="delete_resource"
-                    phx-value-id={resource.id}
-                    data-confirm="Supprimer cette ressource et ses pages importées ? Les illustrations des évaluations déjà créées sont conservées."
-                    aria-label={"Supprimer #{resource_title(resource)}"}
-                  >
-                    <.icon name="close" />
-                  </button>
-                </div>
-              </div>
-              <.processing_progress
-                :if={resource.status == "processing" or resource.processing_stage != nil}
-                id={"resource-progress-#{resource.id}"}
-                stage={resource.processing_stage || "Préparation de l’import"}
-                hint="Tu peux quitter la page, l’import continue."
-              />
-              <p :if={resource.error} class="error" role="alert">{resource.error}</p>
-              <button
-                :if={resource.status == "error"}
-                id={"retry-resource-#{resource.id}"}
-                class="button secondary"
-                phx-click="retry_resource"
-                phx-value-id={resource.id}
-              >
-                Réessayer l’import
-              </button>
-              <details
-                :if={resource_pages(@lesson, resource.id) != []}
-                id={"resource-text-#{resource.id}"}
-                class="resource-content"
-                phx-mounted={JS.ignore_attributes("open")}
-              >
-                <summary>
-                  <%= if resource.content_type == "text/plain" do %>
-                    Transcription audio
-                  <% else %>
-                    Texte reconnu · {count_label(
-                      length(resource_pages(@lesson, resource.id)),
-                      "page",
-                      "pages"
-                    )}
-                  <% end %>
-                </summary>
-                <div
-                  :for={{page, index} <- Enum.with_index(resource_pages(@lesson, resource.id), 1)}
-                  class="resource-page"
-                >
-                  <div class="section-heading">
-                    <strong>
-                      {if resource.content_type == "text/plain",
-                        do: "Transcription",
-                        else: "Page #{index}"}
-                    </strong>
-                    <button
-                      :if={String.starts_with?(page.content_type, "image/")}
-                      id={"delete-resource-page-#{page.id}"}
-                      class="button text-button danger"
-                      phx-click="delete_resource_image"
-                      phx-value-id={page.id}
-                      disabled={resource.status != "ready" or resource.processing_stage != nil}
-                      data-confirm="Supprimer cette page importée et son texte reconnu ? Les devoirs déjà créés sont conservés."
-                    >
-                      Supprimer la page
-                    </button>
-                    <button
-                      class="button text-button"
-                      phx-click="edit_page"
-                      phx-value-id={page.id}
-                    >
-                      Vérifier le texte
-                    </button>
-                  </div>
-                  <p class="resource-text">{page.text}</p>
-                </div>
-              </details>
-              <div class="resource-card-bottom">
-                <details
-                  :if={
-                    (resource.status == "ready" and resource.content_type != "text/plain") or
-                      resource_images(@lesson, resource.id) != []
-                  }
-                  id={"resource-photos-#{resource.id}"}
-                  class="resource-content"
-                  phx-mounted={JS.ignore_attributes("open")}
-                >
-                  <summary>
-                    {length(resource_images(@lesson, resource.id))} illustrations conservées
-                  </summary>
-                  <p :if={resource_images(@lesson, resource.id) == []} class="muted">
-                    Aucune image conservée.
-                  </p>
-                  <div class="pages-grid">
-                    <article
-                      :for={
-                        {page, index} <- Enum.with_index(resource_images(@lesson, resource.id), 1)
-                      }
-                      id={"resource-image-#{page.id}"}
-                      class="page-card"
-                    >
-                      <div class="page-thumbnail">
-                        <button
-                          type="button"
-                          id={"open-resource-image-#{page.id}"}
-                          class="page-preview"
-                          phx-click="open_resource_image"
-                          phx-value-id={page.id}
-                          aria-label={"Extraire des illustrations de l’illustration #{index}"}
-                          disabled={
-                            resource.status != "ready" or resource.processing_stage != nil
-                          }
-                        >
-                          <img
-                            src={child_path(@profile, ~p"/pages/#{page.id}")}
-                            alt={"Illustration #{index}"}
-                            loading="lazy"
-                          />
-                        </button>
-                        <.page_order_actions
-                          prefix="resource-image"
-                          page_id={page.id}
-                          index={index}
-                          count={length(resource_images(@lesson, resource.id))}
-                          label={"l’illustration #{index}"}
-                          disabled={
-                            resource.status != "ready" or resource.processing_stage != nil
-                          }
-                        />
-                      </div>
-                      <div class="page-caption">
-                        <div>
-                          <strong title={page.filename}>Illustration {index}</strong>
-                          <span class="muted">
-                            {if page.text != "", do: "Texte reconnu", else: "Prête"}
-                          </span>
-                        </div>
-                        <button
-                          id={"delete-resource-image-#{page.id}"}
-                          class="icon-button"
-                          phx-click="delete_resource_image"
-                          phx-value-id={page.id}
-                          disabled={
-                            resource.status != "ready" or resource.processing_stage != nil
-                          }
-                          data-confirm="Supprimer cette image et son éventuelle copie avec texte reconnu ? Les devoirs déjà créés sont conservés."
-                          aria-label={"Supprimer l’illustration #{index}"}
-                        >
-                          <.icon name="close" />
-                        </button>
-                      </div>
-                    </article>
-                  </div>
-                  <p :if={resource.content_type == "application/pdf"} class="muted">
-                    Supprimer une illustration extraite ne la retire pas de la page PDF. Pour exclure
-                    une page entière, supprime-la dans « Texte reconnu ».
-                  </p>
-                </details>
-              </div>
-            </article>
-          </div>
-          <div class="resource-imports">
+          <div :if={@lesson_tab == "ressources"} class="resource-imports">
             <.form
               for={@form}
               id="upload-resources"
@@ -1034,7 +796,7 @@
                 label="Ajouter des documents"
               />
               <div class="resource-upload-footer">
-                <p class="muted">
+                <p class="muted resource-upload-formats">
                   PDF, JPEG, PNG, WebP, MP3 ou MP4.
                 </p>
                 <button
@@ -1060,8 +822,197 @@
               </div>
             </.form>
           </div>
+          <LearningPageComponents.gallery
+            stream={@streams.learning_pages}
+            profile={@profile}
+            lesson={@lesson}
+            tab={@lesson_tab}
+            count={@gallery_count}
+          />
+          <section
+            :if={@lesson_tab == "ressources" && @unresolved_count > 0}
+            id="unresolved-pages"
+            class="learning-page-illustrations"
+          >
+            <div class="section-heading">
+              <h3>Illustrations à rattacher</h3>
+            </div>
+            <p class="muted resource-intro">
+              La page d’origine de ces anciennes illustrations n’est plus disponible. Rattache-les à une page du chapitre pour les utiliser dans les prochaines évaluations.
+            </p>
+            <LearningPageComponents.illustrations
+              id="unresolved-illustrations"
+              stream={@streams.unresolved_illustrations}
+              profile={@profile}
+              count={@unresolved_count}
+              unresolved
+            />
+          </section>
+          <div id="resource-list" class="resource-list" phx-update="stream">
+            <article
+              :for={{dom_id, resource} <- @streams.resources}
+              id={dom_id}
+              class="panel resource-card"
+            >
+              <div class="section-heading">
+                <h2>{resource_title(resource)}</h2>
+                <button
+                  id={"delete-resource-#{resource.id}"}
+                  class="icon-button"
+                  phx-click="delete_resource"
+                  phx-value-id={resource.id}
+                  disabled={resource.status == "processing"}
+                  data-confirm="Supprimer cet import et ses pages ?"
+                  aria-label="Supprimer cet import"
+                >
+                  <.icon name="close" />
+                </button>
+              </div>
+              <.processing_progress
+                :if={resource.status == "processing"}
+                id={"resource-progress-#{resource.id}"}
+                stage={resource.processing_stage || "Import en cours"}
+                hint="Tu peux quitter la page, l’import continue."
+              />
+              <p :if={resource.error} class="error" role="alert">{resource.error}</p>
+              <button
+                :if={resource.status == "error"}
+                id={"retry-resource-#{resource.id}"}
+                class="button secondary"
+                phx-click="retry_resource"
+                phx-value-id={resource.id}
+              >
+                Réessayer l’import
+              </button>
+            </article>
+          </div>
         </div>
-        <div class="page-delete-actions">
+        <section
+          :if={@detail_page && @lesson_tab in ["cours", "ressources"]}
+          id="learning-page-detail"
+        >
+          <.link
+            id="back-to-pages"
+            class="back-link"
+            patch={child_path(@profile, ~p"/lecons/#{@lesson.id}") <> "?onglet=#{@lesson_tab}"}
+          >
+            <.icon name="back" />
+            Retour aux {if @lesson_tab == "cours", do: "leçons", else: "ressources"}
+          </.link>
+          <div class="section-heading learning-page-heading">
+            <h2 id="learning-page-title">{Pages.name(@detail_page)}</h2>
+            <button
+              id={"rename-page-#{@detail_page.id}"}
+              class="icon-button"
+              phx-click="rename_page"
+              phx-value-id={@detail_page.id}
+              aria-label="Renommer la page"
+            >
+              <.icon name="pencil" />
+            </button>
+          </div>
+          <% import_source = Enum.find(@lesson.resources, &(&1.id == @detail_page.resource_id)) %>
+          <div :if={import_source} class="learning-page-source">
+            <.link
+              :if={import_source.source_url}
+              href={import_source.source_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              class="button text-button"
+            >
+              <.icon name="external-link" /> Ouvrir la source
+            </.link>
+            <.link
+              :if={
+                import_source.storage_key &&
+                  import_source.content_type in ["application/pdf", "text/plain"]
+              }
+              href={child_path(@profile, "/ressources/#{import_source.id}")}
+              download={import_source.filename}
+              class="button text-button"
+            >
+              <.icon name="download" />
+              {if import_source.content_type == "text/plain",
+                do: "Télécharger la transcription",
+                else: "Document original · page #{@detail_page.source_page_number}"}
+            </.link>
+          </div>
+          <div class={[
+            "learning-page-editor",
+            !String.starts_with?(@detail_page.content_type, "image/") && "text-only"
+          ]}>
+            <div :if={String.starts_with?(@detail_page.content_type, "image/")}>
+              <h3>Image originale</h3>
+              <button
+                id="preview-original-page"
+                class="page-preview"
+                type="button"
+                phx-click="preview_page"
+                phx-value-id={@detail_page.id}
+                aria-label="Agrandir la page originale"
+              >
+                <img
+                  src={child_path(@profile, ~p"/pages/#{@detail_page.id}")}
+                  alt={Pages.name(@detail_page)}
+                />
+              </button>
+            </div>
+            <section id="page-recognized-content" aria-labelledby="page-recognized-title">
+              <h3 id="page-recognized-title">
+                {if import_source && import_source.content_type == "text/plain",
+                  do: "Transcription audio",
+                  else: "Texte reconnu"}
+              </h3>
+              <div id="page-detail-text" class="page-recognized-text" tabindex="0" phx-no-format>{@detail_page.text}</div>
+              <.processing_progress
+                :if={@detail_page.status == "pending" or @detail_page.processing_stage != nil}
+                id="detail-processing-progress"
+                stage={@detail_page.processing_stage || "Lecture OCR"}
+              />
+              <p :if={@detail_page.error} class="error">{@detail_page.error}</p>
+            </section>
+          </div>
+          <section
+            :if={
+              String.starts_with?(@detail_page.content_type, "image/") or
+                (import_source && import_source.content_type == "text/html")
+            }
+            class="learning-page-illustrations"
+          >
+            <div class="section-heading">
+              <h3>Illustrations extraites</h3>
+            </div>
+            <LearningPageComponents.illustrations
+              stream={@streams.page_illustrations}
+              profile={@profile}
+              count={@illustration_count}
+            />
+            <button
+              :if={String.starts_with?(@detail_page.content_type, "image/")}
+              id="extract-page-illustrations"
+              type="button"
+              class="illustration-extraction-placeholder"
+              phx-click="extract_page"
+              phx-value-id={@detail_page.id}
+              disabled={!Pages.available?(@detail_page)}
+            >
+              <.icon name="plus" />
+              <span>Extraire des illustrations</span>
+            </button>
+          </section>
+          <div class="page-delete-actions">
+            <button
+              id={"delete-page-#{@detail_page.id}"}
+              class="button text-button danger"
+              phx-click="delete_page"
+              phx-value-id={@detail_page.id}
+              data-confirm="Supprimer cette page, son texte et ses illustrations ? Les évaluations déjà créées sont conservées."
+            >
+              <.icon name="close" /> Supprimer la page
+            </button>
+          </div>
+        </section>
+        <div :if={!@detail_page} class="page-delete-actions">
           <span
             id="delete-lesson-tooltip"
             class="popover-anchor delete-lesson-tooltip"
@@ -1113,7 +1064,11 @@
           class="panel setup-panel"
         >
           <fieldset disabled={@busy} class="exam-setup-fields">
-            <fieldset id="exam-format" class="exam-format-choice">
+            <fieldset
+              id="exam-format"
+              class="exam-format-choice"
+              aria-describedby={"#{@exam_format}-help"}
+            >
               <legend class="form-field-label">Format de l’évaluation</legend>
               <div class="exam-format-options">
                 <label for="exam-format-classic">
@@ -1135,12 +1090,12 @@
                   /> Flash cards
                 </label>
               </div>
-              <p :if={@exam_format == "flashcard"} id="flashcard-help" class="muted">
+              <.field_hint :if={@exam_format == "flashcard"} id="flashcard-help">
                 Des cartes rapides pour réviser ton chapitre.
-              </p>
-              <p :if={@exam_format == "classic"} id="classic-help" class="muted">
+              </.field_hint>
+              <.field_hint :if={@exam_format == "classic"} id="classic-help">
                 Une évaluation comme en classe.
-              </p>
+              </.field_hint>
             </fieldset>
             <.count_stepper
               id="question-count"
@@ -1163,10 +1118,8 @@
                 label="Contrôle de référence"
                 value={@reference_exam_id}
                 options={[{"Aucun", ""} | @reference_options]}
+                hint="Reprendre sa structure pour cette évaluation."
               />
-              <p class="muted">
-                Reprendre sa structure pour cette évaluation.
-              </p>
             </div>
             <div class="exam-instructions">
               <label class="form-field-label" for="instructions">
@@ -1182,7 +1135,8 @@
                 spellcheck="true"
                 writingsuggestions="true"
                 inputmode="text"
-                aria-describedby="instructions-help"
+                hint="Tes consignes sont prioritaires."
+                hint_id="instructions-help"
                 name="instructions"
                 rows="4"
                 maxlength="8000"
@@ -1190,7 +1144,6 @@
                 phx-debounce="blur"
                 value={@instructions}
               />
-              <p id="instructions-help" class="muted">Tes consignes sont prioritaires.</p>
             </div>
             <div class="form-actions">
               <.link
@@ -1404,7 +1357,7 @@
                 }
                 class="shared-question-support"
               >
-                <h2 :if={length(group.questions) > 1}>
+                <h2 id={"shared-support-title-#{group.support["id"]}"}>
                   Document commun aux questions {Enum.map_join(
                     group.questions,
                     ", ",
@@ -1413,8 +1366,19 @@
                     end
                   )}
                 </h2>
-                <.question_images question={group.support} exam={@exam} profile={@profile} />
-                <div :if={group.support["text"] != ""} class="reading-text" phx-no-format>{readable_text(group.support["text"])}</div>
+                <div
+                  class="shared-question-support-content"
+                  role="region"
+                  aria-labelledby={"shared-support-title-#{group.support["id"]}"}
+                  tabindex="0"
+                >
+                  <.question_images question={group.support} exam={@exam} profile={@profile} />
+                  <div
+                    :if={group.support["text"] not in [nil, ""]}
+                    class="reading-text"
+                    phx-no-format
+                  >{readable_text(group.support["text"])}</div>
+                </div>
               </header>
               <article
                 :for={{q, index} <- group.questions}
@@ -1539,14 +1503,31 @@
                         :if={q["type"] != "pronunciation"}
                         class="answer-language-row"
                         phx-no-format
-                      ><span :if={row.field != ""}>{row.field <> " : "}</span><%= for segment <- row.segments do %><%= if segment.error do %><button type="button" class="language-error" phx-click="explain_language" phx-value-question={q["id"]} phx-value-index={segment.index} aria-label={"Expliquer la correction : #{segment.text} → #{segment.error["replacement"]}"}><del>{segment.text}</del><span class="language-replacement">{" " <> segment.error["replacement"]}</span></button><% else %>{segment.text}<% end %><% end %></div>
+                      ><span :if={row.field != ""}>{row.field <> " : "}</span><%= for segment <- row.segments do %><%= if segment.error do %><button type="button" id={"language-error-#{q["id"]}-#{row.field}-#{segment.index}-#{segment.part}"} class="language-error" phx-click="explain_language" phx-value-question={q["id"]} phx-value-index={segment.index} aria-label={"Expliquer la correction : #{segment.error["original"]} → #{segment.error["replacement"]}"}><del :if={segment.text != ""}>{segment.text}</del><span :if={segment.replacement != ""} class="language-replacement">{if segment.text != "", do: " "}{segment.replacement}</span></button><% else %>{segment.text}<% end %><% end %></div>
                     </div>
                     <div class={[
                       "correction",
                       @exam.corrections[q["id"]]["points"] == q["points"] && "correction-correct"
                     ]}>
                       <div class="correction-heading">
-                        <strong>Correction</strong><strong>{number(@exam.corrections[q["id"]]["points"])} / {q["points"]}</strong>
+                        <strong>Correction</strong>
+                        <button
+                          :if={!@shared}
+                          type="button"
+                          id={"contest-correction-#{q["id"]}"}
+                          class="source-link font-bold"
+                          phx-click="contest_correction"
+                          phx-value-id={q["id"]}
+                          aria-haspopup="dialog"
+                          aria-label="Contester la correction"
+                          title="Contester la correction"
+                          disabled={@contestation_running}
+                        >
+                          {number(@exam.corrections[q["id"]]["points"])} / {q["points"]}
+                        </button>
+                        <strong :if={@shared}>
+                          {number(@exam.corrections[q["id"]]["points"])} / {q["points"]}
+                        </strong>
                       </div>
                       <p>{@exam.corrections[q["id"]]["feedback"]}</p>
                       <div class="expected">
@@ -1730,6 +1711,8 @@
           type="url"
           value={@resource_form[:url].value}
           placeholder="https://drive.google.com/file/d/…/view"
+          hint="Page web, PDF, image, lien Google Drive ou vidéo YouTube accessible publiquement. Pour YouTube, seule la transcription de l’audio est conservée (2 h maximum)."
+          hint_id="resource-url-help"
           aria-describedby={
             if @error, do: "resource-url-help resource-url-error", else: "resource-url-help"
           }
@@ -1737,9 +1720,6 @@
           required
           maxlength="4000"
         />
-        <p id="resource-url-help" class="muted upload-help">
-          Page web, PDF, image, lien Google Drive ou vidéo YouTube accessible publiquement. Pour YouTube, seule la transcription de l’audio est conservée (2 h maximum).
-        </p>
         <p :if={@error} id="resource-url-error" class="error" role="alert">{@error}</p>
         <div class="form-actions">
           <button
@@ -1882,55 +1862,54 @@
         </.form>
       </div>
     </.modal>
-    <.modal :if={@modal == "edit_page"} id="page-modal" title="Vérifier la page">
-      <div class="page-editor">
-        <button
-          id="preview-original-page"
-          type="button"
-          class="page-preview"
-          phx-click="preview_page"
-          phx-value-id={@edit_page.id}
-          aria-haspopup="dialog"
-        >
-          <img
-            :if={String.starts_with?(@edit_page.content_type, "image/")}
-            src={child_path(@profile, ~p"/pages/#{@edit_page.id}")}
-            alt="Page originale"
-          />
-          <span :if={!String.starts_with?(@edit_page.content_type, "image/")}>
-            Voir le texte original
-          </span>
-        </button>
-        <.form for={@form} phx-change="validate_page" phx-submit="save_page" id="page-text-form">
-          <label for="page-text">Texte reconnu</label>
-          <.input
-            wrapper={false}
-            type="textarea"
-            id="page-text"
-            name="text"
-            rows="14"
-            maxlength="60000"
-            value={@page_text}
-          />
-          <.processing_progress
-            :if={@edit_page.status == "pending" or @edit_page.processing_stage != nil}
-            id="editor-processing-progress"
-            stage={@edit_page.processing_stage || "Lecture OCR"}
-          />
-          <p :if={@edit_page.error} class="error">{@edit_page.error}</p>
+    <.modal
+      :if={@modal == "attach_illustration"}
+      id="attach-illustration-modal"
+      title="Rattacher à une page"
+    >
+      <.form
+        for={@attachment_form}
+        id="attach-illustration-form"
+        phx-submit="save_illustration_parent"
+      >
+        <p :if={@attachment_options == []}>
+          Ajoute d’abord la page d’origine dans les leçons ou les ressources de ce chapitre.
+        </p>
+        <.input
+          :if={@attachment_options != []}
+          field={@attachment_form[:parent_page_id]}
+          type="select"
+          label="Page du chapitre"
+          options={[{"Choisir une page", ""} | @attachment_options]}
+          required
+        />
+        <div class="form-actions">
+          <button :if={@attachment_options != []} class="button primary">Rattacher</button>
+        </div>
+      </.form>
+    </.modal>
+    <.modal :if={@modal == "rename_page"} id="rename-page-modal" title="Renommer">
+      <.form for={@page_name_form} id="rename-page-form" phx-submit="save_page_name">
+        <.input
+          field={@page_name_form[:title]}
+          id="page-name"
+          label="Nom"
+          type="text"
+          maxlength="240"
+          required
+        />
+        <div class="form-actions">
           <button
-            :if={String.starts_with?(@edit_page.content_type, "image/")}
             type="button"
+            id="cancel-rename-page"
             class="button text-button"
-            phx-click="transcribe_page"
-            phx-value-id={@edit_page.id}
-            disabled={@edit_page.status == "pending" or @edit_page.processing_stage != nil}
+            phx-click="close_modal"
           >
-            {if @edit_page.status == "pending", do: "Lecture en cours…", else: "Relire la photo"}
+            Annuler
           </button>
-          <div class="form-actions"><button class="button primary">Enregistrer</button></div>
-        </.form>
-      </div>
+          <button class="button primary" phx-disable-with="Enregistrement…">Enregistrer</button>
+        </div>
+      </.form>
     </.modal>
     <.modal :if={@modal == "answer_photo"} title="Ta réponse en photo">
       <.form
@@ -2112,10 +2091,9 @@
         label="Consignes personnalisées"
         rows="4"
         maxlength="8000"
+        hint="Si plusieurs types sont cochés, l’IA en choisira un. La réponse à cette question sera effacée lorsque la nouvelle sera prête ; les autres réponses seront conservées."
       />
-      <p class="muted">
-        Si plusieurs types sont cochés, l’IA en choisira un. La réponse à cette question sera effacée lorsque la nouvelle sera prête ; les autres réponses seront conservées.
-      </p>
+
       <p :if={@error} class="error" role="alert">{@error}</p>
       <div class="form-actions">
         <button type="button" class="button secondary" phx-click="close_modal">Annuler</button>
@@ -2127,6 +2105,41 @@
           phx-disable-with="Démarrage…"
         >
           Régénérer
+        </button>
+      </div>
+    </.form>
+  </.modal>
+  <.modal
+    :if={@modal == "contest_correction" and !@shared}
+    id="contest-correction-modal"
+    title="Contester la correction"
+  >
+    <p>
+      Une nouvelle vérification de cet exercice sera effectuée. Sa correction et ta note pourront être revues à la hausse ou à la baisse.
+    </p>
+    <.form for={@contestation_form} id="contestation-form" phx-submit="submit_contestation">
+      <.input
+        field={@contestation_form[:explanation]}
+        type="textarea"
+        label="Pourquoi contestes-tu cette correction ? (facultatif)"
+        placeholder="Explique ce qui te semble incorrect…"
+        maxlength="4000"
+        disabled={@contestation_running}
+      />
+      <p :if={@error} role="alert">{@error}</p>
+      <p :if={@contestation_running} id="contestation-progress" role="status">
+        Vérification en cours…
+      </p>
+      <div class="modal-actions">
+        <button type="button" class="button" phx-click="close_modal">Fermer</button>
+        <button
+          type="submit"
+          id="submit-contestation"
+          class="button primary"
+          disabled={@contestation_running}
+          phx-disable-with="Vérification…"
+        >
+          Demander une vérification
         </button>
       </div>
     </.form>

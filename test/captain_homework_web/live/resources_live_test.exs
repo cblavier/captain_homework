@@ -27,7 +27,7 @@ defmodule CaptainHomeworkWeb.ResourcesLiveTest do
         status: "ready"
       })
 
-    {:ok, _} =
+    {:ok, page} =
       Study.add_page(l, %{
         resource_id: resource.id,
         kind: "resource",
@@ -45,12 +45,14 @@ defmodule CaptainHomeworkWeb.ResourcesLiveTest do
              "#upload-resources input[type=file][accept*='.mp3'][accept*='.mp4']"
            )
 
-    assert has_element?(view, "#resource-text-#{resource.id} summary", "Transcription audio")
-    refute has_element?(view, "#resource-#{resource.id} audio")
-    refute has_element?(view, "#resource-photos-#{resource.id}")
-    assert has_element?(view, "#download-resource-#{resource.id}[download='cours.txt']")
     view |> element("#open-resource-url") |> render_click()
     assert has_element?(view, "#resource-url-modal", "YouTube")
+    view |> element("#cancel-resource-url") |> render_click()
+    view |> element("#open-page-#{page.id}") |> render_click()
+    assert has_element?(view, "#page-recognized-title", "Transcription audio")
+    assert has_element?(view, "#page-detail-text", "The weather is lovely today.")
+    refute has_element?(view, "#learning-page-detail audio")
+    refute has_element?(view, "#extract-page-illustrations")
 
     assert response(get(conn, "/alice/ressources/#{resource.id}"), 200) ==
              "The weather is lovely today."
@@ -124,19 +126,19 @@ defmodule CaptainHomeworkWeb.ResourcesLiveTest do
     on_exit(fn -> File.rm(Uploads.path(resource.storage_key)) end)
     assert resource.status == "ready"
     refute has_element?(view, "#resource-#{resource.id}", "Exercices prioritaires")
-    assert has_element?(view, "#resource-#{resource.id} .resource-text", "Observe le schéma.")
-
-    [illustration] =
-      Study.get_lesson!(l.profile_id, l.id).pages |> Enum.filter(&(&1.kind == "illustration"))
-
-    assert File.read!(Uploads.path(illustration.storage_key)) == image
+    [original_page] = Study.get_lesson!(l.profile_id, l.id).pages
+    view |> element("#open-page-#{original_page.id}") |> render_click()
+    assert has_element?(view, "#page-detail-text", "Observe le schéma.")
+    refute has_element?(view, "#page-illustrations-empty")
+    assert has_element?(view, "#extract-page-illustrations")
+    assert File.read!(Uploads.path(original_page.storage_key)) == image
     original = get(conn, "/alice/ressources/#{resource.id}")
     assert response(original, 200) == image
     assert get_resp_header(original, "content-disposition") != []
     assert_error_sent 404, fn -> get(conn, "/marius/ressources/#{resource.id}") end
-    view |> element("#delete-resource-#{resource.id}") |> render_click()
+    view |> element("#delete-page-#{original_page.id}") |> render_click()
     refute has_element?(view, "#resource-#{resource.id}")
-    refute File.exists?(Uploads.path(illustration.storage_key))
+    refute File.exists?(Uploads.path(original_page.storage_key))
     assert Study.get_lesson!(l.profile_id, l.id).pages == []
   end
 
@@ -216,7 +218,8 @@ defmodule CaptainHomeworkWeb.ResourcesLiveTest do
     send(view.pid, :lesson_updated)
     [resource] = Study.get_lesson!(l.profile_id, l.id).resources
     assert resource.status == "ready"
-    assert has_element?(view, "#resource-#{resource.id}")
+    [original_page] = Study.get_lesson!(l.profile_id, l.id).pages
+    assert has_element?(view, "#open-page-#{original_page.id}")
     assert File.read!(Uploads.path(resource.storage_key)) == image
     Resources.delete(l.profile_id, resource.id)
   end

@@ -52,7 +52,7 @@ defmodule CaptainHomeworkWeb.IllustrationExtractionTest do
 
     {:ok, source} =
       Study.add_page(lesson, %{
-        kind: "illustration",
+        kind: "resource",
         resource_id: resource.id,
         filename: "page-1.png",
         storage_key: "source.png",
@@ -69,7 +69,7 @@ defmodule CaptainHomeworkWeb.IllustrationExtractionTest do
       %{"x" => 500, "y" => 0, "width" => 500, "height" => 1000}
     ]
 
-  test "extraction creates real crops and deleting the original preserves every extracted illustration",
+  test "extraction creates direct children and deletion follows the page hierarchy",
        ctx do
     original = Uploads.read(ctx.source)
 
@@ -98,33 +98,39 @@ defmodule CaptainHomeworkWeb.IllustrationExtractionTest do
       assert {width, height} == {50, 80}
     end
 
-    # Even identical pixels stored independently must not be deleted as an OCR duplicate.
-    File.write!(Uploads.path(hd(crops).storage_key), original)
-    assert {:ok, _} = Resources.delete_image(ctx.lesson.profile_id, ctx.lesson.id, ctx.source.id)
-    refute Repo.get(Study.Page, ctx.source.id)
-
-    for crop <- crops do
-      assert Repo.get!(Study.Page, crop.id)
-      assert File.exists?(Uploads.path(crop.storage_key))
-    end
-
-    lesson = Study.get_lesson!(ctx.lesson.profile_id, ctx.lesson.id)
-    assert CaptainHomework.Exams.Illustrations.content_pages(lesson) == crops
-    assert CaptainHomework.Exams.Illustrations.priority_exercises?(lesson)
-
-    ctx.resource
-    |> Ecto.Changeset.change(catalogue: %{"entries" => []}, catalogue_hash: "stale")
-    |> Repo.update!()
-
+    assert {:error, _} = Extraction.source(ctx.lesson.profile_id, ctx.lesson.id, hd(crops).id)
     assert {:ok, _} = Resources.delete_image(ctx.lesson.profile_id, ctx.lesson.id, hd(crops).id)
+    assert Repo.get!(Study.Page, ctx.source.id).text == ctx.source.text
     assert Repo.get!(Study.Page, List.last(crops).id)
     assert Repo.get!(Study.Resource, ctx.resource.id).catalogue == nil
+    assert {:ok, _} = Study.delete_page(ctx.source)
+    assert Study.get_lesson!(ctx.lesson.profile_id, ctx.lesson.id).pages == []
+    for crop <- crops, do: refute(File.exists?(Uploads.path(crop.storage_key)))
+  end
+
+  test "lesson pages can be extracted and a textless picture has completed OCR", ctx do
+    source =
+      ctx.source |> Ecto.Changeset.change(kind: "lesson", resource_id: nil) |> Repo.update!()
+
+    Application.put_env(:captain_homework, :extraction_analysis_callback, fn _, _ ->
+      {:ok, %{"text" => "", "document_kind" => "other"}}
+    end)
+
+    assert {:ok, crops} =
+             Extraction.extract(ctx.lesson.profile_id, ctx.lesson.id, source.id, 2, "")
+
+    for crop <- crops do
+      assert crop.parent_page_id == source.id
+      assert crop.resource_id == nil
+      assert crop.ocr_status == "complete"
+      assert crop.text == ""
+      assert {:error, _} = Extraction.source(ctx.lesson.profile_id, ctx.lesson.id, crop.id)
+    end
   end
 
   test "unreadable crops do not leave ready but unusable illustrations", ctx do
     for result <- [
           {:error, :unavailable},
-          {:ok, %{"text" => " ", "document_kind" => "other"}},
           :exception
         ] do
       Application.put_env(:captain_homework, :extraction_analysis_callback, fn _, _ ->
@@ -207,8 +213,10 @@ defmodule CaptainHomeworkWeb.IllustrationExtractionTest do
       {:error, "Extraction interrompue pour le test"}
     end)
 
-    {:ok, view, _} = live(ctx.conn, "/alice/lecons/#{ctx.lesson.id}?onglet=ressources")
-    view |> element("#open-resource-image-#{ctx.source.id}") |> render_click()
+    {:ok, view, _} =
+      live(ctx.conn, "/alice/lecons/#{ctx.lesson.id}?onglet=ressources&page=#{ctx.source.id}")
+
+    view |> element("#extract-page-illustrations") |> render_click()
 
     for _ <- 1..11 do
       view |> element("#illustration-count-plus:not([disabled])") |> render_click()
@@ -238,8 +246,10 @@ defmodule CaptainHomeworkWeb.IllustrationExtractionTest do
       end
     end)
 
-    {:ok, view, _} = live(ctx.conn, "/alice/lecons/#{ctx.lesson.id}?onglet=ressources")
-    view |> element("#open-resource-image-#{ctx.source.id}") |> render_click()
+    {:ok, view, _} =
+      live(ctx.conn, "/alice/lecons/#{ctx.lesson.id}?onglet=ressources&page=#{ctx.source.id}")
+
+    view |> element("#extract-page-illustrations") |> render_click()
 
     assert has_element?(
              view,
@@ -274,7 +284,7 @@ defmodule CaptainHomeworkWeb.IllustrationExtractionTest do
     assert_receive {:DOWN, ^monitor, :process, ^worker, :normal}, 3000
     assert has_element?(view, "#flash-info", "2 illustrations extraites")
     refute has_element?(view, "#extract-illustrations-modal")
-    assert has_element?(view, "#resource-image-#{ctx.source.id}")
+    assert has_element?(view, "#preview-original-page")
 
     crops =
       Study.get_lesson!(ctx.lesson.profile_id, ctx.lesson.id).pages
@@ -296,8 +306,10 @@ defmodule CaptainHomeworkWeb.IllustrationExtractionTest do
       end
     end)
 
-    {:ok, view, _} = live(ctx.conn, "/alice/lecons/#{ctx.lesson.id}?onglet=ressources")
-    view |> element("#open-resource-image-#{ctx.source.id}") |> render_click()
+    {:ok, view, _} =
+      live(ctx.conn, "/alice/lecons/#{ctx.lesson.id}?onglet=ressources&page=#{ctx.source.id}")
+
+    view |> element("#extract-page-illustrations") |> render_click()
 
     view
     |> form("#illustration-extraction-form")

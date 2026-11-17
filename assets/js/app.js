@@ -1,3 +1,4 @@
+import {PageDrag} from "./page_drag"
 import "./login"
 import "phoenix_html"
 import {Socket} from "phoenix"
@@ -13,9 +14,12 @@ import {PronunciationRecorder} from "./pronunciation_recorder"
 import {QuestionPreviewRecorder, QuestionPreviewPhoto} from "./question_preview"
 import {WebcamCapture} from "./webcam_capture"
 import {CopyShareLink} from "./copy_share_link"
+import {ParisDate} from "./paris_date"
 import "./viewport"
 import "./question_regeneration"
 const Hooks = {
+  PageDrag,
+  ParisDate,
   CopyShareLink,
   SymbolPalette,
   WebcamCapture,

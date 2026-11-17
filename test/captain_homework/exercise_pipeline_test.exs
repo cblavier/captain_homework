@@ -333,6 +333,7 @@ defmodule CaptainHomework.Exams.ExercisePipelineTest do
     {:ok, _} =
       CaptainHomework.QuestionDefinitions.save(type, %{
         instruction: "HIDDEN_STATIC_SENTINEL",
+        ai_instructions: "TYPE_GUIDANCE_SENTINEL",
         example: %{
           "prompt" => "INDICATIVE_PROMPT_SENTINEL",
           "document" => "HIDDEN_EXAMPLE_DOCUMENT"
@@ -347,6 +348,7 @@ defmodule CaptainHomework.Exams.ExercisePipelineTest do
 
       :specification, properties, request ->
         assert Jason.encode!(request) =~ "INDICATIVE_PROMPT_SENTINEL"
+        assert Jason.encode!(request) =~ "TYPE_GUIDANCE_SENTINEL"
         assert Jason.encode!(request) =~ "indicative_example"
         fields = get_in(properties, ["questions", "properties", "q1", "properties"])
         assert fields["task"]["type"] == "string"
@@ -354,7 +356,8 @@ defmodule CaptainHomework.Exams.ExercisePipelineTest do
         assert fields["source_page_ids"]["items"]["enum"] == [context.source.id]
         %{"questions" => %{"q1" => slot}, "supports" => []}
 
-      :construction, properties, _ ->
+      :construction, properties, request ->
+        assert Jason.encode!(request) =~ "TYPE_GUIDANCE_SENTINEL"
         fields = get_in(properties, ["questions", "properties", "q1", "properties"])
         assert Enum.sort(Map.keys(fields)) == ~w(prompt spec_hash spec_id)
         %{"questions" => %{"q1" => draft(properties)}}
@@ -364,6 +367,7 @@ defmodule CaptainHomework.Exams.ExercisePipelineTest do
         assert prompt =~ "Matière évaluée : #{context.lesson.subject}"
         assert prompt =~ "Cours évalué : #{context.lesson.title}"
         assert prompt =~ "Quel élément délimite la cellule ?"
+        assert prompt =~ "TYPE_GUIDANCE_SENTINEL"
         assert prompt =~ slot["answer"]
         assert prompt =~ slot["rubric"]
         accepted_review()
@@ -434,6 +438,13 @@ defmodule CaptainHomework.Exams.ExercisePipelineTest do
       |> Map.put("answer", "Un être vivant.")
 
     control = exam(context.lesson, [other, question("target")])
+    [type_id] = question_type_ids(["definition"])
+    type = CaptainHomework.QuestionDefinitions.get!(type_id)
+
+    {:ok, _} =
+      CaptainHomework.QuestionDefinitions.save(type, %{
+        ai_instructions: "REGENERATION_TYPE_GUIDANCE"
+      })
 
     stub(context, fn
       :catalogue, _, _ ->
@@ -441,13 +452,16 @@ defmodule CaptainHomework.Exams.ExercisePipelineTest do
 
       :specification, _, request ->
         assert Jason.encode!(request) =~ "Questions conservées"
+        assert Jason.encode!(request) =~ "REGENERATION_TYPE_GUIDANCE"
         %{"questions" => %{"q1" => specification(context.source)}, "supports" => []}
 
-      :construction, properties, _ ->
+      :construction, properties, request ->
+        assert Jason.encode!(request) =~ "REGENERATION_TYPE_GUIDANCE"
         %{"questions" => %{"q1" => draft(properties)}}
 
       :audit, _, request ->
         assert Jason.encode!(request) =~ "surrounding-other"
+        assert Jason.encode!(request) =~ "REGENERATION_TYPE_GUIDANCE"
 
         accepted_review()
         |> Map.put("exposure_checks", [

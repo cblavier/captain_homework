@@ -75,6 +75,39 @@ defmodule CaptainHomework.ExamsTest do
     assert e.instructions == ""
   end
 
+  test "legacy illustrations without their own OCR do not block readable course pages" do
+    p = profile()
+    l = lesson(p)
+    parent = page(l)
+
+    {:ok, _} =
+      Study.add_page(
+        l,
+        %{
+          kind: "illustration",
+          filename: "figure.png",
+          storage_key: "figure.png",
+          content_type: "image/png",
+          status: "ready",
+          ocr_status: "pending",
+          text: ""
+        },
+        parent_page_id: parent.id
+      )
+
+    assert {:ok, generated} = Exams.generate(p.id, l.id, 4, "", [])
+    assert generated.status == "in_progress"
+    assert length(generated.questions) == 4
+
+    generated
+    |> Ecto.Changeset.change(status: "generation_partial", questions: [])
+    |> Repo.update!()
+
+    assert {:ok, resumed} = Exams.resume_generation(p.id, generated.id)
+    assert resumed.status == "in_progress"
+    assert length(resumed.questions) == 4
+  end
+
   test "generation requires readable lessons and valid count" do
     p = profile()
     l = lesson(p)

@@ -20,7 +20,7 @@
           <.icon name="plus" /> Nouveau type
         </.link>
       </div>
-      <p class="muted">Catalogue commun à toutes les matières et à tous les profils.</p>
+      <p class="muted page-help">Catalogue commun à toutes les matières et à tous les profils.</p>
       <.form
         for={@filter_form}
         id="type-filters"
@@ -260,6 +260,9 @@
                     name="type[instruction_kind]"
                     value={value}
                     checked={@preview_type.instruction_kind == value}
+                    aria-describedby={
+                      if @preview_type.instruction_kind == "dynamic", do: "type-instruction-hint"
+                    }
                   /><span>{label}</span>
                 </label>
               </div>
@@ -270,9 +273,12 @@
                 label="Consigne fixe"
                 rows="2"
               />
-              <p :if={@preview_type.instruction_kind == "dynamic"} class="muted">
+              <.field_hint
+                :if={@preview_type.instruction_kind == "dynamic"}
+                id="type-instruction-hint"
+              >
                 La consigne est renseignée pour chaque question.
-              </p>
+              </.field_hint>
             </fieldset>
             <fieldset class="admin-field">
               <legend>Contenu de la question</legend>
@@ -299,6 +305,14 @@
                 />
               </div>
             </fieldset>
+            <.input
+              field={@type_form[:ai_instructions]}
+              type="textarea"
+              label="Consignes pour l'IA"
+              rows="4"
+              maxlength="8000"
+              hint="Facultatif. Guide la rédaction de ce type de question et précise les contraintes à respecter, y compris lors d’une régénération."
+            />
           </div>
         </.form>
         <aside class="admin-preview" aria-label="Aperçu de la question">
@@ -365,18 +379,22 @@
             phx-change="example"
             phx-submit="preview_answer"
           >
+            <% content_example? =
+              @preview_type.content_presence != "none" and
+                @preview_type.content_kind in ["text", "document"] %>
+            <% example_hint =
+              "Ces exemples sont enregistrés avec le type et guident l’IA sans remplacer ses règles." %>
             <.input
               :if={@preview_type.instruction_kind == "dynamic"}
+              hint={if !content_example?, do: example_hint}
               field={@example_form[:prompt]}
               label="Exemple indicatif de consigne"
               type="textarea"
               rows="2"
             />
             <.input
-              :if={
-                @preview_type.content_presence != "none" and
-                  @preview_type.content_kind in ["text", "document"]
-              }
+              :if={content_example?}
+              hint={example_hint}
               field={
                 @example_form[
                   if(@preview_type.content_kind == "document", do: :document, else: :text)
@@ -386,9 +404,9 @@
               type="textarea"
               rows="4"
             />
-            <p class="muted">
-              Ces exemples sont enregistrés avec le type et guident l’IA sans remplacer ses règles.
-            </p>
+            <.field_hint :if={@preview_type.instruction_kind != "dynamic" and !content_example?}>
+              {example_hint}
+            </.field_hint>
           </.form>
         </aside>
       </div>

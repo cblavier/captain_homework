@@ -138,11 +138,20 @@ defmodule CaptainHomework.GenerationCheckpointTest do
     assert partial.status == "generation_partial"
     assert partial.generation_plan["repair_feedback"] =~ diagnostic
     refute diagnostic in partial.generation_errors
+    saved = Repo.get!(CaptainHomework.Study.Exam, partial.id)
+    assert [rejection] = saved.generation_rejections
+    assert rejection["errors"] == [diagnostic]
+    assert rejection["stage"] == "questions"
+    assert rejection["questions"] != []
+    assert {:ok, _, _} = DateTime.from_iso8601(rejection["recorded_at"])
     assert {:ok, complete} = Exams.resume_generation(l.profile_id, partial.id)
     assert complete.status == "in_progress"
     instructions = Agent.get(PlannedGenerationAI, & &1.repair_instructions)
     assert length(instructions) == 2
     assert List.last(instructions) =~ diagnostic
+
+    assert Repo.get!(CaptainHomework.Study.Exam, complete.id).generation_rejections ==
+             saved.generation_rejections
   end
 
   test "a full set of retained questions is not published before the pending audit succeeds", %{

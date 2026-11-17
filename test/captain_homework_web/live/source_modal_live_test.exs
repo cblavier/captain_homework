@@ -4,18 +4,17 @@ defmodule CaptainHomeworkWeb.SourceModalLiveTest do
   import CaptainHomework.Fixtures
   alias CaptainHomework.Repo
 
-  test "lesson original preview returns to the editor with unsaved text", %{conn: conn} do
+  test "lesson original preview returns to the read-only page", %{conn: conn} do
     lesson = lesson(profile())
     page = page(lesson)
     {:ok, view, _} = live(conn, "/alice/lecons/#{lesson.id}?onglet=cours")
 
-    view |> element("#lesson-page-#{page.id} button[phx-click='edit_page']") |> render_click()
-    view |> form("#page-text-form", %{text: "Texte modifié"}) |> render_change()
+    view |> element("#open-page-#{page.id}") |> render_click()
     view |> element("#preview-original-page") |> render_click()
     assert has_element?(view, "#source-modal img[src='/alice/pages/#{page.id}']")
 
     view |> element("#source-modal button[aria-label='Fermer']") |> render_click()
-    assert has_element?(view, "#page-modal #page-text", "Texte modifié")
+    assert has_element?(view, "#learning-page-detail #page-detail-text", page.text)
     refute has_element?(view, "#source-modal")
   end
 

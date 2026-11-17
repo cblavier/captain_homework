@@ -88,7 +88,7 @@ defmodule CaptainHomework.CatalogueSelectionTest do
     |> Repo.update!()
 
     assert {:ok, _} = Catalogues.prepare_page(page)
-    refute_receive :catalogue_requested
+    assert_receive :catalogue_requested
     refute Repo.get!(Study.Page, page.id).catalogue_hash == legacy
     moved = page |> Ecto.Changeset.change(position: 42) |> Repo.update!()
     assert {:ok, _} = Catalogues.prepare_page(moved)
@@ -382,7 +382,8 @@ defmodule CaptainHomework.CatalogueSelectionTest do
              )
 
     assert {:ok, _} = Resources.delete_image(lesson.profile_id, lesson.id, copy.id)
-    assert Repo.get(Study.Page, image.id) == nil
+    assert Repo.get!(Study.Page, image.id).text == image.text
+    assert {:ok, _} = Study.delete_page(image)
     lesson = Study.get_lesson!(lesson.profile_id, lesson.id)
     pages = CaptainHomework.Exams.Illustrations.content_pages(lesson)
 

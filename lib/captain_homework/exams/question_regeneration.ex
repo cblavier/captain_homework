@@ -144,8 +144,7 @@ defmodule CaptainHomework.Exams.QuestionRegeneration do
                    QuestionDefinitions.generation_supported?(&1))
              ),
          true <-
-           pages != [] and not Illustrations.resources_pending?(lesson) and
-             Enum.all?(pages, &(String.trim(&1.text) != "")) do
+           not Illustrations.resources_pending?(lesson) and Illustrations.readable_content?(pages) do
       now = DateTime.utc_now()
 
       result =

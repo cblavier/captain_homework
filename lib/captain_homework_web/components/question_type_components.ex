@@ -122,6 +122,8 @@ defmodule CaptainHomeworkWeb.QuestionTypeComponents do
       "type" => QuestionDefinitions.engine_format(type),
       "prompt" => assigns.prompt,
       "text" => text,
+      "support_text" => example["support_text"] || "",
+      "diagram" => example["diagram"],
       "options" =>
         if(type.response_kind == "ordering",
           do: CaptainHomework.Exams.Ordering.example_options(example["text"] || ""),
@@ -141,6 +143,15 @@ defmodule CaptainHomeworkWeb.QuestionTypeComponents do
     }
   end
 
+  defp preview_audio(%{
+         id: id,
+         content_kind: "audio",
+         content_presence: presence,
+         example: %{"audio" => %{"id" => asset_id}}
+       })
+       when presence != "none",
+       do: "/parametres/types/#{id}/exemples/#{asset_id}"
+
   defp preview_audio(%{content_kind: "audio", content_presence: presence} = type)
        when presence != "none",
        do:
@@ -150,6 +161,17 @@ defmodule CaptainHomeworkWeb.QuestionTypeComponents do
          )
 
   defp preview_audio(_), do: nil
+
+  defp preview_images(%{id: id, content_presence: presence, example: %{"images" => images}})
+       when presence != "none" and is_list(images) do
+    Enum.map(images, fn asset ->
+      %{
+        id: asset["id"],
+        src: "/parametres/types/#{id}/exemples/#{asset["id"]}",
+        alt: asset["alt"] || "Illustration de l’exemple"
+      }
+    end)
+  end
 
   defp preview_images(%{content_kind: "image", content_presence: presence})
        when presence != "none",

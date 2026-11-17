@@ -7,6 +7,13 @@ defmodule CaptainHomework.Study.Page do
     belongs_to :reference_exam, CaptainHomework.Study.ReferenceExam
     belongs_to :lesson, CaptainHomework.Study.Lesson
     belongs_to :resource, CaptainHomework.Study.Resource
+    belongs_to :parent_page, __MODULE__
+    field :title, :string
+    field :source_page_number, :integer
+    field :extraction_origin, :string
+    field :association_status, :string, default: "linked"
+    field :legacy_hidden, :boolean, default: false
+    field :ocr_status, :string, default: "pending"
     field :document_kind, :string, default: "other"
     field :style_profile, :map
     field :style_hash, :string
@@ -30,6 +37,8 @@ defmodule CaptainHomework.Study.Page do
     page
     |> cast(attrs, [
       :resource_id,
+      :title,
+      :ocr_status,
       :document_kind,
       :kind,
       :filename,
@@ -42,5 +51,8 @@ defmodule CaptainHomework.Study.Page do
     |> validate_required([:kind, :filename, :storage_key, :content_type])
     |> validate_inclusion(:kind, ["lesson", "example", "resource", "illustration"])
     |> validate_length(:text, max: 60_000)
+    |> validate_length(:title, max: 240)
+    |> validate_inclusion(:ocr_status, ["pending", "complete", "error"])
+    |> foreign_key_constraint(:parent_page_id)
   end
 end

@@ -24,6 +24,7 @@ defmodule CaptainHomework.Exams.Language do
            true <-
              String.valid?(binary_part(text, 0, start)) and
                String.valid?(binary_part(text, start, length)),
+           false <- duplicates_context?(text, start, length, original, replacement),
            false <-
              Enum.any?(accepted, fn e ->
                e["field"] == field and start < e["start"] + e["length"] and
@@ -57,15 +58,23 @@ defmodule CaptainHomework.Exams.Language do
       relevant =
         errors
         |> Enum.with_index()
-        |> Enum.filter(fn {e, _} -> e["field"] == field end)
+        |> Enum.filter(fn {e, _} ->
+          e["field"] == field and
+            not duplicates_context?(
+              text,
+              e["start"],
+              e["length"],
+              e["original"],
+              e["replacement"]
+            )
+        end)
         |> Enum.sort_by(fn {e, _} -> e["start"] end)
 
       {segments, offset} =
         Enum.reduce(relevant, {[], 0}, fn {error, index}, {segments, offset} ->
           prefix = binary_part(text, offset, error["start"] - offset)
 
-          {segments ++
-             [%{text: prefix, error: nil}, %{text: error["original"], error: error, index: index}],
+          {segments ++ [%{text: prefix, error: nil}] ++ changed_segments(error, index),
            error["start"] + error["length"]}
         end)
 
@@ -77,5 +86,70 @@ defmodule CaptainHomework.Exams.Language do
           segments ++ [%{text: if(text == "", do: "Sans réponse", else: suffix), error: nil}]
       }
     end
+  end
+
+  # Only reject an expansion that copies words from immediately outside the excerpt.
+  # This deliberately does not reject repetitions already written by the pupil,
+  # or grammatical changes within the excerpt (e.g. "nous nous sommes lavés").
+  defp duplicates_context?(text, start, length, original, replacement) do
+    prefix = binary_part(text, 0, start)
+    suffix = binary_part(text, start + length, byte_size(text) - start - length)
+
+    (String.starts_with?(replacement, original) and
+       copied_words?(String.replace_prefix(replacement, original, ""), suffix, :after)) or
+      (String.ends_with?(replacement, original) and
+         copied_words?(String.replace_suffix(replacement, original, ""), prefix, :before))
+  end
+
+  defp copied_words?(added, context, side) do
+    # Require whole added words separated from the retained excerpt. In particular,
+    # a plural suffix or an accent correction must never be mistaken for a copy.
+    separated? =
+      if side == :after,
+        do: Regex.match?(~r/^\s/u, added),
+        else: Regex.match?(~r/\s$/u, added)
+
+    words = String.split(added)
+
+    if separated? and words != [] and
+         Enum.all?(words, &Regex.match?(~r/^[\p{L}\p{M}\p{N}]+$/u, &1)) do
+      phrase = Enum.map_join(words, "\\s+", &Regex.escape/1)
+
+      pattern =
+        if side == :after,
+          do: "^\\s+" <> phrase <> "(?![\\p{L}\\p{M}\\p{N}])",
+          else: "(?<![\\p{L}\\p{M}\\p{N}])" <> phrase <> "\\s+$"
+
+      Regex.match?(Regex.compile!(pattern, "u"), context)
+    else
+      false
+    end
+  end
+
+  defp changed_segments(error, index) do
+    error["original"]
+    |> tokens()
+    |> List.myers_difference(tokens(error["replacement"]))
+    |> Enum.chunk_by(fn {operation, _} -> operation == :eq end)
+    |> Enum.with_index()
+    |> Enum.map(fn
+      {[{:eq, tokens}], _} ->
+        %{text: Enum.join(tokens), error: nil}
+
+      {changes, part} ->
+        %{
+          text: diff_text(changes, :del),
+          replacement: diff_text(changes, :ins),
+          error: error,
+          index: index,
+          part: part
+        }
+    end)
+  end
+
+  defp tokens(text), do: Regex.scan(~r/[\p{L}\p{M}\p{N}]+|\s+|[^\s]/u, text) |> List.flatten()
+
+  defp diff_text(changes, operation) do
+    for {^operation, tokens} <- changes, into: "", do: Enum.join(tokens)
   end
 end

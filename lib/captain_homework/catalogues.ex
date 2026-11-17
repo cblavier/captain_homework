@@ -6,8 +6,8 @@ defmodule CaptainHomework.Catalogues do
   alias CaptainHomework.Exams.Illustrations
   alias CaptainHomework.AI.ResourceImages
 
-  @version 1
-  @visual_support_version 2
+  @version 2
+  @visual_support_version 3
 
   # Old saved plans may have excluded every imported image before selection.
   # Refresh those contexts once, including the author's exclusions, on repair.
@@ -21,6 +21,7 @@ defmodule CaptainHomework.Catalogues do
   def prepare_resource(resource), do: prepare(Resource, resource.id)
 
   def prepare_page(%{resource_id: id}) when not is_nil(id), do: prepare(Resource, id)
+  def prepare_page(%{parent_page_id: id}) when not is_nil(id), do: prepare(Page, id)
   def prepare_page(%{kind: "lesson", id: id}), do: prepare(Page, id)
   def prepare_page(_), do: {:ok, %{"entries" => []}}
 
@@ -38,7 +39,7 @@ defmodule CaptainHomework.Catalogues do
       :global.trans({{__MODULE__, module, id}, self()}, fn ->
         with source when not is_nil(source) <- Repo.get(module, id),
              pages when pages != [] <- source_pages(source),
-             true <- Enum.all?(pages, &(&1.status == "ready" and String.trim(&1.text) != "")) do
+             true <- Enum.all?(pages, &(&1.status == "ready")) do
           hash = fingerprint(pages)
 
           if is_map(source.catalogue) and
@@ -95,20 +96,36 @@ defmodule CaptainHomework.Catalogues do
       Repo.all(
         from p in Page,
           where:
-            p.resource_id == ^id and
-              (p.kind == "resource" or
-                 (p.kind == "illustration" and not is_nil(p.extracted_from_id))),
-          order_by: [p.position, p.id]
+            p.resource_id == ^id and not p.legacy_hidden and p.association_status == "linked",
+          order_by: [p.source_page_number, p.position, p.id]
       )
 
-  defp source_pages(%Page{} = page), do: [page]
+  defp source_pages(%Page{} = page),
+    do: [
+      page
+      | Repo.all(
+          from p in Page,
+            where: p.parent_page_id == ^page.id and not p.legacy_hidden,
+            order_by: [p.position, p.id]
+        )
+    ]
 
   defp fingerprint(pages, include_position? \\ false) do
     {@version, AI.provider(), Application.get_env(:captain_homework, :openai_model),
      Enum.map(
        pages,
        fn page ->
-         fields = [:id, :text, :filename, :storage_key, :document_kind, :content_type]
+         fields = [
+           :id,
+           :title,
+           :parent_page_id,
+           :text,
+           :filename,
+           :storage_key,
+           :document_kind,
+           :content_type,
+           :ocr_status
+         ]
 
          fields =
            if page.kind == "lesson" and not include_position?,
@@ -130,7 +147,7 @@ defmodule CaptainHomework.Catalogues do
     visual_ids =
       pages
       |> Enum.filter(
-        &(Illustrations.resource_content_page?(&1) and
+        &((&1.kind == "lesson" or Illustrations.resource_content_page?(&1)) and
             String.starts_with?(&1.content_type, "image/"))
       )
       |> MapSet.new(& &1.id)
@@ -166,7 +183,12 @@ defmodule CaptainHomework.Catalogues do
 
     sources =
       pages
-      |> Enum.map(&if(&1.resource_id, do: {Resource, &1.resource_id}, else: {Page, &1.id}))
+      |> Enum.map(
+        &if(&1.resource_id,
+          do: {Resource, &1.resource_id},
+          else: {Page, &1.parent_page_id || &1.id}
+        )
+      )
       |> Enum.uniq()
 
     with {:ok, entries} <- collect(sources),

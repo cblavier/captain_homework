@@ -2,7 +2,7 @@ defmodule CaptainHomework.Resources.Extraction do
   @moduledoc "Extracts independent illustrations while preserving the source image."
   import Ecto.Query
   alias CaptainHomework.{AI, ImageCrops, Repo, Uploads}
-  alias CaptainHomework.Study.{Page, Resource}
+  alias CaptainHomework.Study.Page
 
   def source(profile_id, lesson_id, page_id) do
     page =
@@ -12,15 +12,12 @@ defmodule CaptainHomework.Resources.Extraction do
           where: p.id == ^page_id and p.lesson_id == ^lesson_id and l.profile_id == ^profile_id
       )
 
-    with %Page{kind: "illustration", resource_id: resource_id, status: "ready"} <- page,
-         true <- is_binary(resource_id),
-         true <- page.content_type in ~w(image/jpeg image/png image/webp),
-         %Resource{status: "ready", processing_stage: nil} <- Repo.get(Resource, resource_id) do
+    if page && page.kind in ["lesson", "resource"] && is_nil(page.parent_page_id) &&
+         not page.legacy_hidden && page.content_type in ~w(image/jpeg image/png image/webp) &&
+         CaptainHomework.Study.Pages.available?(page) do
       {:ok, page}
     else
-      _ ->
-        {:error,
-         "Cette illustration n’est plus disponible ou sa ressource est en cours de traitement."}
+      {:error, "L’extraction est disponible uniquement depuis une page originale prête."}
     end
   end
 
@@ -96,21 +93,25 @@ defmodule CaptainHomework.Resources.Extraction do
                 last =
                   Repo.one(
                     from p in Page,
-                      where: p.lesson_id == ^page.lesson_id and p.kind == "illustration",
+                      where: p.parent_page_id == ^page.id and p.kind == "illustration",
                       select: max(p.position)
                   ) || -1
 
-                resource = Repo.get!(Resource, page.resource_id)
-
-                resource
-                |> Ecto.Changeset.change(catalogue: nil, catalogue_hash: nil)
-                |> Repo.update!()
+                CaptainHomework.Study.Pages.invalidate(page)
 
                 for {crop, index} <- Enum.with_index(analyzed_crops, 1) do
                   Repo.insert!(%Page{
                     lesson_id: page.lesson_id,
                     resource_id: page.resource_id,
+                    parent_page_id: page.id,
                     extracted_from_id: page.id,
+                    extraction_origin: "manual",
+                    ocr_status: "complete",
+                    title:
+                      CaptainHomework.Study.Pages.suggested_name(
+                        crop.analysis["short_title"],
+                        "Illustration #{last + index + 1}"
+                      ),
                     kind: "illustration",
                     status: "ready",
                     filename: Path.rootname(page.filename) <> "-extrait-#{index}.png",
@@ -177,8 +178,7 @@ defmodule CaptainHomework.Resources.Extraction do
     with {:ok, data} <- File.read(Uploads.path(crop.key)),
          {:ok, %{"text" => text, "document_kind" => kind} = analysis}
          when is_binary(text) and kind in ~w(course assessment activity other) <-
-           AI.analyze_resource(data, "image/png"),
-         true <- String.trim(text) != "" do
+           AI.analyze_resource(data, "image/png") do
       {:ok, Map.put(crop, :analysis, analysis)}
     else
       _ -> {:error, :unreadable}

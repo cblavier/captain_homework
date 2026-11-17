@@ -214,7 +214,11 @@ defmodule CaptainHomework.Exams.TypeContract do
 
   @doc "Derives the model's writable fields from the selected types, including retained fields."
   def schema(properties, context, frozen \\ %{}, phase \\ :final) do
-    properties = Map.delete(properties, if(phase == :spec, do: "prompt", else: "task"))
+    properties =
+      properties
+      |> Map.delete(if(phase == :spec, do: "prompt", else: "task"))
+      |> constrain("task", %{"pattern" => "\\S"})
+
     catalogue = Map.get(context, :definitions, [])
     allowed = properties["type"]["enum"]
 

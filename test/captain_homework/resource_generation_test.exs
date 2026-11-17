@@ -74,17 +74,23 @@ defmodule CaptainHomework.ResourceGenerationTest do
     File.write!(Uploads.path(key), "unchanged original image")
     on_exit(fn -> File.rm(Uploads.path(key)) end)
 
+    parent = if kind == "illustration", do: resource_page(lesson, resource, "resource")
+
     {:ok, page} =
-      Study.add_page(lesson, %{
-        resource_id: resource.id,
-        kind: kind,
-        document_kind: classification,
-        filename: "image.png",
-        storage_key: key,
-        content_type: "image/png",
-        status: "ready",
-        text: "Exercice 1 : légende la cellule."
-      })
+      Study.add_page(
+        lesson,
+        %{
+          resource_id: resource.id,
+          kind: kind,
+          document_kind: classification,
+          filename: "image.png",
+          storage_key: key,
+          content_type: "image/png",
+          status: "ready",
+          text: "Exercice 1 : légende la cellule."
+        },
+        parent_page_id: parent && parent.id
+      )
 
     page
   end

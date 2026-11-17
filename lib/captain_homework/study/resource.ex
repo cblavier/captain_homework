@@ -4,6 +4,7 @@ defmodule CaptainHomework.Study.Resource do
   @foreign_key_type :binary_id
   schema "resources" do
     belongs_to :lesson, CaptainHomework.Study.Lesson
+    field :category, :string, default: "resource"
     field :title, :string
     field :filename, :string
     field :catalogue, :map

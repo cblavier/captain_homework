@@ -1,5 +1,6 @@
 defmodule CaptainHomeworkWeb.ResourceImageDeletionTest do
   use CaptainHomeworkWeb.ConnCase, async: false
+  import Ecto.Query
   import Phoenix.LiveViewTest
   import CaptainHomework.Fixtures
   alias CaptainHomework.{Repo, Resources, Study, Uploads}
@@ -43,15 +44,25 @@ defmodule CaptainHomeworkWeb.ResourceImageDeletionTest do
         File.write!(Uploads.path(key), data)
 
         {:ok, page} =
-          Study.add_page(l, %{
-            resource_id: r.id,
-            kind: kind,
-            filename: key,
-            storage_key: key,
-            content_type: "image/png",
-            text: "Texte reconnu",
-            status: "ready"
-          })
+          Study.add_page(
+            l,
+            %{
+              resource_id: r.id,
+              kind: kind,
+              filename: key,
+              storage_key: key,
+              content_type: "image/png",
+              text: "Texte reconnu",
+              status: "ready"
+            },
+            parent_page_id:
+              if(kind == "illustration",
+                do:
+                  Repo.one!(
+                    from p in Study.Page, where: p.lesson_id == ^l.id and p.kind == "resource"
+                  ).id
+              )
+          )
 
         page
       end
@@ -59,7 +70,7 @@ defmodule CaptainHomeworkWeb.ResourceImageDeletionTest do
     %{lesson: l, resource: r, pages: pages}
   end
 
-  test "deleting an image refreshes its resource and removes its identical OCR copy", %{
+  test "deleting an illustration preserves original OCR, siblings and exam snapshots", %{
     conn: conn,
     lesson: l,
     resource: r,
@@ -67,38 +78,32 @@ defmodule CaptainHomeworkWeb.ResourceImageDeletionTest do
   } do
     File.write!(Uploads.path("exam-snapshot.png"), "same-image")
     e = exam(l, [Map.put(question(), "images", [%{"storage_key" => "exam-snapshot.png"}])])
-    {:ok, view, _} = live(conn, "/alice/lecons/#{l.id}?onglet=ressources")
+    {:ok, view, _} = live(conn, "/alice/lecons/#{l.id}?onglet=ressources&page=#{ocr.id}")
     assert has_element?(view, "#resource-image-#{image.id}")
     view |> element("#delete-resource-image-#{image.id}") |> render_click()
     refute has_element?(view, "#resource-image-#{image.id}")
-    refute has_element?(view, "#delete-resource-page-#{ocr.id}")
     assert has_element?(view, "#resource-image-#{other.id}")
     assert Repo.get(Study.Page, image.id) == nil
-    assert Repo.get(Study.Page, ocr.id) == nil
+    assert Repo.get!(Study.Page, ocr.id).text == ocr.text
     refute File.exists?(Uploads.path(image.storage_key))
-    refute File.exists?(Uploads.path(ocr.storage_key))
+    assert File.exists?(Uploads.path(ocr.storage_key))
     assert File.exists?(Uploads.path(r.storage_key))
     assert Repo.get!(Study.Resource, r.id).catalogue == nil
-    assert Repo.get!(Study.Resource, r.id).catalogue_hash == nil
     assert Repo.get!(Study.Exam, e.id).questions == e.questions
     assert File.read!(Uploads.path("exam-snapshot.png")) == "same-image"
-    sources = CaptainHomework.Exams.Illustrations.sources(Study.get_lesson!(l.profile_id, l.id))
-    refute Enum.any?(sources, &(&1.id in [ocr.id, image.id]))
   end
 
-  test "resource illustrations share compact cards and reorder only within their resource", %{
+  test "compact cards reorder only within their parent page and zoom has no extraction action", %{
     conn: conn,
     lesson: lesson,
-    resource: resource,
-    pages: [_, first, second]
+    pages: [root, first, second]
   } do
-    other_resource =
-      Repo.insert!(%Study.Resource{lesson_id: lesson.id, filename: "Other.png", status: "ready"})
+    other_root = page(lesson)
 
     other =
       Repo.insert!(%Study.Page{
         lesson_id: lesson.id,
-        resource_id: other_resource.id,
+        parent_page_id: other_root.id,
         kind: "illustration",
         filename: "other.png",
         storage_key: "other.png",
@@ -107,34 +112,57 @@ defmodule CaptainHomeworkWeb.ResourceImageDeletionTest do
         position: 99
       })
 
-    {:ok, view, _} = live(conn, "/alice/lecons/#{lesson.id}?onglet=ressources")
+    {:ok, view, _} = live(conn, "/alice/lecons/#{lesson.id}?onglet=ressources&page=#{root.id}")
 
     assert has_element?(
              view,
-             "#resource-image-#{first.id}.page-card .page-thumbnail #resource-image-previous-#{first.id}[disabled]"
+             "#resource-image-#{first.id}.page-card .learning-card-footer #resource-image-previous-#{first.id}[disabled]"
            )
 
     view |> element("#resource-image-next-#{first.id}") |> render_click()
     assert has_element?(view, "#resource-image-previous-#{second.id}[disabled]")
     assert has_element?(view, "#resource-image-next-#{first.id}[disabled]")
     assert Repo.get!(Study.Page, other.id).position == 99
-    assert {:ok, _} = Study.move_page(lesson.profile_id, lesson.id, first.id, "next")
-    assert Repo.get!(Study.Page, other.id).position == 99
-    resource |> Ecto.Changeset.change(processing_stage: "Analyse") |> Repo.update!()
-
-    assert {:error, :unavailable} =
-             Study.move_page(lesson.profile_id, lesson.id, first.id, "previous")
+    view |> element("#open-resource-image-#{first.id}") |> render_click()
+    assert has_element?(view, "#source-modal img[src='/alice/pages/#{first.id}']")
+    refute has_element?(view, "#source-modal [phx-click=extract_page]")
+    refute has_element?(view, "#extract-illustrations-modal")
   end
 
-  test "only images of the current profile and lesson can be deleted", %{
+  test "legacy orphan stays visible and can be attached through the page picker", %{
+    conn: conn,
     lesson: l,
-    pages: [_, image, _]
+    pages: [root, image, _]
+  } do
+    image
+    |> Ecto.Changeset.change(parent_page_id: nil, association_status: "unresolved")
+    |> Repo.update!()
+
+    {:ok, view, _} = live(conn, "/alice/lecons/#{l.id}?onglet=ressources")
+    assert has_element?(view, "#unresolved-pages")
+    view |> element("#attach-illustration-#{image.id}") |> render_click()
+
+    view
+    |> form("#attach-illustration-form", attachment: %{parent_page_id: root.id})
+    |> render_submit()
+
+    refute has_element?(view, "#attach-illustration-modal")
+    refute has_element?(view, "#unresolved-pages")
+    assert Repo.get!(Study.Page, image.id).parent_page_id == root.id
+    view |> element("#open-page-#{root.id}") |> render_click()
+    assert has_element?(view, "#resource-image-#{image.id}")
+  end
+
+  test "only illustrations of the current profile and lesson can be deleted", %{
+    lesson: l,
+    pages: [root, image, _]
   } do
     assert {:error, :not_found} = Resources.delete_image(Ecto.UUID.generate(), l.id, image.id)
 
     assert {:error, :not_found} =
              Resources.delete_image(l.profile_id, Ecto.UUID.generate(), image.id)
 
+    assert {:error, :not_found} = Resources.delete_image(l.profile_id, l.id, root.id)
     assert Repo.get!(Study.Page, image.id)
     assert File.exists?(Uploads.path(image.storage_key))
   end
@@ -143,24 +171,24 @@ defmodule CaptainHomeworkWeb.ResourceImageDeletionTest do
     conn: conn,
     lesson: l,
     resource: r,
-    pages: [_, image, _]
+    pages: [root, image, _]
   } do
     Repo.update!(Ecto.Changeset.change(r, status: "processing"))
-    {:ok, view, _} = live(conn, "/alice/lecons/#{l.id}?onglet=ressources")
+    {:ok, view, _} = live(conn, "/alice/lecons/#{l.id}?onglet=ressources&page=#{root.id}")
     assert has_element?(view, "#delete-resource-image-#{image.id}[disabled]")
     assert {:error, _} = Resources.delete_image(l.profile_id, l.id, image.id)
     assert Repo.get!(Study.Page, image.id)
   end
 
-  test "deleting the last imported page preserves the original resource", %{
+  test "deleting a page deletes its illustrations and releases an empty import", %{
     lesson: l,
     resource: r,
-    pages: [ocr, _, other]
+    pages: [root | children]
   } do
-    assert {:ok, _} = Resources.delete_image(l.profile_id, l.id, other.id)
-    assert {:ok, _} = Resources.delete_image(l.profile_id, l.id, ocr.id)
+    assert {:ok, _} = Study.delete_page(root)
     assert Study.get_lesson!(l.profile_id, l.id).pages == []
-    assert Repo.get!(Study.Resource, r.id)
-    assert File.exists?(Uploads.path(r.storage_key))
+    refute Repo.get(Study.Resource, r.id)
+    refute File.exists?(Uploads.path(r.storage_key))
+    for child <- children, do: refute(File.exists?(Uploads.path(child.storage_key)))
   end
 end

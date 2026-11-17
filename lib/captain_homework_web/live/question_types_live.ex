@@ -64,13 +64,14 @@ defmodule CaptainHomeworkWeb.QuestionTypesLive do
 
           mode = if "flashcard" in type.modes, do: "flashcard", else: "classic"
 
-          example = %{
-            "prompt" => type.example["prompt"] || "",
-            "text" => type.example["text"] || "",
-            "document" =>
-              type.example["document"] ||
-                "Chaque matin, les habitants du village traversent la rivière pour rejoindre leurs champs. Le soir, ils se retrouvent sur la place pour échanger leurs récoltes.\n\nLes maisons sont regroupées près du pont. Un chemin relie le village aux terres cultivées."
-          }
+          example =
+            Map.merge(type.example, %{
+              "prompt" => type.example["prompt"] || "",
+              "text" => type.example["text"] || "",
+              "document" =>
+                type.example["document"] ||
+                  "Chaque matin, les habitants du village traversent la rivière pour rejoindre leurs champs. Le soir, ils se retrouvent sur la place pour échanger leurs récoltes.\n\nLes maisons sont regroupées près du pont. Un chemin relie le village aux terres cultivées."
+            })
 
           {:noreply,
            socket

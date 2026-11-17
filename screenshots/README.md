@@ -10,7 +10,7 @@ La génération de quatre questions est un **état de démonstration enregistré
 - `alice/` : versions encadrées affichées dans le README.
 - `portraits/alice.png` : portrait fictif.
 - `frame.py` : régénère les cadres à partir des originaux avec ImageMagick, sans modifier leur contenu.
-- `alice-screenshots.zip` : archive locale des dix images finales, ignorée par Git.
+- `alice-screenshots.zip` : archive locale des images finales et des captures complémentaires, ignorée par Git.
 
 Les viewports sont de 1440 × 1100 sur desktop et 430 × 932 sur mobile. Le contrôle et sa correction utilisent 1440 × 1400 pour montrer le dépôt de photo et la correction.
 
@@ -19,3 +19,12 @@ La correction d’histoire-géographie utilise un viewport de 1440 × 1920 pour 
 Aucun secret, compte réel, base de données ou fichier de session n’est versionné avec les captures.
 
 Capture complémentaire du 12 novembre 2026 : `desktop-evaluations-partagees.png`, page réelle sur une copie isolée de la base de tests, avec Alice et deux partages de démonstration (statuts enregistrés sans appel IA).
+
+
+Captures complémentaires du 13 novembre 2026, après la refonte des pages de leçons et de ressources :
+
+- `desktop-refonte-galerie.png` : galerie de trois pages nommées.
+- `desktop-refonte-page.png` : détail d’une page, texte reconnu et illustration extraite.
+- `mobile-refonte-page.png` : même détail sur mobile.
+
+Ces trois vues proviennent de l’interface réelle dans une copie isolée et vidée de toute donnée réelle. Alice est le seul profil. Le texte et les schémas de cellule sont des données de démonstration enregistrées, sans appel IA. Les captures utilisent les largeurs de 1440 et 430 pixels et conservent toute la hauteur du contenu. Les PNG bruts sont conservés dans `originaux/alice/` et les images encadrées dans `alice/`.

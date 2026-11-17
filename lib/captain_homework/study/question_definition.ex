@@ -12,6 +12,7 @@ defmodule CaptainHomework.Study.QuestionDefinition do
     field :response_kind, :string, default: "short_text"
     field :instruction_kind, :string, default: "dynamic"
     field :instruction, :string
+    field :ai_instructions, :string
     field :content_kind, :string, default: "text"
     field :content_presence, :string, default: "optional"
     field :work_duration, :string, default: "quick"
@@ -47,6 +48,7 @@ defmodule CaptainHomework.Study.QuestionDefinition do
       :response_kind,
       :instruction_kind,
       :instruction,
+      :ai_instructions,
       :content_kind,
       :content_presence,
       :work_duration,
@@ -67,6 +69,7 @@ defmodule CaptainHomework.Study.QuestionDefinition do
     ])
     |> validate_length(:name, max: 80)
     |> validate_length(:instruction, max: 2000)
+    |> validate_length(:ai_instructions, max: 8000)
     |> validate_choices(:subjects, Study.subject_ids())
     |> validate_choices(:modes, ~w(classic flashcard))
     |> validate_inclusion(:response_kind, @responses)

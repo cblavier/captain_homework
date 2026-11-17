@@ -162,8 +162,12 @@ defmodule CaptainHomework.Exams do
       pages == [] ->
         {:error, "Ajoute au moins une page de leçon ou une ressource lisible."}
 
-      Enum.any?(pages, &(String.trim(&1.text) == "")) ->
-        {:error, "Vérifie le texte de chaque page avant de créer l’évaluation."}
+      Enum.any?(pages, &(&1.kind != "illustration" and &1.status == "pending")) ->
+        {:error, "Attends la fin de la lecture des pages avant de créer l’évaluation."}
+
+      not Illustrations.readable_content?(pages) ->
+        {:error,
+         "Le texte de certaines pages n’a pas pu être reconnu. Réimporte les pages concernées avant de créer l’évaluation."}
 
       true ->
         with {:ok, draft} <-

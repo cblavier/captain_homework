@@ -76,7 +76,9 @@ defmodule CaptainHomework.AI.ResourceImages do
 
   defp candidates(sources, ids, info) when is_list(ids) do
     pages_by_id =
-      sources |> Enum.filter(&Illustrations.resource_content_page?/1) |> Map.new(&{&1.id, &1})
+      sources
+      |> Enum.filter(&(&1.kind == "lesson" or Illustrations.resource_content_page?(&1)))
+      |> Map.new(&{&1.id, &1})
 
     ids = Enum.uniq(ids)
 
@@ -94,8 +96,8 @@ defmodule CaptainHomework.AI.ResourceImages do
         |> Enum.flat_map(fn page ->
           Enum.filter(
             sources,
-            &(&1.kind == "illustration" and not Illustrations.extracted?(&1) and
-                not Illustrations.extracted?(page) and associated?(&1, page, info, page_hashes))
+            &(&1.kind == "illustration" and not Illustrations.extracted?(page) and
+                associated?(&1, page, info, page_hashes))
           )
         end)
         |> Enum.uniq_by(& &1.id)
@@ -109,6 +111,9 @@ defmodule CaptainHomework.AI.ResourceImages do
 
   defp candidates(_, _, _),
     do: {:error, "La sélection doit contenir une liste d’identifiants de pages."}
+
+  defp associated?(%{parent_page_id: parent_id}, page, _info, _hashes) when not is_nil(parent_id),
+    do: parent_id == page.id
 
   defp associated?(illustration, page, info, page_hashes) do
     if illustration.resource_id == page.resource_id and not is_nil(page.resource_id) do

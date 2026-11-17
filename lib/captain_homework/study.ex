@@ -195,6 +195,31 @@ defmodule CaptainHomework.Study do
     |> Map.new()
   end
 
+  def exam_status_counts(profile_id) do
+    Repo.all(
+      from e in Exam,
+        join: l in assoc(e, :lesson),
+        where:
+          l.profile_id == ^profile_id and is_nil(e.exam_share_id) and
+            is_nil(e.regeneration_source_id),
+        group_by: l.subject,
+        select:
+          {l.subject,
+           %{
+             corrected: sum(fragment("CASE WHEN ? = 'completed' THEN 1 ELSE 0 END", e.status)),
+             unsubmitted:
+               sum(
+                 fragment(
+                   "CASE WHEN ? IS NULL AND ? NOT IN ('completed', 'grading') THEN 1 ELSE 0 END",
+                   e.submitted_at,
+                   e.status
+                 )
+               )
+           }}
+    )
+    |> Map.new()
+  end
+
   def get_lesson!(profile_id, id) do
     if not valid_id?(id), do: raise(Ecto.NoResultsError, queryable: Lesson)
 
@@ -204,6 +229,40 @@ defmodule CaptainHomework.Study do
       pages: from(p in Page, order_by: [p.position, p.inserted_at, p.id]),
       exams: from(e in Exam, order_by: [desc: e.inserted_at])
     )
+  end
+
+  def recent_exams(profile_id, opts \\ []) do
+    limit = Keyword.get(opts, :limit, 5)
+
+    query =
+      from e in Exam,
+        join: l in assoc(e, :lesson),
+        where:
+          l.profile_id == ^profile_id and is_nil(e.exam_share_id) and
+            is_nil(e.regeneration_source_id),
+        order_by: [desc: e.inserted_at, desc: e.id],
+        limit: ^(limit + 1),
+        preload: [lesson: l]
+
+    query =
+      case Keyword.get(opts, :before) do
+        {inserted_at, id} ->
+          from e in query,
+            where: e.inserted_at < ^inserted_at or (e.inserted_at == ^inserted_at and e.id < ^id)
+
+        nil ->
+          query
+      end
+
+    results = Repo.all(query)
+    exams = Enum.take(results, limit)
+    last = List.last(exams)
+
+    %{
+      exams: exams,
+      more?: length(results) > limit,
+      cursor: if(last, do: {last.inserted_at, last.id})
+    }
   end
 
   def get_exam!({:shared, _, _} = scope, id),
@@ -292,10 +351,51 @@ defmodule CaptainHomework.Study do
     )
   end
 
-  def add_page(lesson, attrs) do
+  def add_page(lesson, attrs, metadata \\ []) do
     Repo.transaction(fn ->
-      changeset = Page.changeset(%Page{lesson_id: lesson.id}, attrs)
+      page =
+        struct(
+          %Page{lesson_id: lesson.id},
+          Keyword.take(metadata, [
+            :parent_page_id,
+            :source_page_number,
+            :extraction_origin,
+            :extracted_from_id
+          ])
+        )
+
+      changeset = Page.changeset(page, attrs)
+
+      changeset =
+        if is_nil(Ecto.Changeset.get_field(changeset, :title)),
+          do:
+            Ecto.Changeset.put_change(
+              changeset,
+              :title,
+              Path.rootname(Ecto.Changeset.get_field(changeset, :filename) || "Page")
+            ),
+          else: changeset
+
       kind = Ecto.Changeset.get_field(changeset, :kind)
+
+      changeset =
+        if kind == "illustration" do
+          parent = if page.parent_page_id, do: Repo.get(Page, page.parent_page_id)
+
+          if parent && parent.lesson_id == lesson.id && parent.kind in ["lesson", "resource"] &&
+               is_nil(parent.parent_page_id) &&
+               parent.resource_id == Ecto.Changeset.get_field(changeset, :resource_id) do
+            changeset
+          else
+            Ecto.Changeset.add_error(
+              changeset,
+              :parent_page_id,
+              "doit être une page originale du chapitre"
+            )
+          end
+        else
+          changeset
+        end
 
       last =
         Repo.one(
@@ -320,18 +420,14 @@ defmodule CaptainHomework.Study do
       selected = Enum.find(lesson.pages, &(&1.id == page_id))
       if is_nil(selected), do: Repo.rollback(:not_found)
 
-      if selected.kind == "illustration" do
-        resource = Enum.find(lesson.resources, &(&1.id == selected.resource_id))
-
-        if is_nil(resource) or resource.status != "ready" or resource.processing_stage != nil,
-          do: Repo.rollback(:unavailable)
-      end
+      if selected.resource_id && not CaptainHomework.Study.Pages.available?(selected),
+        do: Repo.rollback(:unavailable)
 
       pages =
-        Enum.filter(
-          lesson.pages,
-          &(&1.kind == selected.kind and &1.resource_id == selected.resource_id)
-        )
+        Enum.filter(lesson.pages, fn page ->
+          page.kind == selected.kind and not page.legacy_hidden and
+            (selected.kind != "illustration" or page.parent_page_id == selected.parent_page_id)
+        end)
 
       index = Enum.find_index(pages, &(&1.id == page_id))
       if is_nil(index), do: Repo.rollback(:not_found)
@@ -351,20 +447,51 @@ defmodule CaptainHomework.Study do
     end)
   end
 
+  def reorder_page(profile_id, lesson_id, id, before_id) do
+    Repo.transaction(fn ->
+      lesson = get_lesson!(profile_id, lesson_id)
+      selected = Enum.find(lesson.pages, &(&1.id == id and not &1.legacy_hidden))
+      if is_nil(selected), do: Repo.rollback(:not_found)
+      unless CaptainHomework.Study.Pages.available?(selected), do: Repo.rollback(:unavailable)
+
+      pages =
+        Enum.filter(
+          lesson.pages,
+          &(&1.kind == selected.kind and &1.parent_page_id == selected.parent_page_id and
+              not &1.legacy_hidden)
+        )
+
+      if before_id == id, do: Repo.rollback(:unchanged)
+      remaining = Enum.reject(pages, &(&1.id == id))
+
+      index =
+        if is_nil(before_id),
+          do: length(remaining),
+          else: Enum.find_index(remaining, &(&1.id == before_id))
+
+      if is_nil(index), do: Repo.rollback(:not_found)
+
+      remaining
+      |> List.insert_at(index, selected)
+      |> Enum.with_index()
+      |> Enum.each(fn {page, position} ->
+        page |> Ecto.Changeset.change(position: position) |> Repo.update!()
+      end)
+    end)
+  end
+
   def update_page(page, text) do
     with {:ok, page} <-
-           page |> Page.changeset(%{text: text, status: "ready", error: nil}) |> Repo.update() do
+           page
+           |> Page.changeset(%{text: text, status: "ready", ocr_status: "complete", error: nil})
+           |> Repo.update() do
+      CaptainHomework.Study.Pages.invalidate(page)
       CaptainHomework.Catalogues.schedule(page)
       {:ok, page}
     end
   end
 
-  def delete_page(page) do
-    with {:ok, page} <- Repo.delete(page) do
-      File.rm(CaptainHomework.Uploads.path(page.storage_key))
-      {:ok, page}
-    end
-  end
+  def delete_page(page), do: CaptainHomework.Study.Pages.delete(page)
 
   def order_answer(profile_id, exam_id, question_id, action) do
     exam = get_exam!(profile_id, exam_id)

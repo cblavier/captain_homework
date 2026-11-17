@@ -50,7 +50,12 @@ defmodule CaptainHomework.AI.Pronunciation do
             content: [
               %{
                 type: "text",
-                text: Jason.encode!(%{text_to_read: question["text"], rubric: question["rubric"]})
+                text:
+                  Jason.encode!(%{
+                    text_to_read: question["text"],
+                    rubric: question["rubric"],
+                    contestation_to_verify: question["contestation"]
+                  })
               },
               %{type: "input_audio", input_audio: %{data: Base.encode64(data), format: "wav"}}
             ]

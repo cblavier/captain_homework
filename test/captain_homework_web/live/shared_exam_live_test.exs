@@ -50,6 +50,40 @@ defmodule CaptainHomeworkWeb.SharedExamLiveTest do
     assert has_element?(correction, "#exam-title")
   end
 
+  test "parents see all children's shares and can open and revoke another child's share", %{
+    conn: conn,
+    profile: alice,
+    exam: alice_exam
+  } do
+    {:ok, alice_share, _} = ExamShares.create(alice.id, alice_exam.id, "fill")
+    marius = profile("Marius")
+    marius_exam = exam(lesson(marius, "anglais"))
+    {:ok, marius_share, token} = ExamShares.create(marius.id, marius_exam.id, "fill")
+    {:ok, _, attempt} = ExamShares.open(token, "all-children")
+
+    {:ok, _} =
+      Exams.submit({:shared, token, "all-children"}, attempt.id, %{"q1" => "quart"}, sync: true)
+
+    {:ok, view, _} = live(conn, "/alice/parametres/partages")
+    assert has_element?(view, "#shares-#{alice_share.id}")
+    assert has_element?(view, "#shares-#{marius_share.id}")
+    assert has_element?(view, "#shared-evaluation-subject-#{marius_share.id}", "Anglais")
+    assert has_element?(view, "a[href='/marius/parametres/partages/#{attempt.id}']")
+
+    {:ok, correction, _} = live(conn, "/marius/parametres/partages/#{attempt.id}")
+    assert has_element?(correction, "#exam-title")
+
+    view |> element("#delete-share-#{marius_share.id}") |> render_click()
+    assert_redirect(view, "/alice/parametres/partages")
+    assert {:error, :unavailable} = ExamShares.fetch(token)
+    assert Repo.get!(Study.Exam, marius_exam.id)
+  end
+
+  @tag account: "child-1"
+  test "children cannot access the shared evaluation settings", %{conn: conn} do
+    assert conn |> get("/alice/parametres/partages") |> response(404)
+  end
+
   test "shared copy badges distinguish blank, started and corrected answers", %{
     conn: conn,
     profile: p,
@@ -61,7 +95,7 @@ defmodule CaptainHomeworkWeb.SharedExamLiveTest do
     {:ok, _, started} = ExamShares.open(token, "started-badge")
     Repo.update!(Ecto.Changeset.change(started, answers: %{"q1" => "une réponse"}))
     {:ok, _, corrected} = ExamShares.open(token, "corrected-badge")
-    Repo.update!(Ecto.Changeset.change(corrected, status: "completed"))
+    Repo.update!(Ecto.Changeset.change(corrected, status: "completed", score: 14.25))
     {:ok, view, _} = live(conn, "/alice/parametres/partages")
 
     assert has_element?(
@@ -79,8 +113,60 @@ defmodule CaptainHomeworkWeb.SharedExamLiveTest do
     assert has_element?(
              view,
              "#shared-attempt-status-#{corrected.id}[data-status='completed']",
-             "Corrigée"
+             "14,25/20"
            )
+  end
+
+  test "correction shares stay accessible but are hidden from the shared evaluation list", %{
+    conn: conn,
+    profile: p,
+    exam: exam
+  } do
+    {:ok, _} = Exams.submit(p.id, exam.id, %{"q1" => "quart"}, sync: true)
+    {:ok, correction_share, token} = ExamShares.create(p.id, exam.id, "correction")
+
+    {:ok, view, _} = live(conn, "/alice/parametres/partages")
+    assert has_element?(view, "#shared-evaluations-empty")
+    refute has_element?(view, "#shares-#{correction_share.id}")
+
+    {:ok, fill_share, _} = ExamShares.create(p.id, exam.id, "fill")
+    {:ok, view, _} = live(conn, "/alice/parametres/partages")
+    refute has_element?(view, "#shared-evaluations-empty")
+    refute has_element?(view, "#shares-#{correction_share.id}")
+    assert has_element?(view, "#shares-#{fill_share.id}")
+
+    {:ok, correction, _} = live(conn, "/partage/#{token}")
+    assert has_element?(correction, "#exam-title")
+  end
+
+  test "shared copies use the copy row layout and score colors", %{
+    conn: conn,
+    profile: p,
+    exam: exam
+  } do
+    {:ok, _, token} = ExamShares.create(p.id, exam.id, "fill")
+
+    for {score, color, label} <- [
+          {9.0, "score-low", "9/20"},
+          {10.0, "score-average", "10/20"},
+          {15.75, "score-average", "15,75/20"},
+          {16.0, "score-good", "16/20"}
+        ] do
+      {:ok, _, attempt} = ExamShares.open(token, "score-#{score}")
+      Repo.update!(Ecto.Changeset.change(attempt, status: "completed", score: score))
+      {:ok, view, _} = live(conn, "/alice/parametres/partages")
+
+      assert has_element?(
+               view,
+               ".shared-evaluation-attempts li #shared-attempt-status-#{attempt.id}.#{color}",
+               label
+             )
+
+      assert has_element?(
+               view,
+               ".shared-evaluation-attempts li a[href='/alice/parametres/partages/#{attempt.id}'] .shared-attempt-link-detail"
+             )
+    end
   end
 
   test "deleting a share revokes public access and preserves the original and copies", %{

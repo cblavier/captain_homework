@@ -21,6 +21,7 @@ defmodule CaptainHomework.Study.Exam do
     field :generation_target, :integer
     field :generation_examples, CaptainHomework.Study.JSONList, default: []
     field :generation_errors, CaptainHomework.Study.JSONList, default: []
+    field :generation_rejections, CaptainHomework.Study.JSONList, default: []
     field :generation_history, CaptainHomework.Study.JSONList, default: []
     field :generation_started_at, :utc_datetime_usec
     field :questions, CaptainHomework.Study.JSONList, default: []

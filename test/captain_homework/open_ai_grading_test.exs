@@ -84,6 +84,44 @@ defmodule CaptainHomework.OpenAIGradingTest do
 
   for format <- ["classic", "flashcard"] do
     @format format
+    test "#{format} grading includes conservative language review and rejects a copied context" do
+      answer = "être coupé des flux mondiaux"
+
+      e = %{
+        exam(lesson(profile()), [question("q1", "definition")])
+        | format: @format,
+          answers: %{"q1" => answer}
+      }
+
+      annotation = %{
+        "field" => "",
+        "original" => "être",
+        "replacement" => "être coupé",
+        "occurrence" => 1,
+        "explanation" => "Il faut dire « être coupé »."
+      }
+
+      result =
+        update_in(
+          grading_result(),
+          ["grades", Access.at(0)],
+          &Map.put(&1, "language_errors", [annotation])
+        )
+
+      stub_response(result)
+
+      assert {:ok, response} = OpenAI.grade(e)
+      assert_receive {:openai_request, request}
+      text = prompt(request)
+      assert text =~ "en cas de doute, ne propose aucune correction"
+      assert text =~ "applique toutes les modifications proposées à la réponse"
+      assert text =~ "partent. Où"
+      assert text =~ "L'explication doit décrire exactement la modification"
+
+      assert {:ok, %{"q1" => %{"language_errors" => [], "fraction" => 1}}, 20.0} =
+               CaptainHomework.Exams.validate_grades(e, response)
+    end
+
     test "#{format} grading treats written-out decades as equivalent without changing the answer" do
       q =
         question("q1", "listening")
@@ -164,6 +202,94 @@ defmodule CaptainHomework.OpenAIGradingTest do
     assert prompt(request) =~ "élève anonyme"
     assert prompt(request) =~ "sans prénom"
     refute prompt(request) =~ p.name
+  end
+
+  test "contestation revises a mistaken answer and preserves other corrections" do
+    p = profile()
+    questions = [question("q1", "definition"), question("q2", "definition")]
+    e = exam(lesson(p), questions)
+    answers = %{"q1" => "4/11", "q2" => "Une réponse"}
+
+    {:ok, corrections, score} =
+      CaptainHomework.Exams.validate_grades(%{e | answers: answers}, [
+        %{"id" => "q1", "fraction" => 0, "feedback" => "Incorrect"},
+        %{"id" => "q2", "fraction" => 1, "feedback" => "Correct"}
+      ])
+
+    e =
+      e
+      |> Ecto.Changeset.change(
+        status: "completed",
+        answers: answers,
+        corrections: corrections,
+        score: score
+      )
+      |> Repo.update!()
+
+    result = %{
+      "appreciation" => "Très bon travail.",
+      "grades" => [
+        %{
+          "id" => "q1",
+          "fraction" => 1,
+          "expected" => "4/11",
+          "feedback" => "4 carreaux sur 11.",
+          "language_errors" => []
+        }
+      ]
+    }
+
+    stub_response(result)
+
+    assert {:ok, updated} =
+             CaptainHomework.Exams.Contestation.submit(p.id, e.id, "q1", "Il y a 11 carreaux.")
+
+    assert updated.score == 20.0
+    assert updated.answers == answers
+    assert updated.corrections["q2"] == corrections["q2"]
+    assert Enum.at(updated.questions, 1) == Enum.at(e.questions, 1)
+    assert hd(updated.questions)["answer"] == "4/11"
+    assert updated.corrections["q1"]["expected"] == "4/11"
+
+    assert [%{"explanation" => "Il y a 11 carreaux."}] =
+             updated.corrections["q1"]["contestations"]
+
+    assert_receive {:openai_request, request}
+    assert prompt(request) =~ "Le corrigé initial"
+    assert prompt(request) =~ "Il y a 11 carreaux."
+
+    assert get_in(request, [
+             "text",
+             "format",
+             "schema",
+             "properties",
+             "grades",
+             "items",
+             "properties",
+             "expected"
+           ]) == %{"type" => "string"}
+  end
+
+  test "invalid reconsideration leaves the persisted exam unchanged" do
+    p = profile()
+    e = exam(lesson(p))
+
+    e =
+      e
+      |> Ecto.Changeset.change(
+        status: "completed",
+        answers: %{"q1" => "Réponse"},
+        corrections: %{
+          "q1" => %{"points" => 0, "fraction" => 0, "expected" => "Ancien", "feedback" => "Non"}
+        },
+        score: 0.0
+      )
+      |> Repo.update!()
+
+    stub_response(%{"grades" => [], "appreciation" => "Incomplet"})
+    assert {:error, _} = CaptainHomework.Exams.Contestation.submit(p.id, e.id, "q1", "")
+    assert Repo.reload!(e) == e
+    assert {:error, _} = CaptainHomework.Exams.Contestation.submit(p.id, e.id, "unknown", "")
   end
 
   defp grading_result do

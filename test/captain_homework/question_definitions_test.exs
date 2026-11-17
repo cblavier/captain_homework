@@ -77,6 +77,34 @@ defmodule CaptainHomework.QuestionDefinitionsTest do
     assert {:error, :invalid_types} = QuestionDefinitions.resolve("svt", ["definition"])
   end
 
+  test "optional AI instructions are persisted, bounded and absent from legacy snapshots" do
+    {:ok, type} = QuestionDefinitions.save(%QuestionDefinition{}, attrs())
+    legacy = QuestionDefinitions.snapshot(type)
+    refute Map.has_key?(legacy, "ai_instructions")
+    control = exam(lesson(profile()), [question("q1", "definition")])
+    [saved] = QuestionDefinitions.for_exam(control)
+    assert QuestionDefinitions.snapshot(saved) == legacy
+
+    guidance = "Demande une définition en une phrase, sans exemple."
+    {:ok, type} = QuestionDefinitions.save(type, %{ai_instructions: guidance})
+    assert QuestionDefinitions.get!(type.id).ai_instructions == guidance
+    assert QuestionDefinitions.instructions([type]) =~ guidance
+    assert QuestionDefinitions.snapshot(type)["ai_instructions"] == guidance
+
+    assert QuestionDefinitions.ai_context(QuestionDefinitions.snapshot(type))["ai_instructions"] ==
+             guidance
+
+    assert QuestionDefinitions.snapshot(hd(QuestionDefinitions.for_exam(control))) == legacy
+
+    assert {:error, changeset} =
+             QuestionDefinitions.save(type, %{ai_instructions: String.duplicate("a", 8001)})
+
+    assert changeset.errors[:ai_instructions]
+    {:ok, cleared} = QuestionDefinitions.save(type, %{ai_instructions: "  \n "})
+    assert is_nil(cleared.ai_instructions)
+    refute Map.has_key?(QuestionDefinitions.snapshot(cleared), "ai_instructions")
+  end
+
   test "deletion checks the exact definition, not another type sharing its renderer" do
     {:ok, used} = QuestionDefinitions.save(%QuestionDefinition{}, attrs())
     {:ok, unused} = QuestionDefinitions.save(%QuestionDefinition{}, attrs(%{name: "Même rendu"}))

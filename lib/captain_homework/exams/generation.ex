@@ -35,9 +35,10 @@ defmodule CaptainHomework.Exams.Generation do
   defp do_run(exam, lesson, pages, examples, opts) do
     exam = track_history(exam, &GenerationHistory.initialize/1)
 
-    if Illustrations.resources_pending?(lesson) or pages == [] or
-         Enum.any?(pages, &(String.trim(&1.text) == "")) do
-      finish(exam, ["Les pages de leçon doivent contenir du texte avant de reprendre."])
+    if Illustrations.resources_pending?(lesson) or not Illustrations.readable_content?(pages) do
+      finish(exam, [
+        "Les pages doivent avoir terminé leur lecture et contenir du texte avant de reprendre."
+      ])
     else
       with {:ok, exam} <- prepare_plan(exam, lesson, pages, examples, opts) do
         feedback =
@@ -127,6 +128,7 @@ defmodule CaptainHomework.Exams.Generation do
 
   defp request_plan(exam, lesson, pages, examples, kept, repairs, opts) do
     provider = AI.provider()
+    exam = recover_rejected_specification(exam, lesson, pages, examples, kept, provider)
 
     reuse? =
       Plan.rejected_current?(exam.generation_plan, lesson, pages, examples) and
@@ -198,6 +200,7 @@ defmodule CaptainHomework.Exams.Generation do
         end
 
       {:error, %BuildError{} = reason} ->
+        record_build_rejection(exam, reason)
         plan = Map.put(exam.generation_plan || %{}, "build_error", BuildError.to_map(reason))
         {:error, reason, persist(exam, generation_plan: plan)}
 
@@ -213,6 +216,45 @@ defmodule CaptainHomework.Exams.Generation do
         exam.format,
         subject
       )
+
+  defp recover_rejected_specification(exam, lesson, pages, examples, kept, provider) do
+    error = (exam.generation_plan || %{})["build_error"] || %{}
+    raw = (error["details"] || %{})["rejected_response"]
+
+    if error["stage"] == "specification" and error["kind"] == "invalid_contract" and
+         is_map(raw) and function_exported?(provider, :recover_rejected_specification, 4) do
+      case provider.recover_rejected_specification(
+             raw,
+             exam.generation_target,
+             kept,
+             type_context(exam, lesson.subject)
+           ) do
+        {:error, {:invalid_plan, recovered, reason}} ->
+          record_rejections(
+            exam,
+            "specification",
+            [reason],
+            recovered["specification_diagnostics"],
+            recovered["questions"]
+          )
+
+          persist(exam,
+            generation_plan: %{
+              "version" => Plan.version(),
+              "source_fingerprint" => Plan.fingerprint(lesson, pages, examples),
+              "request_signature" => request_signature(exam),
+              "rejected_plan" => recovered,
+              "rejection_reason" => reason
+            }
+          )
+
+        _ ->
+          exam
+      end
+    else
+      exam
+    end
+  end
 
   defp definition_instructions(exam, subject),
     do:
@@ -425,6 +467,14 @@ defmodule CaptainHomework.Exams.Generation do
 
             errors = errors ++ audio_errors
 
+            record_rejections(
+              exam,
+              "questions",
+              errors,
+              Map.merge(Map.merge(local_diagnostics, refreshed_diagnostics), diagnostics),
+              review_input ++ candidates
+            )
+
             if audio_errors != [] do
               unfinished =
                 Enum.reject(audio_candidates, fn q ->
@@ -500,6 +550,7 @@ defmodule CaptainHomework.Exams.Generation do
               else: finish(exam, errors)
 
           {:error, %BuildError{} = reason} ->
+            record_build_rejection(exam, reason)
             current = Repo.get!(Exam, exam.id)
 
             current =
@@ -1018,6 +1069,39 @@ defmodule CaptainHomework.Exams.Generation do
     Repo.get!(Exam, exam.id)
   end
 
+  defp record_build_rejection(exam, reason) do
+    record_rejections(
+      exam,
+      to_string(reason.stage),
+      [reason.message],
+      %{"build_error" => BuildError.to_map(reason)},
+      []
+    )
+  end
+
+  # Keep raw diagnostics independently of public errors, repair plans and successful retries.
+  defp record_rejections(exam, stage, errors, diagnostics, questions) do
+    if errors != [] or map_size(diagnostics) > 0 do
+      current = Repo.get!(Exam, exam.id)
+
+      rejection = %{
+        "recorded_at" => DateTime.to_iso8601(DateTime.utc_now()),
+        "generation_started_at" => DateTime.to_iso8601(exam.generation_started_at),
+        "stage" => stage,
+        "errors" => errors,
+        "diagnostics" => diagnostics,
+        "questions" =>
+          questions
+          |> Enum.uniq_by(&GenerationHistory.key/1)
+          |> Enum.map(&Map.take(&1, ~w(id plan_id generation_id type prompt)))
+      }
+
+      persist(exam, generation_rejections: current.generation_rejections ++ [rejection])
+    else
+      exam
+    end
+  end
+
   defp track_history(exam, update) do
     current = Repo.get!(Exam, exam.id)
     updated = update.(current)
@@ -1110,6 +1194,8 @@ defmodule CaptainHomework.Exams.Generation do
         do: raw["specification_diagnostics"],
         else:
           Plan.diagnostics(raw, ids, exam.question_types, pages, Illustrations.sources(lesson))
+
+    record_rejections(exam, "plan", [], diagnostics, questions)
 
     track_history(exam, fn current ->
       current

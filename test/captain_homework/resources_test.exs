@@ -26,7 +26,8 @@ defmodule CaptainHomework.ResourcesTest do
     assert processed.status == "ready"
     pages = Study.get_lesson!(l.profile_id, l.id).pages
     assert Enum.find(pages, &(&1.kind == "resource")).text != ""
-    image = Enum.find(pages, &(&1.kind == "illustration"))
+    assert length(pages) == 1
+    image = hd(pages)
     assert Uploads.read(image) == data
     assert {:error, :already_processing} = Resources.process(resource.id)
     {:ok, _} = Resources.delete(l.profile_id, resource.id)
@@ -54,7 +55,7 @@ defmodule CaptainHomework.ResourcesTest do
     Application.put_env(:captain_homework, :ai_provider, CaptainHomework.TestAI)
     assert {:ok, _} = Resources.retry(l.profile_id, resource.id)
     assert {:ok, %{status: "ready"}} = Resources.process(resource.id)
-    assert length(Study.get_lesson!(l.profile_id, l.id).pages) == 2
+    assert length(Study.get_lesson!(l.profile_id, l.id).pages) == 1
     Resources.delete(l.profile_id, resource.id)
   end
 
@@ -167,6 +168,85 @@ defmodule CaptainHomework.ResourcesTest do
     Resources.delete(l.profile_id, resource.id)
   end
 
+  test "PDF lessons use the same pages and directly attached OCR illustrations" do
+    l = lesson(profile())
+
+    {:ok, resource} =
+      Resources.create_upload(l.profile_id, l.id, temp(tiny_pdf(2)), "lecon.pdf", "lesson")
+
+    assert {:ok, %{status: "ready"}} = Resources.process(resource.id)
+    pages = Study.get_lesson!(l.profile_id, l.id).pages
+    originals = Enum.filter(pages, &(&1.kind == "lesson"))
+    illustrations = Enum.filter(pages, &(&1.kind == "illustration"))
+    assert length(originals) == 2
+    assert length(illustrations) == 2
+    assert Enum.map(originals, & &1.source_page_number) == [1, 2]
+
+    for image <- illustrations do
+      assert image.ocr_status == "complete"
+      assert image.extraction_origin == "automatic"
+      assert Enum.any?(originals, &(&1.id == image.parent_page_id))
+    end
+
+    [first, second] = originals
+
+    assert {:ok, renamed} =
+             Study.Pages.rename(l.profile_id, l.id, first.id, %{title: "Les cellules"})
+
+    assert renamed.id == first.id
+    assert renamed.filename == first.filename
+    assert {:ok, _} = Study.delete_page(second)
+    assert Repo.get!(Study.Resource, resource.id)
+    assert Repo.get!(Study.Page, first.id).title == "Les cellules"
+    Resources.delete(l.profile_id, resource.id)
+  end
+
+  test "web import keeps one text page and automatically attaches images with individual OCR" do
+    defaults = Req.default_options()
+    Req.default_options(Keyword.put(defaults, :plug, {Req.Test, __MODULE__}))
+    Req.Test.set_req_test_to_shared()
+    on_exit(fn -> Req.default_options(defaults) end)
+
+    image =
+      Base.decode64!(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aLioAAAAASUVORK5CYII="
+      )
+
+    Req.Test.stub(__MODULE__, fn conn ->
+      case conn.request_path do
+        "/article" ->
+          conn
+          |> Plug.Conn.put_resp_content_type("text/html")
+          |> Plug.Conn.send_resp(
+            200,
+            "<html><head><title>La cellule</title></head><body><nav><img src='/logo.png'></nav><main>Le noyau de la cellule.<img src='/cellule.png'></main></body></html>"
+          )
+
+        "/cellule.png" ->
+          conn |> Plug.Conn.put_resp_content_type("image/png") |> Plug.Conn.send_resp(200, image)
+
+        _ ->
+          flunk("Only content images may be imported")
+      end
+    end)
+
+    l = lesson(profile())
+    {:ok, resource} = Resources.create_url(l.profile_id, l.id, "https://8.8.8.8/article")
+    assert {:ok, %{status: "ready"}} = Resources.process(resource.id)
+    pages = Study.get_lesson!(l.profile_id, l.id).pages
+    assert [root] = Enum.filter(pages, &(&1.kind == "resource"))
+    assert [illustration] = Enum.filter(pages, &(&1.kind == "illustration"))
+    assert root.text =~ "Le noyau de la cellule."
+    assert illustration.parent_page_id == root.id
+    assert illustration.text != ""
+    assert illustration.ocr_status == "complete"
+    assert Uploads.read(illustration) == image
+    assert {:error, _} = Resources.Extraction.source(l.profile_id, l.id, illustration.id)
+    assert {:ok, _} = Resources.delete_image(l.profile_id, l.id, illustration.id)
+    assert Repo.get!(Study.Page, root.id).text == root.text
+    Resources.delete(l.profile_id, resource.id)
+  end
+
   test "retry keeps completed OCR pages instead of reading them again" do
     start_supervised!(%{
       id: CaptainHomework.ResourceRetryCounter,
@@ -198,7 +278,19 @@ defmodule CaptainHomework.ResourcesTest do
     assert length(pages) == 8
     assert Enum.any?(pages, &(&1.id == first.id and &1.text == "Already recognized"))
     assert length(Enum.filter(pages, &(&1.filename == first.filename))) == 1
-    assert Agent.get(CaptainHomework.ResourceRetryCounter, & &1) == 3
+    assert Agent.get(CaptainHomework.ResourceRetryCounter, & &1) == 7
+    originals = Enum.filter(pages, &(&1.kind == "resource"))
+
+    for image <- Enum.filter(pages, &(&1.kind == "illustration")) do
+      assert Enum.any?(
+               originals,
+               &(&1.id == image.parent_page_id and
+                   &1.source_page_number == image.source_page_number)
+             )
+
+      assert image.ocr_status == "complete"
+    end
+
     Resources.delete(l.profile_id, resource.id)
   end
 

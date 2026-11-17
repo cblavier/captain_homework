@@ -727,6 +727,123 @@ defmodule CaptainHomework.OpenAIResourcesTest do
   defp full_frame(id),
     do: %{"image_id" => id, "x" => 0, "y" => 0, "width" => 1000, "height" => 1000}
 
+  for scenario <- [:success, :retry, :legacy] do
+    @tag scenario: scenario
+    test "an empty task repairs only its slot and preserves nine other questions (#{scenario})",
+         %{scenario: scenario} do
+      {lesson, resource, [source]} = document(1)
+      stub(%{"entries" => [entry(source, %{"visual_page_ids" => []})]})
+      assert {:ok, _} = Catalogues.prepare_resource(resource)
+      calls = start_supervised!({Agent, fn -> 0 end})
+      drafts = for n <- 1..10, do: complete_question("q#{n}", "reading", source)
+      third = Enum.at(drafts, 2)
+      repair_fails = scenario != :success
+
+      Req.Test.stub(__MODULE__, fn conn ->
+        {:ok, raw, conn} = Plug.Conn.read_body(conn)
+        props = get_in(Jason.decode!(raw), ["text", "format", "schema", "properties"])
+
+        result =
+          case generation_stage(props) do
+            :plan ->
+              n = Agent.get_and_update(calls, &{&1 + 1, &1 + 1})
+              slots = props["questions"]["properties"]
+              assert slots["q3"]["properties"]["task"]["pattern"] == "\\S"
+
+              if n == 1 do
+                assert map_size(slots) == 10
+                specification_result(List.replace_at(drafts, 2, Map.put(third, "prompt", "")))
+              else
+                assert Map.keys(slots) == ["q3"]
+                prompt = if repair_fails and n == 2, do: " \n\t", else: third["prompt"]
+                specification_result([Map.put(third, "prompt", prompt)])
+              end
+
+            :construction ->
+              construction_result(props, drafts)
+
+            :audit ->
+              %{"reviews" => Enum.map(1..10, &review("q#{&1}"))}
+          end
+
+        response(conn, result)
+      end)
+
+      assert {:ok, generated} =
+               CaptainHomework.Exams.generate(lesson.profile_id, lesson.id, 10, "",
+                 question_types: question_type_ids(["reading"])
+               )
+
+      complete =
+        if repair_fails do
+          assert generated.status == "generation_partial"
+          saved = Repo.get!(Study.Exam, generated.id).generation_plan["rejected_plan"]
+          assert length(saved["questions"]) == 10
+          assert Map.keys(saved["specification_diagnostics"]) == ["q3"]
+
+          for original <- Enum.reject(drafts, &(&1["id"] == "q3")) do
+            retained = Enum.find(saved["questions"], &(&1["id"] == original["id"]))
+            assert retained["task"] == original["prompt"]
+            assert retained["answer"] == original["answer"]
+            assert retained["text"] == original["text"]
+          end
+
+          if scenario == :legacy do
+            raw = specification_result(List.replace_at(drafts, 2, Map.put(third, "prompt", "")))
+
+            raw =
+              Map.update!(
+                raw,
+                "questions",
+                &Map.new(&1, fn q ->
+                  {q["id"], Map.drop(q, ["id", "plan_id"])}
+                end)
+              )
+
+            generated
+            |> Ecto.Changeset.change(
+              generation_plan: %{
+                "build_error" => %{
+                  "kind" => "invalid_contract",
+                  "stage" => "specification",
+                  "details" => %{"ids" => ["q3"], "rejected_response" => raw}
+                }
+              }
+            )
+            |> Repo.update!()
+          end
+
+          assert {:ok, resumed} =
+                   CaptainHomework.Exams.resume_generation(lesson.profile_id, generated.id)
+
+          resumed
+        else
+          generated
+        end
+
+      assert complete.status == "in_progress"
+      assert length(complete.questions) == 10
+      assert Enum.map(complete.questions, & &1["prompt"]) == Enum.map(drafts, & &1["prompt"])
+      assert Agent.get(calls, & &1) == if(repair_fails, do: 3, else: 2)
+      assert hd(complete.generation_rejections)["diagnostics"]["q3"] != nil
+
+      if scenario == :success do
+        # Later repairs must not reinterpret retained slots' assembled prompt fields.
+        assert {:ok, repaired} =
+                 OpenAI.repair_exercise_specs(
+                   lesson,
+                   complete.generation_plan,
+                   [third],
+                   "",
+                   []
+                 )
+
+        assert length(repaired["questions"]) == 10
+        assert Agent.get(calls, & &1) == 3
+      end
+    end
+  end
+
   test "invalid specifications stop after one call with a typed terminal error" do
     {lesson, resource, [source]} = document(1)
     stub(%{"entries" => [entry(source, %{"visual_page_ids" => []})]})
@@ -763,6 +880,9 @@ defmodule CaptainHomework.OpenAIResourcesTest do
     assert exam.generation_plan["build_error"]["stage"] == "specification"
     assert exam.generation_plan["build_error"]["retryable"] == false
     assert exam.generation_errors == [exam.generation_plan["build_error"]["message"]]
+    assert [rejection] = Repo.get!(CaptainHomework.Study.Exam, exam.id).generation_rejections
+    assert rejection["stage"] == "specification"
+    assert rejection["diagnostics"]["build_error"] == exam.generation_plan["build_error"]
   end
 
   test "a failed audit resumes saved drafts without paying for another plan" do

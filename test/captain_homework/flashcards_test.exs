@@ -124,7 +124,7 @@ defmodule CaptainHomework.FlashcardsTest do
       })
 
     assert {:error, message} = Exams.generate(p.id, l.id, 1, "", format: "flashcard")
-    assert message =~ "texte de chaque page"
+    assert message =~ "n’a pas pu être reconnu"
   end
 
   test "server rejects nonquick types and chapters without usable sources" do

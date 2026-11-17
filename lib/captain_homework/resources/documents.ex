@@ -64,7 +64,7 @@ defmodule CaptainHomework.Resources.Documents do
 
     with {:ok, type, ext} <- type(data) do
       part = %{data: data, type: type, ext: ext, kind: "resource", name: resource.filename}
-      {:ok, [part, %{part | kind: "illustration"}]}
+      {:ok, [Map.put(part, :source_page_number, 1)]}
     end
   end
 
@@ -117,10 +117,9 @@ defmodule CaptainHomework.Resources.Documents do
                {:ok, extracted} <- read_parts(images, "illustration") do
             illustrations = Enum.map(extracted, &name_illustration(&1, image_rows))
 
-            illustrations =
-              if illustrations == [],
-                do: Enum.map(page_parts, &%{&1 | kind: "illustration"}),
-                else: illustrations
+            page_parts =
+              Enum.with_index(page_parts, 1)
+              |> Enum.map(fn {part, number} -> Map.put(part, :source_page_number, number) end)
 
             all = page_parts ++ illustrations
 
@@ -168,7 +167,7 @@ defmodule CaptainHomework.Resources.Documents do
     index = image_index(part.name)
     row = Enum.find(rows, &(&1.index == index))
     page = row.page |> to_string() |> String.pad_leading(3, "0")
-    %{part | name: "page-#{page}-#{part.name}"}
+    part |> Map.put(:name, "page-#{page}-#{part.name}") |> Map.put(:source_page_number, row.page)
   end
 
   defp image_index(name) do
@@ -221,7 +220,12 @@ defmodule CaptainHomework.Resources.Documents do
       |> String.trim()
       |> String.slice(0, 100_000)
 
-    image_urls = document |> LazyHTML.query("img") |> LazyHTML.attribute("src") |> Enum.uniq()
+    image_urls =
+      tree
+      |> LazyHTML.from_tree()
+      |> LazyHTML.query("img")
+      |> LazyHTML.attribute("src")
+      |> Enum.uniq()
 
     if length(image_urls) > @max_web_images do
       {:error,
@@ -232,7 +236,9 @@ defmodule CaptainHomework.Resources.Documents do
         type: "text/plain",
         ext: ".txt",
         kind: "resource",
-        name: "Texte de la page web"
+        name: "Texte de la page web",
+        source_page_number: 1,
+        transcript: true
       }
 
       Enum.reduce_while(image_urls, {:ok, [base]}, fn source, {:ok, parts} ->
@@ -243,11 +249,20 @@ defmodule CaptainHomework.Resources.Documents do
         with {:ok, data, _, _} <- Download.fetch(url),
              true <-
                byte_size(data) <= 12_000_000 and
-                 existing_bytes + 2 * byte_size(data) <= @max_extracted_bytes,
+                 existing_bytes + byte_size(data) <= @max_extracted_bytes,
              {:ok, type, ext} <- Uploads.image_type(data) do
           name = source |> URI.parse() |> Map.get(:path) |> to_string() |> Path.basename()
-          part = %{data: data, type: type, ext: ext, kind: "resource", name: name}
-          {:cont, {:ok, parts ++ [part, %{part | kind: "illustration"}]}}
+
+          part = %{
+            data: data,
+            type: type,
+            ext: ext,
+            kind: "illustration",
+            name: "image-#{length(parts)}-#{name}",
+            source_page_number: 1
+          }
+
+          {:cont, {:ok, parts ++ [part]}}
         else
           _ ->
             {:halt,

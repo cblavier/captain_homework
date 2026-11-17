@@ -117,6 +117,7 @@ defmodule CaptainHomework.QuestionDefinitions do
     type
     |> Map.from_struct()
     |> Map.drop([:__meta__, :inserted_at, :updated_at, :deleted_at, :name_key])
+    |> Map.reject(fn {key, value} -> key == :ai_instructions and is_nil(value) end)
     |> Jason.encode!()
     |> Jason.decode!()
   end
@@ -151,7 +152,11 @@ defmodule CaptainHomework.QuestionDefinitions do
       "Type #{t.name} : format #{engine_format(t)}, consigne #{t.instruction_kind}#{if t.instruction_kind == "fixed", do: " : #{t.instruction}", else: ""}; contenu #{t.content_kind} #{t.content_presence}; durée de travail #{t.work_duration} (≈ #{CaptainHomework.WorkDuration.minutes(t.work_duration)} min). " <>
         "Une consigne dynamique doit devenir une demande précise adaptée au document, pas le libellé générique du type. " <>
         "Un contenu requis peut être fourni par un document original lisible recadré : ne remplis pas text avec une paraphrase de l'image. " <>
-        "Les aides de saisie et descriptions OCR internes ne sont pas le contenu à montrer. Ne révèle jamais la réponse attendue dans l’énoncé."
+        "Les aides de saisie et descriptions OCR internes ne sont pas le contenu à montrer. Ne révèle jamais la réponse attendue dans l’énoncé." <>
+        if(t.ai_instructions,
+          do: " Consignes pour l’IA propres à ce type : #{t.ai_instructions}",
+          else: ""
+        )
     end)
     |> CaptainHomework.QuestionTemplates.render(subject)
   end

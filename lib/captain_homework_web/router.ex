@@ -42,6 +42,7 @@ defmodule CaptainHomeworkWeb.Router do
     post "/connexion", SessionController, :authenticate
     delete "/session", SessionController, :logout
     pipe_through :family
+    get "/parametres/types/:type_id/exemples/:id", QuestionExampleController, :show
     post "/profil", SessionController, :profile
     get "/pages/:id", PageController, :show
     get "/enfants/:child/pages/:id", PageController, :show

@@ -51,9 +51,12 @@ defmodule CaptainHomeworkWeb.HomeworkLiveTest do
     exam(lesson(profile("Marius"), "anglais"))
 
     {:ok, view, _} = live(conn, "/alice")
-    assert has_element?(view, "#subject-anglais .subject-copy", "2 chapitres · 2 évaluations")
-    assert has_element?(view, "#subject-svt .subject-copy", "1 chapitre · 1 évaluation")
-    assert has_element?(view, "#subject-francais .subject-copy", "0 chapitre · 0 évaluation")
+    assert has_element?(view, "#subject-anglais .subject-copy > span:first-child", "2 chapitres")
+    assert has_element?(view, "#subject-anglais-exam-summary", "2 évaluations non rendues")
+    assert has_element?(view, "#subject-svt .subject-copy > span:first-child", "1 chapitre")
+    assert has_element?(view, "#subject-svt-exam-summary", "1 évaluation non rendue")
+    assert has_element?(view, "#subject-francais .subject-copy > span:first-child", "0 chapitre")
+    assert has_element?(view, "#subject-francais-exam-summary", "0 évaluation")
   end
 
   test "shared reading documents appear once while answers remain separate", %{conn: conn} do
@@ -699,7 +702,7 @@ defmodule CaptainHomeworkWeb.HomeworkLiveTest do
     refute has_element?(view, "#lesson-course")
     view |> element("#lesson-tab-cours") |> render_click()
     assert_patch(view, "/alice/lecons/#{l.id}?onglet=cours")
-    assert has_element?(view, "#lesson-course button[phx-click=edit_page]")
+    assert has_element?(view, "#lesson-course a[id^=open-page-]")
     refute has_element?(view, "#lesson-controls")
     view |> element("#lesson-tab-ressources") |> render_click()
     assert has_element?(view, "#lesson-resources")
@@ -742,7 +745,7 @@ defmodule CaptainHomeworkWeb.HomeworkLiveTest do
     refute has_element?(view, "#example-#{pg.id}")
   end
 
-  test "file uploads persist and can be corrected manually without AI", %{conn: conn} do
+  test "file uploads persist and open a read-only page", %{conn: conn} do
     old = Application.get_env(:captain_homework, :openai_api_key)
     Application.put_env(:captain_homework, :openai_api_key, nil)
     on_exit(fn -> Application.put_env(:captain_homework, :openai_api_key, old) end)
@@ -767,45 +770,86 @@ defmodule CaptainHomeworkWeb.HomeworkLiveTest do
     [pg] = Study.get_lesson!(p.id, l.id).pages
     assert File.exists?(CaptainHomework.Uploads.path(pg.storage_key))
     on_exit(fn -> File.rm(CaptainHomework.Uploads.path(pg.storage_key)) end)
-    view |> element("button[phx-click=edit_page]") |> render_click()
-    view |> form("#page-text-form", %{text: "Un noyau dans la cellule."}) |> render_submit()
-    assert Study.get_page!(p.id, pg.id).text == "Un noyau dans la cellule."
+    view |> element("a[id^=open-page-]") |> render_click()
+
+    assert has_element?(view, "#page-detail-text")
+    refute has_element?(view, "#page-recognized-content textarea")
+    refute has_element?(view, "#page-detail-form")
+    refute has_element?(view, "#save-page-detail")
+    refute has_element?(view, "#reread-page")
   end
 
-  test "rereading replaces an emptied draft without reopening the modal", %{conn: conn} do
-    old = Application.fetch_env!(:captain_homework, :ai_provider)
-    Application.put_env(:captain_homework, :ai_provider, CaptainHomework.TestAI)
-    on_exit(fn -> Application.put_env(:captain_homework, :ai_provider, old) end)
+  test "photo imports preserve selection order across reloads", %{conn: conn} do
+    p = profile()
+    l = lesson(p)
+    {:ok, view, _} = live(conn, "/alice/lecons/#{l.id}?onglet=cours")
+
+    image =
+      Base.decode64!(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aLioAAAAASUVORK5CYII="
+      )
+
+    names = ["z.png", "a.png", "m.png"]
+
+    uploads =
+      for name <- names do
+        {name,
+         file_input(view, "#upload-pages", :pages, [
+           %{name: name, content: image, type: "image/png"}
+         ])}
+      end
+
+    for {name, upload} <- uploads do
+      {:ok, %{ref: ref, config: config, entries: entries, errors: errors}} =
+        preflight_upload(upload)
+
+      :ok =
+        Phoenix.LiveViewTest.UploadClient.allowed_ack(upload, ref, config, name, entries, errors)
+    end
+
+    for {name, upload} <- Enum.reverse(uploads), do: render_upload(upload, name)
+    view |> form("#upload-pages") |> render_submit()
+    pages = Study.get_lesson!(p.id, l.id).pages
+    on_exit(fn -> Enum.each(pages, &File.rm(CaptainHomework.Uploads.path(&1.storage_key))) end)
+    assert Enum.map(pages, & &1.filename) == names
+    {:ok, reloaded, _} = live(conn, "/alice/lecons/#{l.id}?onglet=cours")
+
+    for {pg, index} <- Enum.with_index(pages, 1) do
+      assert has_element?(
+               reloaded,
+               "#lesson-page-#{pg.id} .learning-card-number",
+               to_string(index)
+             )
+    end
+  end
+
+  test "retired page editing and rereading events leave OCR text unchanged", %{conn: conn} do
     l = lesson(profile())
     pg = page(l)
-    key = "#{Ecto.UUID.generate()}.png"
-    pg |> Ecto.Changeset.change(storage_key: key) |> Repo.update!()
-    path = CaptainHomework.Uploads.path(key)
-    File.mkdir_p!(Path.dirname(path))
-    File.write!(path, "test image")
-    on_exit(fn -> File.rm(path) end)
-    Phoenix.PubSub.subscribe(CaptainHomework.PubSub, "lesson:#{l.id}")
 
     {:ok, view, _} = live(conn, "/alice/lecons/#{l.id}?onglet=cours")
-    view |> element("button[phx-click=edit_page]") |> render_click()
-    view |> form("#page-text-form", %{text: ""}) |> render_change()
-    view |> element("#page-modal button[phx-click=transcribe_page]") |> render_click()
-    assert_receive :lesson_updated, 2000
-    send(view.pid, :lesson_updated)
-    assert has_element?(view, "#page-modal #page-text", "Texte reconnu sur la photo.")
-    refute has_element?(view, "#page-modal button[phx-click=transcribe_page][disabled]")
+    view |> element("a[id^=open-page-]") |> render_click()
+    render_click(view, "edit_page", %{"id" => pg.id})
+    render_submit(view, "save_page", %{"text" => "Modification"})
+    render_submit(view, "save_page_detail", %{"page" => %{"text" => "Modification"}})
+    render_click(view, "transcribe_page", %{"id" => pg.id})
+
+    assert has_element?(view, "#page-detail-text", pg.text)
+    refute has_element?(view, "#page-modal")
+    assert Study.get_page!(l.profile_id, pg.id).text == pg.text
+    assert Study.get_page!(l.profile_id, pg.id).status == pg.status
   end
 
-  test "OCR completion updates status while preserving edits made during reading", %{conn: conn} do
+  test "OCR completion updates the read-only text and processing status", %{conn: conn} do
     l = lesson(profile())
     pg = page(l) |> Ecto.Changeset.change(status: "pending", text: "") |> Repo.update!()
     {:ok, view, _} = live(conn, "/alice/lecons/#{l.id}?onglet=cours")
-    view |> element("button[phx-click=edit_page]") |> render_click()
-    view |> form("#page-text-form", %{text: "Ma correction"}) |> render_change()
+    view |> element("a[id^=open-page-]") |> render_click()
+    assert has_element?(view, "#detail-processing-progress")
     pg |> Ecto.Changeset.change(status: "ready", text: "Résultat OCR") |> Repo.update!()
     send(view.pid, :lesson_updated)
-    assert has_element?(view, "#page-text", "Ma correction")
-    refute has_element?(view, "#page-modal button[phx-click=transcribe_page][disabled]")
+    assert has_element?(view, "#page-detail-text", "Résultat OCR")
+    refute has_element?(view, "#detail-processing-progress")
   end
 
   test "photo transcription can be edited before it becomes an answer", %{conn: conn} do

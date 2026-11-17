@@ -71,6 +71,8 @@ defmodule CaptainHomeworkWeb.CoreComponents do
   attr :options, :list, default: []
   attr :class, :any, default: nil
   attr :wrapper, :boolean, default: true
+  attr :hint, :string, default: nil
+  attr :hint_id, :string, default: nil
 
   attr :rest, :global,
     include:
@@ -83,6 +85,26 @@ defmodule CaptainHomeworkWeb.CoreComponents do
           id: assigns.id || assigns.field.id,
           name: assigns.name || assigns.field.name,
           value: if(is_nil(assigns.value), do: assigns.field.value, else: assigns.value)
+        )
+      else
+        assigns
+      end
+
+    assigns =
+      if assigns.hint do
+        hint_id = assigns.hint_id || (assigns.id && "#{assigns.id}-hint")
+
+        described_by =
+          [assigns.rest[:"aria-describedby"], hint_id]
+          |> Enum.reject(&is_nil/1)
+          |> Enum.join(" ")
+          |> String.split()
+          |> Enum.uniq()
+          |> Enum.join(" ")
+
+        assign(assigns,
+          hint_id: hint_id,
+          rest: Map.put(assigns.rest, :"aria-describedby", described_by)
         )
       else
         assigns
@@ -101,6 +123,7 @@ defmodule CaptainHomeworkWeb.CoreComponents do
         rest={@rest}
       />
       <.field_errors :if={@field} field={@field} />
+      <.field_hint :if={@hint} id={@hint_id}>{@hint}</.field_hint>
     </div>
     <.form_control
       :if={!@wrapper}
@@ -112,6 +135,17 @@ defmodule CaptainHomeworkWeb.CoreComponents do
       class={@class}
       rest={@rest}
     />
+    <.field_hint :if={!@wrapper && @hint} id={@hint_id}>{@hint}</.field_hint>
+    """
+  end
+
+  @doc "Help text kept close to its input or group of controls."
+  attr :id, :string, default: nil
+  slot :inner_block, required: true
+
+  def field_hint(assigns) do
+    ~H"""
+    <p id={@id} class="form-field-hint muted">{render_slot(@inner_block)}</p>
     """
   end
 
@@ -350,10 +384,14 @@ defmodule CaptainHomeworkWeb.CoreComponents do
       </g>
       <path :if={@name == "plus"} d="M12 5v14M5 12h14" />
       <path :if={@name == "minus"} d="M5 12h14" />
-      <path :if={@name == "chevron-down"} d="m6 9 6 6 6-6" />
+      <path :if={@name in ["chevron-down", "hero-chevron-down"]} d="m6 9 6 6 6-6" />
       <g :if={@name == "keyboard"}>
         <rect x="2" y="5" width="20" height="14" rx="2" />
         <path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M7 15h10" />
+      </g>
+      <g :if={@name == "hero-backspace"}>
+        <path d="M9 5H20a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-7-7Z" />
+        <path d="m12 9 6 6m0-6-6 6" />
       </g>
       <path :if={@name == "arrows-right-left"} d="m16 3 4 4-4 4M4 7h16M8 21l-4-4 4-4m12 4H4" />
       <path :if={@name == "arrow"} d="m9 5 7 7-7 7" />
@@ -367,7 +405,7 @@ defmodule CaptainHomeworkWeb.CoreComponents do
       <g :if={@name == "camera"}>
         <path d="M3 6h4l2-3h6l2 3h4v15H3Z" /><circle cx="12" cy="13" r="4" />
       </g>
-      <g :if={@name == "check"}><path d="m5 12 4 4L19 6" /></g>
+      <g :if={@name in ["check", "hero-check"]}><path d="m5 12 4 4L19 6" /></g>
       <g :if={@name == "warning"}>
         <circle cx="12" cy="12" r="9" /><path d="M12 7v6m0 4h.01" />
       </g>

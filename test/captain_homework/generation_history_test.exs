@@ -85,6 +85,12 @@ defmodule CaptainHomework.GenerationHistoryTest do
     refute Map.has_key?(latest["content"], "audio_script")
     refute Jason.encode!(repaired) =~ "Réponse 2"
     assert complete.generation_plan["review_diagnostics"] == %{}
+    assert [rejection] = complete.generation_rejections
+
+    assert rejection["diagnostics"]["q2"]["reason"] ==
+             "Le document ne contient que deux éléments."
+
+    assert rejection["diagnostics"]["q2"]["issue_codes"] == ["content_inconsistent"]
     times = Enum.map(repaired["events"], & &1["elapsed_ms"])
     assert times == Enum.sort(times)
   end
@@ -100,10 +106,13 @@ defmodule CaptainHomework.GenerationHistoryTest do
     assert Enum.count(statuses(blocked), &(&1 == "rejected")) == 3
     assert Enum.count(statuses(blocked), &(&1 == "repairing")) == 2
     assert blocked["reason"] == "Le document ne contient que deux éléments."
+    rejections = Repo.get!(Study.Exam, partial.id).generation_rejections
+    assert length(rejections) == 3
     before = calls()
     assert {:ok, resumed} = Exams.resume_generation(lesson.profile_id, partial.id)
     assert calls() == before
     assert resumed.generation_history == partial.generation_history
+    assert resumed.generation_rejections == rejections
   end
 
   test "an interrupted audit keeps the paid revision and resumes its question history", %{

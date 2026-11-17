@@ -2,7 +2,9 @@ defmodule CaptainHomework.Exams.Illustrations do
   alias CaptainHomework.{ImageCrops, Uploads}
 
   def extracted?(page),
-    do: page.kind == "illustration" and is_binary(Map.get(page, :extracted_from_id))
+    do:
+      page.kind == "illustration" and
+        (is_binary(Map.get(page, :parent_page_id)) or is_binary(Map.get(page, :extracted_from_id)))
 
   def resource_content_page?(page), do: page.kind == "resource" or extracted?(page)
 
@@ -10,8 +12,11 @@ defmodule CaptainHomework.Exams.Illustrations do
     ready_ids = ready_resource_ids(lesson)
 
     Enum.filter(lesson.pages, fn page ->
-      page.kind in ["resource", "illustration"] and page.resource_id in ready_ids and
-        String.starts_with?(page.content_type, "image/")
+      page.kind in ["lesson", "resource", "illustration"] and
+        not Map.get(page, :legacy_hidden, false) and
+        Map.get(page, :association_status, "linked") != "unresolved" and
+        (is_nil(page.resource_id) or page.resource_id in ready_ids) and
+        String.starts_with?(Map.get(page, :content_type) || "", "image/")
     end)
   end
 
@@ -20,8 +25,19 @@ defmodule CaptainHomework.Exams.Illustrations do
 
     Enum.filter(
       lesson.pages,
-      &(&1.kind == "lesson" or (resource_content_page?(&1) and &1.resource_id in ready_ids))
+      &(not Map.get(&1, :legacy_hidden, false) and
+          Map.get(&1, :association_status, "linked") != "unresolved" and
+          (&1.kind == "lesson" or resource_content_page?(&1)) and
+          (is_nil(&1.resource_id) or &1.resource_id in ready_ids))
     )
+  end
+
+  def readable_content?(pages) do
+    Enum.any?(pages, &(String.trim(&1.text || "") != "")) and
+      Enum.all?(pages, fn page ->
+        page.kind == "illustration" or
+          (page.status != "pending" and String.trim(page.text || "") != "")
+      end)
   end
 
   def priority_exercises?(lesson) do

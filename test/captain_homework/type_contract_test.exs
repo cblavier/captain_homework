@@ -182,7 +182,7 @@ defmodule CaptainHomework.Exams.TypeContractTest do
     for key <- ~w(prompt task options slots image_ids audio_script diagram support_id),
         do: refute(Map.has_key?(fixed["properties"], key))
 
-    assert free["properties"]["task"]
+    assert free["properties"]["task"]["pattern"] == "\\S"
     refute free["properties"]["text"]["pattern"]
 
     raw = %{"definition_id" => "definition", "type" => "definition", "text" => "Membrane"}

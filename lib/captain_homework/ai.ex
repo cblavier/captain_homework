@@ -82,6 +82,15 @@ defmodule CaptainHomework.AI do
   def generate(lesson, pages, examples, count, instructions, retries),
     do: provider().generate(lesson, pages, examples, count, instructions, retries)
 
+  @callback reconsider(map(), String.t(), String.t()) :: {:ok, map()} | {:error, term()}
+  @optional_callbacks reconsider: 3
+
+  def reconsider(exam, question_id, explanation) do
+    if Code.ensure_loaded?(provider()) and function_exported?(provider(), :reconsider, 3),
+      do: provider().reconsider(exam, question_id, explanation),
+      else: {:error, "La contestation n’est pas disponible avec ce service IA."}
+  end
+
   def grade(exam), do: provider().grade(exam)
 
   def configured?,
