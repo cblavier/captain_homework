@@ -118,10 +118,6 @@ mix precommit
 
 Remplacer `n` par `1`, `2`, etc. Les numéros identifient durablement les enfants : conserver le même numéro lors d’un changement de prénom et ne jamais le réattribuer à une autre personne. Retirer une variable `FIRST_NAME` masque l’espace sans supprimer ses données. Sans enfant configuré, aucun espace n’est proposé.
 
-Les avatars acceptent au maximum 262 144 caractères base64. Sans avatar valide, l’initiale du prénom est affichée. Sans thème valide, les palettes bleu et vert alternent dans l’ordre des enfants.
-
-Depuis le menu utilisateur, la page **Paramètres** permet de choisir le thème et d’activer les matières de chaque enfant. Désactiver une matière conserve ses chapitres et résultats. Les règles pédagogiques communes sont intégrées au code ; des instructions facultatives peuvent être ajoutées à la création de chaque contrôle. Toute réponse doit pouvoir être déduite des leçons ou des supports affichés avec la question.
-
 Chaque compte enfant accède uniquement au profil `HOMEWORK_CHILD_n` de même numéro, y compris pour les documents et les notifications. Famille et les comptes parents accèdent à tous les profils. Sans compte PIN configuré, l’accès privé est fermé. Les liens de partage restent accessibles sans connexion.
 
 ### Génération et correction des évaluations
@@ -204,15 +200,3 @@ Le script [deploy.sh](deploy.sh) automatise la construction et le transfert SSH/
 ## Licence
 
 Captain Homework est distribué sous [licence MIT](LICENSE). Elle autorise l’utilisation, la modification et la redistribution, y compris commerciales, sous réserve de conserver la notice de copyright et la licence. Le logiciel est fourni sans garantie. Les dépendances et éléments tiers restent soumis à leurs licences respectives.
-
-### Migration des contrôles de référence
-
-La migration `20261110183108` regroupe les anciennes pages d’exemple de chaque chapitre dans un contrôle de référence de la même matière et du même enfant. Elle reprend le nom et la date du chapitre, faute de métadonnées historiques plus précises ; ils restent modifiables. Les identifiants des pages, leurs fichiers, leur ordre et leurs analyses sont conservés. Les évaluations déjà créées gardent leurs questions et leurs résultats.
-
-Cette migration reconstruit la table SQLite `pages` pour rendre le rattachement à un chapitre facultatif. Sauvegarder la base avant application ; un retour à l’ancien modèle nécessite la restauration de cette sauvegarde. Les URLs historiques `/controles/` restent compatibles, tandis que l’interface utilise « Évaluations ».
-
-### Prononciation
-
-Le type **Prononciation** fonctionne en évaluation classique et en Flash cards pour l’anglais et l’espagnol. L’élève lit une courte phrase, enregistre sa voix (60 secondes, 5 Mo maximum), puis peut réécouter ou remplacer sa réponse avant correction. Le microphone nécessite HTTPS ou localhost et une autorisation du navigateur. Les enregistrements sont privés, conservés avec la copie et supprimés avec elle.
-
-La correction reçoit le son réel, et pas uniquement sa transcription, via un modèle audio (`gpt-audio-1.5`, configurable via `:openai_pronunciation_model`). Elle donne une note par quarts et un conseil en français, en acceptant les accents non natifs intelligibles. En cas d’échec du service, la réponse reste disponible pour réessayer. Voir la [documentation audio](https://developers.openai.com/api/docs/guides/audio-chat-completions).
