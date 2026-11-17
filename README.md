@@ -50,10 +50,19 @@ Captures de l’interface avec un seul profil fictif, Alice, et des données ano
 ### Mobile
 
 <p>
+  <img src="screenshots/alice/mobile-accueil.png" alt="Accueil d’Alice sur mobile : onglet Matières" width="250" />
   <img src="screenshots/alice/mobile-creation-controle.png" alt="Création d’un contrôle classique de maths" width="250" />
   <img src="screenshots/alice/mobile-generation-detaillee.png" alt="Génération détaillée de cinq questions — état de démonstration" width="250" />
   <img src="screenshots/alice/mobile-flashcard-anglais.png" alt="Contrôle d’anglais en Flash cards avec compréhension orale" width="250" />
 </p>
+
+## Principe de fonctionnement
+
+1. **Lire et organiser les documents** : l’OCR reconnaît le texte des leçons et des ressources. Les notions, objectifs, exercices et illustrations sont organisés en une structure pédagogique.
+2. **Préparer le plan d’évaluation** : les notions à travailler et les types de questions sont répartis selon le contenu du chapitre, la durée souhaitée et les consignes personnalisées.
+3. **Rédiger les questions** : chaque question est préparée avec son énoncé, ses éventuels documents, la réponse attendue et les critères de correction.
+4. **Valider et ajuster** : une relecture indépendante vérifie la cohérence des questions, leur fidélité aux sources et la qualité des supports. Les questions rejetées sont retravaillées sans perdre celles déjà validées.
+5. **Répondre et recevoir une correction** : l’élève réalise l’évaluation, puis reçoit une note sur 20 et des explications par question. En Flash cards, la correction apparaît après chaque réponse.
 
 ## Lancer le projet en local
 
@@ -113,28 +122,6 @@ Pour lancer les vérifications :
 ```sh
 mix precommit
 ```
-
-### Espaces enfants et paramètres
-
-Remplacer `n` par `1`, `2`, etc. Les numéros identifient durablement les enfants : conserver le même numéro lors d’un changement de prénom et ne jamais le réattribuer à une autre personne. Retirer une variable `FIRST_NAME` masque l’espace sans supprimer ses données. Sans enfant configuré, aucun espace n’est proposé.
-
-Chaque compte enfant accède uniquement au profil `HOMEWORK_CHILD_n` de même numéro, y compris pour les documents et les notifications. Famille et les comptes parents accèdent à tous les profils. Sans compte PIN configuré, l’accès privé est fermé. Les liens de partage restent accessibles sans connexion.
-
-### Génération et correction des évaluations
-
-La création permet de choisir les types de questions et d’ajouter des consignes personnalisées prioritaires. La répartition des questions dépend des types sélectionnés, de leur durée de travail et du contenu disponible, sans quota fixe de rédactions ni de questions documentaires. Les contrôles de référence sont rangés par matière et par enfant : chacun possède un nom, une date et des pages ordonnées. À la création d’une évaluation classique, le choix facultatif « S’inspirer d’un contrôle de référence » propose les contrôles de la matière, avec « Aucun » par défaut. Seule la référence sélectionnée guide la structure ; le chapitre et ses ressources fournissent le contenu pédagogique. Les Flash cards ignorent les contrôles de référence.
-
-Le mode **Flash cards** utilise toutes les pages de leçons avec uniquement des questions rapides. Si le chapitre ne contient aucune page de leçon, il utilise le texte de ses ressources prêtes, notamment les transcriptions audio. Les contrôles de référence et les anciennes évaluations sont exclus. Chaque carte vaut un point, avec des points partiels par quarts, et révèle sa correction après validation. Le résultat final est ramené sur 20.
-
-La génération sauvegarde une première version, puis un audit indépendant vérifie les questions, leurs sources et leurs supports. Une différence de classification de l’effort, à elle seule, met à jour les métadonnées de la question et du plan ; les défauts pédagogiques restent soumis à réparation. Les réparations conservent les questions validées et transmettent leurs énoncés visibles, les sources utiles aux questions rejetées et les images nécessaires. Seules les questions rejetées sont réécrites. Un contrôle incomplet reste **À compléter** : la reprise conserve le travail prêt et les instructions. La génération continue après fermeture de la page ; une tâche interrompue peut être reprise et une tâche bloquée expire après dix minutes.
-
-Pendant la génération, l’écran affiche l’étape de l’appel en cours, le temps écoulé et le nombre de questions à ajuster.
-
-Un document partagé est conservé séparément du texte propre à chaque question. Il apparaît une seule fois avant les questions associées, sans remplacer leurs consignes ni leur contenu dynamique, y compris lors des réparations et des reprises de questions.
-
-Le contexte conserve les connaissances de toutes les pages de leçons. Les exercices des ressources sont sélectionnés avec leurs faits et supports associés dans un budget de contexte adapté au nombre de questions. Les pages visuelles sélectionnées sont transmises en entier pour préserver les légendes ; leurs figures extraites ne sont pas ajoutées automatiquement en doublon.
-
-La table `ai_calls` conserve les durées, statuts et consommations de tokens, sans prompts ni réponses. Les contrôles non rendus ou terminés peuvent être supprimés après confirmation, avec leurs résultats et fichiers associés. Un chapitre ne peut être supprimé que lorsqu’il est vide. L’OCR et la correction restent des propositions de l’IA, à vérifier.
 
 ## Construire et lancer en production avec Docker
 
