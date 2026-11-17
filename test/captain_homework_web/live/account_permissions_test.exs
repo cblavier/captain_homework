@@ -12,7 +12,7 @@ defmodule CaptainHomeworkWeb.AccountPermissionsTest do
 
       for prefix <- ["", "/alice", "/enfants/alice"] do
         for path <- [
-              "/parametres",
+              "/configuration",
               "/parametres/matieres",
               "/parametres/types",
               "/parametres/types/nouveau",
@@ -22,7 +22,7 @@ defmodule CaptainHomeworkWeb.AccountPermissionsTest do
         end
       end
 
-      render_patch(view, "/alice/parametres")
+      render_patch(view, "/alice/configuration")
       assert_redirect(view, "/connexion")
       {:ok, view, _} = live(conn, "/alice")
       render_click(view, "save_subjects", %{"subjects" => %{"enabled_ids" => ["anglais"]}})
@@ -72,7 +72,7 @@ defmodule CaptainHomeworkWeb.AccountPermissionsTest do
       {:ok, home, _} = live(conn, "/alice")
       assert has_element?(home, "#subjects-settings-button")
 
-      for path <- ["/parametres", "/parametres/matieres", "/parametres/types"] do
+      for path <- ["/configuration", "/parametres/matieres", "/parametres/types"] do
         assert {:ok, _, _} = live(conn, "/alice" <> path)
       end
 

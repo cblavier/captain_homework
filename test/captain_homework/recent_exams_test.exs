@@ -29,7 +29,7 @@ defmodule CaptainHomework.RecentExamsTest do
     assert Enum.all?(page.exams, &Ecto.assoc_loaded?(&1.lesson))
 
     assert Study.exam_status_counts(alice.id) == %{
-             lesson.subject => %{corrected: 1, unsubmitted: 3}
+             lesson.subject => %{total: 5, corrected: 1, unsubmitted: 3}
            }
   end
 

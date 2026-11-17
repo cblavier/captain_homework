@@ -4,15 +4,22 @@ defmodule CaptainHomeworkWeb.SubjectSettingsLiveTest do
   import CaptainHomework.Fixtures
   alias CaptainHomework.{QuestionDefinitions, Repo, Study}
 
-  test "settings entry is icon only, and subject preferences are scoped to the selected child", %{
-    conn: conn
-  } do
+  test "configuration entry has a label, and subject preferences are scoped to the selected child",
+       %{
+         conn: conn
+       } do
     profile()
     {:ok, home, _} = live(conn, "/alice")
 
     assert has_element?(
              home,
-             "#subjects-settings-button[href='/alice/parametres'][aria-label='Paramètres'] svg"
+             "#subjects-settings-button[href='/alice/configuration'][aria-label='Configuration'] svg"
+           )
+
+    assert has_element?(
+             home,
+             "#subjects-settings-button .configuration-button-label",
+             "Configuration"
            )
 
     assert has_element?(home, "#settings-link[href='/alice/apparence']")
@@ -34,7 +41,8 @@ defmodule CaptainHomeworkWeb.SubjectSettingsLiveTest do
 
     refute has_element?(display, "#student-subjects-card")
     refute has_element?(display, "#question-types-card")
-    {:ok, settings, _} = live(conn, "/alice/parametres")
+    {:ok, settings, _} = live(conn, "/alice/configuration")
+    assert has_element?(settings, "#subjects-settings-title", "Configuration")
     refute has_element?(settings, "#theme-settings")
     assert has_element?(settings, "#subjects-settings-page.settings-page:not(.setup-section)")
 
@@ -46,7 +54,7 @@ defmodule CaptainHomeworkWeb.SubjectSettingsLiveTest do
 
     assert has_element?(settings, "#manage-student-subjects[href='/alice/parametres/matieres']")
     assert has_element?(settings, "#manage-question-types[href='/alice/parametres/types']")
-    {:ok, other, _} = live(conn, "/marius/parametres")
+    {:ok, other, _} = live(conn, "/marius/configuration")
     assert has_element?(other, "#student-subjects-card h3", "Marius")
   end
 

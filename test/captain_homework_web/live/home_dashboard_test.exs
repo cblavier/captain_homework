@@ -109,5 +109,8 @@ defmodule CaptainHomeworkWeb.HomeDashboardTest do
         ] do
       assert has_element?(view, "#subject-#{subject}-exam-summary", text)
     end
+
+    assert has_element?(view, "#subject-anglais-mobile-summary", "1 chapitre · 5 évaluations")
+    assert has_element?(view, "#subject-histoire-geo-mobile-summary", "0 chapitre · 0 évaluation")
   end
 end

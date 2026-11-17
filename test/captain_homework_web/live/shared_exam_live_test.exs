@@ -41,7 +41,12 @@ defmodule CaptainHomeworkWeb.SharedExamLiveTest do
 
     {:ok, view, _} = live(conn, "/alice/parametres/partages")
     assert has_element?(view, ".page-shell[data-child-theme] #shared-evaluations-page.app")
-    assert has_element?(view, "#shared-evaluations-title-breadcrumb a[href='/alice/parametres']")
+
+    assert has_element?(
+             view,
+             "#shared-evaluations-title-breadcrumb a[href='/alice/configuration']"
+           )
+
     assert has_element?(view, "#shared-evaluations .shared-evaluation .shared-attempt-label")
     assert has_element?(view, "#shared-evaluations a.button.secondary")
     assert has_element?(view, "a[href='/alice/parametres/partages/#{attempt.id}']")

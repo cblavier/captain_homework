@@ -14,7 +14,7 @@ defmodule CaptainHomeworkWeb.PhotoAnswerComponents do
       <dialog class="webcam-dialog" aria-labelledby={@id <> "-title"}>
         <div class="webcam-content">
           <div class="section-heading">
-            <h2 id={@id <> "-title"}>Cadre ta réponse</h2>
+            <h2 id={@id <> "-title"} class="modal-title">Cadre ta réponse</h2>
             <button type="button" class="button" data-camera-close>Fermer</button>
           </div>
           <p>Place ta feuille dans le cadre. Vérifie que ton écriture est nette et bien éclairée.</p>

@@ -816,6 +816,12 @@ body:has(#flashcard-session) { position: fixed; inset: 0; }
 }
 .subjects-page-heading { flex-wrap: nowrap; align-items: center; }
 .subjects-page-heading > .settings-gear-button { width: 44px; }
+.configuration-button-label { display: none; }
+@media (width >= 1024px) {
+  .subjects-page-heading { margin-bottom: 44px; }
+  .subjects-page-heading > .settings-gear-button { flex-basis: auto; width: auto; padding-inline: 14px; }
+  .configuration-button-label { display: inline; }
+}
 .home-dashboard { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); align-items: start; gap: 40px; }
 .home-dashboard > section { min-width: 0; }
 .home-section-title { margin: 0 0 20px; font-size: 18px; color: var(--day-ink); }
@@ -828,6 +834,7 @@ body:has(#flashcard-session) { position: fixed; inset: 0; }
 #home-subject-grid .subject-card-heading h2 { min-width: 0; font-size: 19px; overflow-wrap: anywhere; }
 #home-subject-grid .subject-copy { display: grid; gap: 10px; margin-top: 16px; }
 #home-subject-grid .subject-copy span { font-size: 15px; line-height: 1.5; }
+#home-subject-grid :is(.subject-mobile-summary, .subject-mobile-arrow) { display: none; }
 .home-exam-list { display: grid; gap: 32px; }
 .home-exam-card { position: relative; display: block; min-width: 0; padding: 0 0 0 44px; border-radius: 8px; transition: background-color .15s, box-shadow .15s; }
 .home-exam-card:hover { background: #f3f4f6; box-shadow: 0 0 0 8px #f3f4f6; }
@@ -851,6 +858,17 @@ body:has(#flashcard-session) { position: fixed; inset: 0; }
 .home-exams-more { width: 100%; margin-top: 28px; color: var(--day-ink); border-color: var(--day-line); }
 @media (width < 1024px) {
   .home-dashboard { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  #home-subject-grid { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  #home-subject-grid .subject-card { display: grid; grid-template-columns: 48px minmax(0, 1fr) 16px; grid-template-rows: auto auto; column-gap: 16px; row-gap: 4px; align-items: center; min-height: 96px; padding: 20px 4px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; }
+  #home-subject-grid .subject-card:last-child { border-bottom: 0; }
+  #home-subject-grid .subject-card { transition: none; }
+  #home-subject-grid .subject-card:is(:hover, :focus-visible) { transform: none; box-shadow: none; background-color: var(--surface-background); }
+  #home-subject-grid .subject-card-heading { display: contents; }
+  #home-subject-grid .subject-card-heading .icon-tile { grid-column: 1; grid-row: 1 / 3; width: 48px; height: 48px; border-radius: 13px; }
+  #home-subject-grid .subject-card-heading h2 { grid-column: 2; grid-row: 1; align-self: end; margin: 0; font-size: 18px; line-height: 1.3; }
+  #home-subject-grid .subject-copy { display: none; }
+  #home-subject-grid .subject-mobile-summary { display: block; grid-column: 2; grid-row: 2; align-self: start; color: var(--muted); font-size: 14px; line-height: 1.4; }
+  #home-subject-grid .subject-mobile-arrow { display: block; grid-column: 3; grid-row: 1 / 3; width: 16px; height: 16px; color: var(--muted); }
   .home-section-title { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
   #home-subnav { display: flex; gap: 4px; padding: 4px; border: 1px solid var(--day-line); border-radius: 8px; background: var(--surface-background); }
   #home-subnav button { flex: 1; min-height: 34px; padding: 5px 8px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-size: 14px; font-weight: 500; }
@@ -918,7 +936,6 @@ body:has(#flashcard-session) { position: fixed; inset: 0; }
 .ordering-actions button:disabled { opacity: .45; }
 
 #extract-illustrations-modal .modal-panel { width: min(100%, 1040px); }
-#extract-illustrations-modal-title { font-size: 21px; }
 @media (min-width: 601px) {
   #preview-extraction-source { height: clamp(320px, 60dvh, 600px); border-radius: 10px; }
   #extraction-source-image { max-height: none; }
@@ -1347,3 +1364,9 @@ button.text-button:focus-visible {
 .learning-page-illustrations > .section-heading { margin: 0 0 16px; }
 #page-illustrations:not(:has(.page-card)) { display: none; }
 #page-illustrations:not(:has(.page-card)) + .illustration-extraction-placeholder { margin-top: 0; }
+
+.contestation-actions { display: flex; justify-content: flex-end; }
+h2.modal-title { color: var(--day-ink, var(--primary)); font-size: 21px; }
+#submit-contestation .spinner { display: none; border-color: color-mix(in srgb, currentColor 30%, transparent); border-top-color: currentColor; }
+#submit-contestation[aria-busy="true"] .spinner,
+#contestation-form.phx-submit-loading #submit-contestation .spinner { display: inline-block; }

@@ -216,7 +216,7 @@ defmodule CaptainHomeworkWeb.HomeworkLive do
     case socket.assigns.live_action do
       action when action in [:settings, :subjects_settings, :subject_preferences] ->
         assign(socket,
-          page_title: "Paramètres",
+          page_title: if(action == :settings, do: "Paramètres", else: "Configuration"),
           subjects_form: subject_preferences_form(profile)
         )
 

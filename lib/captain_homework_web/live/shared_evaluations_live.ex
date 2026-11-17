@@ -70,7 +70,7 @@ defmodule CaptainHomeworkWeb.SharedEvaluationsLive do
               id="shared-evaluations-title"
               ancestors={[
                 {:home, ProfilePath.child_path(@profile, "/")},
-                {"Paramètres", ProfilePath.child_path(@profile, "/parametres")}
+                {"Configuration", ProfilePath.child_path(@profile, "/configuration")}
               ]}
             >
               Évaluations partagées

@@ -206,6 +206,7 @@ defmodule CaptainHomework.Study do
         select:
           {l.subject,
            %{
+             total: count(e.id),
              corrected: sum(fragment("CASE WHEN ? = 'completed' THEN 1 ELSE 0 END", e.status)),
              unsubmitted:
                sum(

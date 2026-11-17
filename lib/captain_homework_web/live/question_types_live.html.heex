@@ -7,7 +7,7 @@
           id="question-types-title"
           ancestors={[
             {:home, child_path(@profile, "/")},
-            {"Paramètres", child_path(@profile, "/parametres")}
+            {"Configuration", child_path(@profile, "/configuration")}
           ]}
         >
           Types de questions
@@ -139,7 +139,7 @@
               <.icon name="arrow" class="breadcrumb-separator" />
             </li>
             <li>
-              <.link navigate={child_path(@profile, "/parametres")}>Paramètres</.link>
+              <.link navigate={child_path(@profile, "/configuration")}>Configuration</.link>
               <.icon name="arrow" class="breadcrumb-separator" />
             </li>
             <li>

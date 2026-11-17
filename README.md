@@ -57,7 +57,7 @@ Captures de l’interface avec un seul profil fictif, Alice, et des données ano
 ### Mobile
 
 <p>
-  <img src="screenshots/alice/mobile-accueil.png" alt="Accueil d’Alice sur mobile : onglet Matières" width="20.63%" /><img src="screenshots/alice/mobile-creation-controle.png" alt="Création d’un contrôle classique de maths" width="26.45%" /><img src="screenshots/alice/mobile-generation-detaillee.png" alt="Génération détaillée de cinq questions — état de démonstration" width="26.45%" /><img src="screenshots/alice/mobile-flashcard-anglais.png" alt="Contrôle d’anglais en Flash cards avec compréhension orale" width="26.45%" />
+  <img src="screenshots/alice/mobile-accueil.png" alt="Accueil d’Alice sur mobile : onglet Matières" width="25%" /><img src="screenshots/alice/mobile-creation-controle.png" alt="Création d’un contrôle classique de maths" width="25%" /><img src="screenshots/alice/mobile-generation-detaillee.png" alt="Génération détaillée de cinq questions — état de démonstration" width="25%" /><img src="screenshots/alice/mobile-flashcard-anglais.png" alt="Contrôle d’anglais en Flash cards avec compréhension orale" width="25%" />
 </p>
 
 ## Lancer le projet en local

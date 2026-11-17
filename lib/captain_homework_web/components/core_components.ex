@@ -668,7 +668,7 @@ defmodule CaptainHomeworkWeb.CoreComponents do
     >
       <.focus_wrap id={@id <> "-focus"} class="modal-panel">
         <div class="section-heading">
-          <h2 id={@id <> "-title"}>{@title}</h2>
+          <h2 id={@id <> "-title"} class="modal-title">{@title}</h2>
           <button type="button" class="icon-button" phx-click="close_modal" aria-label="Fermer">
             <.icon name="close" />
           </button>

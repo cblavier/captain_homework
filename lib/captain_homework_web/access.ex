@@ -73,7 +73,7 @@ defmodule CaptainHomeworkWeb.Access do
   defp settings_allowed?(account, path) do
     Accounts.parent?(account) or
       not Regex.match?(
-        ~r{/(?:parametres(?:/(?:matieres|types|partages)(?:/.*)?)?)$},
+        ~r{/(?:configuration|parametres(?:/(?:matieres|types|partages)(?:/.*)?)?)$},
         URI.decode(path)
       )
   end

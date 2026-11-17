@@ -60,7 +60,7 @@ defmodule CaptainHomeworkWeb.Router do
       ] do
       live "/", HomeworkLive, :home
       live "/apparence", HomeworkLive, :settings
-      live "/parametres", HomeworkLive, :subjects_settings
+      live "/configuration", HomeworkLive, :subjects_settings
       live "/parametres/partages", SharedEvaluationsLive, :index
       live "/parametres/partages/:id", SharedEvaluationsLive, :exam
       live "/parametres/matieres", HomeworkLive, :subject_preferences
@@ -74,7 +74,7 @@ defmodule CaptainHomeworkWeb.Router do
       live "/controles/:id", HomeworkLive, :exam
       live "/enfants/:child", HomeworkLive, :home
       live "/enfants/:child/apparence", HomeworkLive, :settings
-      live "/enfants/:child/parametres", HomeworkLive, :subjects_settings
+      live "/enfants/:child/configuration", HomeworkLive, :subjects_settings
       live "/enfants/:child/parametres/partages", SharedEvaluationsLive, :index
       live "/enfants/:child/parametres/partages/:id", SharedEvaluationsLive, :exam
       live "/enfants/:child/parametres/matieres", HomeworkLive, :subject_preferences
@@ -88,7 +88,7 @@ defmodule CaptainHomeworkWeb.Router do
       live "/enfants/:child/controles/:id", HomeworkLive, :exam
       live "/:child", HomeworkLive, :home
       live "/:child/apparence", HomeworkLive, :settings
-      live "/:child/parametres", HomeworkLive, :subjects_settings
+      live "/:child/configuration", HomeworkLive, :subjects_settings
       live "/:child/parametres/partages", SharedEvaluationsLive, :index
       live "/:child/parametres/partages/:id", SharedEvaluationsLive, :exam
       live "/:child/parametres/matieres", HomeworkLive, :subject_preferences

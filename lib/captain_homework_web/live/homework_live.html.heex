@@ -225,7 +225,7 @@
           id="subjects-settings-title"
           ancestors={[{:home, child_path(@profile, ~p"/")}]}
         >
-          Paramètres
+          Configuration
         </.page_breadcrumb>
       </div>
       <section :if={@profile} id="student-subjects-card" class="settings-card">
@@ -269,7 +269,7 @@
           id="subject-preferences-title"
           ancestors={[
             {:home, child_path(@profile, ~p"/")},
-            {"Paramètres", child_path(@profile, ~p"/parametres")}
+            {"Configuration", child_path(@profile, ~p"/configuration")}
           ]}
         >
           Matières de {@profile.name}
@@ -323,10 +323,11 @@
             :if={CaptainHomework.Accounts.parent?(@account)}
             id="subjects-settings-button"
             class="button secondary settings-gear-button"
-            navigate={child_path(@profile, ~p"/parametres")}
-            aria-label="Paramètres"
+            navigate={child_path(@profile, ~p"/configuration")}
+            aria-label="Configuration"
           >
             <.icon name="hero-cog-6-tooth" />
+            <span class="configuration-button-label">Configuration</span>
           </.link>
         </div>
         <div id="home-dashboard" class="home-dashboard" data-panel={@home_panel}>
@@ -348,7 +349,7 @@
             <div :if={@subjects == []} id="no-enabled-subjects" class="empty-state">
               <p>Aucune matière activée.</p>
               <.link
-                navigate={child_path(@profile, ~p"/parametres")}
+                navigate={child_path(@profile, ~p"/configuration")}
                 class="button secondary"
               >
                 Choisir les matières
@@ -373,6 +374,14 @@
                     )}
                   </span>
                 </div>
+                <p class="subject-mobile-summary" id={"subject-#{s.id}-mobile-summary"}>
+                  {count_label(Map.get(@counts, s.id, 0), "chapitre", "chapitres")} · {count_label(
+                    get_in(@exam_counts, [s.id, :total]) || 0,
+                    "évaluation",
+                    "évaluations"
+                  )}
+                </p>
+                <.icon name="arrow" class="subject-mobile-arrow" />
               </.link>
             </div>
           </section>
@@ -1962,7 +1971,7 @@
       phx-hook="Dialog"
     >
       <.focus_wrap id="submit-focus" class="modal-panel">
-        <h2 id="submit-title">Rendre ta copie ?</h2>
+        <h2 id="submit-title" class="modal-title">Rendre ta copie ?</h2>
         <p>
           {count_label(completed_count(@exam, @answers), "réponse", "réponses")} sur {length(
             @exam.questions
@@ -2114,32 +2123,27 @@
     id="contest-correction-modal"
     title="Contester la correction"
   >
-    <p>
-      Une nouvelle vérification de cet exercice sera effectuée. Sa correction et ta note pourront être revues à la hausse ou à la baisse.
-    </p>
     <.form for={@contestation_form} id="contestation-form" phx-submit="submit_contestation">
       <.input
         field={@contestation_form[:explanation]}
         type="textarea"
-        label="Pourquoi contestes-tu cette correction ? (facultatif)"
+        label="Pourquoi contestes-tu cette correction ?"
+        hint="Une nouvelle vérification de cet exercice sera effectuée. Sa correction et sa note seront revues."
         placeholder="Explique ce qui te semble incorrect…"
         maxlength="4000"
         disabled={@contestation_running}
       />
       <p :if={@error} role="alert">{@error}</p>
-      <p :if={@contestation_running} id="contestation-progress" role="status">
-        Vérification en cours…
-      </p>
-      <div class="modal-actions">
-        <button type="button" class="button" phx-click="close_modal">Fermer</button>
+      <div class="contestation-actions">
         <button
           type="submit"
           id="submit-contestation"
           class="button primary"
           disabled={@contestation_running}
-          phx-disable-with="Vérification…"
+          aria-busy={to_string(@contestation_running)}
         >
-          Demander une vérification
+          <span id="contestation-spinner" class="spinner" phx-update="ignore" aria-hidden="true" />
+          Valider
         </button>
       </div>
     </.form>
