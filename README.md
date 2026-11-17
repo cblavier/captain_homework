@@ -16,6 +16,15 @@ Le contrôle est alors corrigé automatiquement, une note sur 20 est attribué e
 - Faciliter la préparation de contrôles variés, équilibrés et ludiques
 - Proposer une interface simple, utilisable sur ordinateur, tablette et téléphone.
 
+## Principe de fonctionnement
+
+1. **Lire et organiser les documents** : l’OCR reconnaît le texte des leçons et des ressources. Les notions, objectifs, exercices et illustrations sont organisés en une structure pédagogique.
+2. **Préparer le plan d’évaluation** : les notions à travailler et les types de questions sont répartis selon le contenu du chapitre, la durée souhaitée et les consignes personnalisées.
+3. **Rédiger les questions** : chaque question est préparée avec son énoncé, ses éventuels documents, la réponse attendue et les critères de correction.
+4. **Valider et ajuster** : une relecture indépendante vérifie la cohérence des questions, leur fidélité aux sources et la qualité des supports. Les questions rejetées sont retravaillées sans perdre celles déjà validées.
+5. **Répondre et recevoir une correction** : l’élève réalise l’évaluation, puis reçoit une note sur 20 et des explications par question. En Flash cards, la correction apparaît après chaque réponse.
+
+
 ## Techno
 
 - Elixir, Phoenix LiveView et SQLite.
@@ -32,8 +41,6 @@ Captures de l’interface avec un seul profil fictif, Alice, et des données ano
 ### Desktop
 
 ![Accueil d’Alice : matières et dernières évaluations](screenshots/alice/desktop-accueil.png)
-
-![Création d’un chapitre avec deux photos de cours chargées](screenshots/alice/desktop-creation-lecon.png)
 
 ![Pages de géométrie dans l’onglet Leçons](screenshots/alice/desktop-lecon-cours.png)
 
@@ -52,14 +59,6 @@ Captures de l’interface avec un seul profil fictif, Alice, et des données ano
 <p>
   <img src="screenshots/alice/mobile-accueil.png" alt="Accueil d’Alice sur mobile : onglet Matières" width="20.63%" /><img src="screenshots/alice/mobile-creation-controle.png" alt="Création d’un contrôle classique de maths" width="26.45%" /><img src="screenshots/alice/mobile-generation-detaillee.png" alt="Génération détaillée de cinq questions — état de démonstration" width="26.45%" /><img src="screenshots/alice/mobile-flashcard-anglais.png" alt="Contrôle d’anglais en Flash cards avec compréhension orale" width="26.45%" />
 </p>
-
-## Principe de fonctionnement
-
-1. **Lire et organiser les documents** : l’OCR reconnaît le texte des leçons et des ressources. Les notions, objectifs, exercices et illustrations sont organisés en une structure pédagogique.
-2. **Préparer le plan d’évaluation** : les notions à travailler et les types de questions sont répartis selon le contenu du chapitre, la durée souhaitée et les consignes personnalisées.
-3. **Rédiger les questions** : chaque question est préparée avec son énoncé, ses éventuels documents, la réponse attendue et les critères de correction.
-4. **Valider et ajuster** : une relecture indépendante vérifie la cohérence des questions, leur fidélité aux sources et la qualité des supports. Les questions rejetées sont retravaillées sans perdre celles déjà validées.
-5. **Répondre et recevoir une correction** : l’élève réalise l’évaluation, puis reçoit une note sur 20 et des explications par question. En Flash cards, la correction apparaît après chaque réponse.
 
 ## Lancer le projet en local
 
