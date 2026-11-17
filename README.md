@@ -49,12 +49,14 @@ Captures de l’interface avec un seul profil fictif, Alice, et des données ano
 
 ### Mobile
 
-<p>
-  <img src="screenshots/alice/mobile-accueil.png" alt="Accueil d’Alice sur mobile : onglet Matières" width="250" />
-  <img src="screenshots/alice/mobile-creation-controle.png" alt="Création d’un contrôle classique de maths" width="250" />
-  <img src="screenshots/alice/mobile-generation-detaillee.png" alt="Génération détaillée de cinq questions — état de démonstration" width="250" />
-  <img src="screenshots/alice/mobile-flashcard-anglais.png" alt="Contrôle d’anglais en Flash cards avec compréhension orale" width="250" />
-</p>
+<table>
+  <tr>
+    <td><img src="screenshots/alice/mobile-accueil.png" alt="Accueil d’Alice sur mobile : onglet Matières" height="360" /></td>
+    <td><img src="screenshots/alice/mobile-creation-controle.png" alt="Création d’un contrôle classique de maths" height="360" /></td>
+    <td><img src="screenshots/alice/mobile-generation-detaillee.png" alt="Génération détaillée de cinq questions — état de démonstration" height="360" /></td>
+    <td><img src="screenshots/alice/mobile-flashcard-anglais.png" alt="Contrôle d’anglais en Flash cards avec compréhension orale" height="360" /></td>
+  </tr>
+</table>
 
 ## Principe de fonctionnement
 
