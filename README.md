@@ -31,6 +31,8 @@ Captures de l’interface avec un seul profil fictif, Alice, et des données ano
 
 ### Desktop
 
+![Accueil d’Alice : matières et dernières évaluations](screenshots/alice/desktop-accueil.png)
+
 ![Création d’un chapitre avec deux photos de cours chargées](screenshots/alice/desktop-creation-lecon.png)
 
 ![Pages de géométrie dans l’onglet Leçons](screenshots/alice/desktop-lecon-cours.png)

@@ -28,3 +28,5 @@ Captures complémentaires du 13 novembre 2026, après la refonte des pages de le
 - `mobile-refonte-page.png` : même détail sur mobile.
 
 Ces trois vues proviennent de l’interface réelle dans une copie isolée et vidée de toute donnée réelle. Alice est le seul profil. Le texte et les schémas de cellule sont des données de démonstration enregistrées, sans appel IA. Les captures utilisent les largeurs de 1440 et 430 pixels et conservent toute la hauteur du contenu. Les PNG bruts sont conservés dans `originaux/alice/` et les images encadrées dans `alice/`.
+
+Capture complémentaire du 17 novembre 2026 : `desktop-accueil.png`, placée en tête du README. Accueil desktop en 1440 × 1100, connecté avec le compte enfant fictif Alice (6B, collège Jules Ferry), portrait et thème bleu. La capture provient d’une copie isolée de la base et des fichiers de démonstration, complétée par des chapitres et six évaluations anonymisées avec des états enregistrés (à commencer, à reprendre et corrigées), sans appel IA. Les données d’origine restent inchangées.
