@@ -1299,7 +1299,7 @@ defmodule CaptainHomework.Exams.Generation do
       CaptainHomework.PubSub,
       "exam_generation",
       {:exam_generation_finished,
-       Map.take(exam, [:id, :lesson_id, :status, :generation_started_at])}
+       Map.take(exam, [:id, :lesson_id, :status, :generation_started_at, :regeneration_source_id])}
     )
   end
 end

@@ -1314,26 +1314,6 @@
             </div>
           </details>
         </section>
-        <div
-          :if={@exam.format == "classic" and @exam.status in ["in_progress", "grading"]}
-          class="exam-progress"
-        >
-          <span>
-            {completed_count(@exam, @answers)} / {count_label(
-              length(@exam.questions),
-              "réponse",
-              "réponses"
-            )}
-          </span>
-          <span
-            id="saved"
-            phx-hook="Saved"
-            data-saved={@saved}
-            class="saved"
-          >
-            <.icon name="check" /> Enregistré
-          </span>
-        </div>
         <p
           :if={@exam.format == "classic" and @exam.status == "grading"}
           class="notice"

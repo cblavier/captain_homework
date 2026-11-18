@@ -62,4 +62,59 @@ defmodule CaptainHomeworkWeb.GenerationNotificationsTest do
     finished(exam)
     assert has_element?(view, "#flash-info a[href='/alice/controles/#{exam.id}']")
   end
+
+  test "a regenerated question notification opens the original evaluation", context do
+    {:ok, view, _} = live(context.conn, "/alice")
+    regenerate(context)
+
+    link = "#flash-info a[href='/alice/controles/#{context.exam.id}']"
+    assert has_element?(view, link)
+
+    assert_notification_destination(context.conn, view, link)
+  end
+
+  test "regeneration does not notify while viewing the original evaluation", context do
+    {:ok, view, _} = live(context.conn, "/alice/controles/#{context.exam.id}")
+    regenerate(context)
+    refute has_element?(view, "#flash-info")
+  end
+
+  test "a failed regeneration links to the original evaluation", context do
+    {:ok, view, _} = live(context.conn, "/alice")
+    regenerate(context, CaptainHomework.FailingAI)
+    link = "#flash-error a[href='/alice/controles/#{context.exam.id}']"
+    assert has_element?(view, link)
+
+    assert_notification_destination(context.conn, view, link)
+  end
+
+  defp assert_notification_destination(conn, view, selector) do
+    [href] =
+      view
+      |> element(selector)
+      |> render()
+      |> LazyHTML.from_fragment()
+      |> LazyHTML.filter("a")
+      |> LazyHTML.attribute("href")
+
+    assert {:ok, _, _} = live(conn, href)
+  end
+
+  defp regenerate(context, provider \\ CaptainHomework.TestAI) do
+    old = Application.fetch_env!(:captain_homework, :ai_provider)
+    Application.put_env(:captain_homework, :ai_provider, provider)
+    on_exit(fn -> Application.put_env(:captain_homework, :ai_provider, old) end)
+    page(context.lesson)
+
+    assert {:ok, _} =
+             CaptainHomework.Exams.QuestionRegeneration.start(
+               CaptainHomework.Accounts.get("parent-1"),
+               context.lesson.profile_id,
+               context.exam.id,
+               hd(context.exam.questions)["id"],
+               question_type_ids(["long"]),
+               "",
+               sync: true
+             )
+  end
 end

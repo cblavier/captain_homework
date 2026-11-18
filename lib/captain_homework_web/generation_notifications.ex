@@ -16,10 +16,11 @@ defmodule CaptainHomeworkWeb.GenerationNotifications do
   defp handle_notification({:exam_generation_finished, exam}, socket) do
     key = {exam.id, exam.generation_started_at}
     seen = socket.assigns.generation_notifications_seen
+    target_id = Map.get(exam, :regeneration_source_id) || exam.id
 
     viewing_exam? =
       socket.view == CaptainHomeworkWeb.HomeworkLive and socket.assigns.live_action == :exam and
-        match?(%{id: id} when id == exam.id, socket.assigns[:exam])
+        match?(%{id: id} when id == target_id, socket.assigns[:exam])
 
     socket =
       if MapSet.member?(seen, key) or viewing_exam? do
@@ -42,7 +43,11 @@ defmodule CaptainHomeworkWeb.GenerationNotifications do
       put_flash(socket, if(success?, do: :info, else: :error), %{
         "title" => if(success?, do: "Évaluation prête", else: "Création de l’évaluation échouée"),
         "message" => "#{profile.name} · #{lesson.title}",
-        "href" => ProfilePath.child_path(profile, "/controles/#{exam.id}")
+        "href" =>
+          ProfilePath.child_path(
+            profile,
+            "/controles/#{Map.get(exam, :regeneration_source_id) || exam.id}"
+          )
       })
     else
       _ -> socket
