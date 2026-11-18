@@ -15,7 +15,7 @@ defmodule CaptainHomeworkWeb.OrderingLiveTest do
     })
   end
 
-  test "classic and flashcard clicks persist a unique sequence, with undo and reset", %{
+  test "classic and flashcard clicks persist a unique sequence, with reset beside the order", %{
     conn: conn
   } do
     l = lesson(profile())
@@ -27,7 +27,8 @@ defmodule CaptainHomeworkWeb.OrderingLiveTest do
         |> Repo.update!()
 
       {:ok, view, _} = live(conn, "/alice/controles/#{control.id}")
-      assert has_element?(view, "#ordering-q1-undo[disabled]")
+      refute has_element?(view, "#ordering-q1-undo")
+      assert has_element?(view, "#ordering-q1-sequence #ordering-q1-clear[disabled]")
       refute has_element?(view, "#answer-q1")
       refute has_element?(view, "#flashcard-response")
 
@@ -39,9 +40,6 @@ defmodule CaptainHomeworkWeb.OrderingLiveTest do
 
       {:ok, reloaded, _} = live(conn, "/alice/controles/#{control.id}")
       assert has_element?(reloaded, "#ordering-q1 input[value='2, 3, 1']")
-      reloaded |> element("#ordering-q1-undo") |> render_click()
-      assert has_element?(reloaded, "#ordering-q1 input[value='2, 3']")
-      assert has_element?(reloaded, "#ordering-q1-choice-1[aria-pressed=false]")
       reloaded |> element("#ordering-q1-clear") |> render_click()
       assert Study.get_exam!(l.profile_id, control.id).answers["q1"] == ""
       assert has_element?(reloaded, "#ordering-q1-sequence", "À toi de commencer")

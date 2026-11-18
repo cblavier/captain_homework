@@ -930,10 +930,10 @@ body:has(#flashcard-session) { position: fixed; inset: 0; }
 .ordering-sequence { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .ordering-sequence li { display: flex; align-items: center; gap: 8px; }
 .ordering-arrow { color: var(--muted); }
-.ordering-actions { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 8px; }
+.ordering-feedback .ordering-reset { margin-left: auto; padding: 8px 0; font-size: 13px; }
 .flashcard-front .ordering-choice { font-size: 18px; }
 .ordering-input button:disabled { opacity: 1; }
-.ordering-actions button:disabled { opacity: .45; }
+.ordering-feedback .ordering-reset:disabled { opacity: .45; }
 
 #extract-illustrations-modal .modal-panel { width: min(100%, 1040px); }
 @media (min-width: 601px) {

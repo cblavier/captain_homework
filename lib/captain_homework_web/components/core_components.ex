@@ -244,23 +244,10 @@ defmodule CaptainHomeworkWeb.CoreComponents do
         <span :if={@selected != []} class="ordering-count">
           {length(@selected)} / {length(@options)}
         </span>
-      </div>
-      <div class="ordering-actions">
-        <button
-          id={"#{@id}-undo"}
-          type="button"
-          class="button text-button"
-          phx-click="order_answer"
-          phx-value-id={@question_id}
-          phx-value-action="undo"
-          disabled={@disabled or @selected == []}
-        >
-          Annuler le dernier
-        </button>
         <button
           id={"#{@id}-clear"}
           type="button"
-          class="button text-button"
+          class="button text-button ordering-reset"
           phx-click="order_answer"
           phx-value-id={@question_id}
           phx-value-action="clear"
