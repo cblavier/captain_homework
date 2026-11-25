@@ -280,30 +280,49 @@
                 La consigne est renseignée pour chaque question.
               </.field_hint>
             </fieldset>
-            <fieldset class="admin-field">
+            <fieldset id="type-content-fields" class="admin-field">
               <legend>Contenu de la question</legend>
-              <div class="admin-field-pair">
-                <.input
-                  field={@type_form[:content_kind]}
-                  type="select"
-                  label="Nature"
-                  options={[
-                    {"Texte", "text"},
-                    {"Image", "image"},
-                    {"Document", "document"},
-                    {"Audio", "audio"}
-                  ]}
-                /><.input
-                  field={@type_form[:content_presence]}
-                  type="select"
-                  label="Présence"
-                  options={[
-                    {"Obligatoire", "required"},
-                    {"Facultative", "optional"},
-                    {"Aucun contenu", "none"}
-                  ]}
-                />
-              </div>
+              <.input
+                field={@type_form[:content_presence]}
+                type="select"
+                aria-label="Présence du contenu"
+                options={[
+                  {"Aucun contenu", "none"},
+                  {"Obligatoire", "required"},
+                  {"Facultatif", "optional"}
+                ]}
+              />
+              <fieldset
+                id="type-content-kinds"
+                hidden={@preview_type.content_presence == "none"}
+                aria-describedby={
+                  if @preview_type.content_presence == "required", do: "type-content-kinds-hint"
+                }
+              >
+                <legend class="form-field-label">Type de contenu</legend>
+                <input type="hidden" name="type[content_kinds][]" value="" />
+                <div class="subject-checkbox-grid">
+                  <label
+                    :for={{label, kind} <- QuestionDefinition.content_options()}
+                    class="subject-checkbox"
+                  >
+                    <input
+                      id={"type-content-#{kind}"}
+                      type="checkbox"
+                      name="type[content_kinds][]"
+                      value={kind}
+                      checked={kind in QuestionDefinition.content_kinds(@preview_type)}
+                    />{label}
+                  </label>
+                </div>
+                <.field_errors field={@type_form[:content_kinds]} />
+                <.field_hint
+                  :if={@preview_type.content_presence == "required"}
+                  id="type-content-kinds-hint"
+                >
+                  Chaque question utilise au moins une nature cochée.
+                </.field_hint>
+              </fieldset>
             </fieldset>
             <.input
               field={@type_form[:ai_instructions]}
@@ -379,32 +398,33 @@
             phx-change="example"
             phx-submit="preview_answer"
           >
-            <% content_example? =
-              @preview_type.content_presence != "none" and
-                @preview_type.content_kind in ["text", "document"] %>
+            <% example_kinds =
+              if @preview_type.content_presence == "none",
+                do: [],
+                else:
+                  Enum.filter(
+                    QuestionDefinition.content_kinds(@preview_type),
+                    &(&1 in ["text", "document"])
+                  ) %>
             <% example_hint =
               "Ces exemples sont enregistrés avec le type et guident l’IA sans remplacer ses règles." %>
             <.input
               :if={@preview_type.instruction_kind == "dynamic"}
-              hint={if !content_example?, do: example_hint}
+              hint={if example_kinds == [], do: example_hint}
               field={@example_form[:prompt]}
               label="Exemple indicatif de consigne"
               type="textarea"
               rows="2"
             />
             <.input
-              :if={content_example?}
+              :for={kind <- example_kinds}
               hint={example_hint}
-              field={
-                @example_form[
-                  if(@preview_type.content_kind == "document", do: :document, else: :text)
-                ]
-              }
-              label="Exemple indicatif de contenu"
+              field={@example_form[if(kind == "document", do: :document, else: :text)]}
+              label={if(kind == "document", do: "Exemple de document", else: "Exemple de texte")}
               type="textarea"
               rows="4"
             />
-            <.field_hint :if={@preview_type.instruction_kind != "dynamic" and !content_example?}>
+            <.field_hint :if={@preview_type.instruction_kind != "dynamic" and example_kinds == []}>
               {example_hint}
             </.field_hint>
           </.form>

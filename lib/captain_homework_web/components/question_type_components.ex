@@ -2,6 +2,7 @@ defmodule CaptainHomeworkWeb.QuestionTypeComponents do
   @moduledoc "Adapts catalogue examples to the shared question renderers."
   use CaptainHomeworkWeb, :html
   alias CaptainHomework.{Study, QuestionTemplates, QuestionDefinitions}
+  alias CaptainHomework.Study.QuestionDefinition
   import CaptainHomeworkWeb.QuestionComponents
 
   attr :type, :map, required: true
@@ -20,6 +21,11 @@ defmodule CaptainHomeworkWeb.QuestionTypeComponents do
     assigns =
       assign(assigns,
         type_label: QuestionTemplates.render(assigns.type.name, subject),
+        content_kinds:
+          if(assigns.type.content_presence == "none",
+            do: [],
+            else: QuestionDefinition.content_kinds(assigns.type)
+          ),
         example:
           QuestionTemplates.question(Map.merge(assigns.type.example, assigns.example), subject)
       )
@@ -61,8 +67,8 @@ defmodule CaptainHomeworkWeb.QuestionTypeComponents do
           mode={@mode}
           subject={@subject_name}
           type_label={@type_label}
-          audio_src={preview_audio(@type)}
-          images={preview_images(@type)}
+          audio_src={preview_audio(@type, @content_kinds)}
+          images={preview_images(@type, @content_kinds)}
         />
         <.form
           for={@form}
@@ -105,16 +111,21 @@ defmodule CaptainHomeworkWeb.QuestionTypeComponents do
   defp preview_question(assigns) do
     type = assigns.type
     example = assigns.example
+    kinds = assigns.content_kinds
 
     text =
-      if type.content_presence == "none" or type.response_kind == "ordering" do
-        ""
-      else
-        case type.content_kind do
-          "text" -> example["text"] || ""
-          "document" -> example["document"] || ""
-          _ -> ""
-        end
+      cond do
+        type.response_kind == "ordering" -> ""
+        "text" in kinds -> example["text"] || ""
+        kinds == ["document"] -> example["document"] || ""
+        true -> ""
+      end
+
+    document =
+      if "document" in kinds do
+        if kinds == ["document"] and type.response_kind != "ordering",
+          do: example["support_text"],
+          else: example["support_text"] || example["document"]
       end
 
     %{
@@ -122,8 +133,8 @@ defmodule CaptainHomeworkWeb.QuestionTypeComponents do
       "type" => QuestionDefinitions.engine_format(type),
       "prompt" => assigns.prompt,
       "text" => text,
-      "support_text" => example["support_text"] || "",
-      "diagram" => example["diagram"],
+      "support_text" => document || "",
+      "diagram" => if("image" in kinds or "document" in kinds, do: example["diagram"]),
       "options" =>
         if(type.response_kind == "ordering",
           do: CaptainHomework.Exams.Ordering.example_options(example["text"] || ""),
@@ -143,45 +154,41 @@ defmodule CaptainHomeworkWeb.QuestionTypeComponents do
     }
   end
 
-  defp preview_audio(%{
-         id: id,
-         content_kind: "audio",
-         content_presence: presence,
-         example: %{"audio" => %{"id" => asset_id}}
-       })
-       when presence != "none",
-       do: "/parametres/types/#{id}/exemples/#{asset_id}"
+  defp preview_audio(%{id: id, example: %{"audio" => %{"id" => asset_id}}}, ["audio"]),
+    do: "/parametres/types/#{id}/exemples/#{asset_id}"
 
-  defp preview_audio(%{content_kind: "audio", content_presence: presence} = type)
-       when presence != "none",
-       do:
-         if(type.example["audio"] == "english",
-           do: "/audio/question-examples/english.mp3",
-           else: "/audio/question-examples/village.mp3"
-         )
+  defp preview_audio(type, ["audio"]),
+    do:
+      if(type.example["audio"] == "english",
+        do: "/audio/question-examples/english.mp3",
+        else: "/audio/question-examples/village.mp3"
+      )
 
-  defp preview_audio(_), do: nil
+  defp preview_audio(_, _), do: nil
 
-  defp preview_images(%{id: id, content_presence: presence, example: %{"images" => images}})
-       when presence != "none" and is_list(images) do
-    Enum.map(images, fn asset ->
-      %{
-        id: asset["id"],
-        src: "/parametres/types/#{id}/exemples/#{asset["id"]}",
-        alt: asset["alt"] || "Illustration de l’exemple"
-      }
-    end)
+  defp preview_images(type, kinds) do
+    cond do
+      ("image" in kinds or "document" in kinds) and is_list(type.example["images"]) and
+          type.example["images"] != [] ->
+        Enum.map(type.example["images"], fn asset ->
+          %{
+            id: asset["id"],
+            src: "/parametres/types/#{type.id}/exemples/#{asset["id"]}",
+            alt: asset["alt"] || "Illustration de l’exemple"
+          }
+        end)
+
+      "image" in kinds ->
+        [
+          %{
+            id: "sample",
+            src: "/images/question-examples/stratigraphy.svg",
+            alt: "Coupe archéologique schématique avec trois couches numérotées"
+          }
+        ]
+
+      true ->
+        []
+    end
   end
-
-  defp preview_images(%{content_kind: "image", content_presence: presence})
-       when presence != "none",
-       do: [
-         %{
-           id: "sample",
-           src: "/images/question-examples/stratigraphy.svg",
-           alt: "Coupe archéologique schématique avec trois couches numérotées"
-         }
-       ]
-
-  defp preview_images(_), do: []
 end

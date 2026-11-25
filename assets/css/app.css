@@ -783,7 +783,11 @@ body:has(#flashcard-session) { position: fixed; inset: 0; }
 #type-editor .settings-choices.two { gap: 12px; margin-bottom: 0; }
 #type-editor .settings-choices + .form-field { margin-top: 16px; }
 #type-editor .form-field > :is(input, textarea, .select-control), .admin-filters .form-field > :is(input, .select-control) { font-size: .875rem; line-height: 1.6; }
-#type-editor .admin-field-pair .form-field-label { font-size: .875rem; font-weight: 550; }
+#type-editor .admin-field-pair .form-field-label,
+#type-content-kinds > legend { font-size: .875rem; font-weight: 550; }
+#type-content-fields > .form-field { margin-bottom: 0; }
+#type-content-kinds { margin-top: 16px; }
+#type-content-kinds > legend { margin-bottom: 6px; }
 @media(max-width:420px) { #type-editor .subject-checkbox-grid { grid-template-columns: 1fr; gap: 4px; } }
 .admin-danger { color: var(--danger-ink) !important; }
 .admin-preview { min-width: 0; }

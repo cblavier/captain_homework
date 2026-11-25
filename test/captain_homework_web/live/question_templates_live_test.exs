@@ -144,4 +144,70 @@ defmodule CaptainHomeworkWeb.QuestionTemplatesLiveTest do
              "Un texte de démonstration."
            )
   end
+
+  test "multiple content kinds are previewed together and saved", %{conn: conn} do
+    profile()
+
+    {:ok, type} =
+      QuestionDefinitions.save(%Study.QuestionDefinition{}, %{
+        name: "Question à plusieurs supports",
+        subjects: ["svt"],
+        example: %{"text" => "Texte de la question", "document" => "Extrait du document"}
+      })
+
+    path = "/alice/parametres/types/#{type.id}"
+    {:ok, view, _} = live(conn, path)
+    assert has_element?(view, "#type-content-fields > .form-field + #type-content-kinds")
+    assert has_element?(view, "#type-content-kinds legend", "Type de contenu")
+    refute has_element?(view, "label[for=type_content_presence]")
+    assert has_element?(view, "#type-content-text[checked]")
+    refute has_element?(view, "#type-content-document[checked]")
+
+    view
+    |> form("#type-editor", type: %{content_kinds: ["text", "document", "image"]})
+    |> render_change()
+
+    assert has_element?(view, "#question-type-preview .reading-text", "Texte de la question")
+    assert has_element?(view, "#question-type-preview .reading-text", "Extrait du document")
+    assert has_element?(view, "#question-image-preview-sample")
+    assert has_element?(view, "#example_text")
+    assert has_element?(view, "#example_document")
+
+    view |> form("#type-editor", type: %{content_presence: "none"}) |> render_change()
+    assert has_element?(view, "#type-content-kinds[hidden]")
+    refute has_element?(view, "#question-image-preview-sample")
+
+    view |> form("#type-editor", type: %{content_presence: "required"}) |> render_change()
+    assert has_element?(view, "#type-content-kinds:not([hidden])")
+    assert has_element?(view, "#type-content-document[checked]")
+    assert has_element?(view, "#question-image-preview-sample")
+
+    view |> form("#type-editor") |> render_submit()
+    saved = QuestionDefinitions.get!(type.id)
+    assert Study.QuestionDefinition.content_kinds(saved) == ["text", "document", "image"]
+    assert QuestionDefinitions.snapshot(saved)["content_kinds"] == ["text", "document", "image"]
+    refute Map.has_key?(QuestionDefinitions.snapshot(type), "content_kinds")
+
+    {:ok, reopened, _} = live(conn, path)
+    assert has_element?(reopened, "#type-content-document[checked]")
+    assert has_element?(reopened, "#type-content-image[checked]")
+
+    reopened
+    |> form("#type-editor", type: %{content_kinds: [""]})
+    |> render_change()
+
+    assert has_element?(reopened, "#type-editor", "Choisis au moins une nature de contenu.")
+
+    reopened
+    |> form("#type-editor", type: %{content_kinds: ["text", "audio"]})
+    |> render_change()
+
+    assert has_element?(reopened, "#type-content-kinds", "Choisis l’audio seul")
+
+    reopened |> form("#type-editor", type: %{content_presence: "none"}) |> render_submit()
+    assert_redirect(reopened, "/alice/parametres/types")
+    saved = QuestionDefinitions.get!(type.id)
+    assert saved.content_presence == "none"
+    assert Study.QuestionDefinition.content_kinds(saved) == ["text", "document", "image"]
+  end
 end

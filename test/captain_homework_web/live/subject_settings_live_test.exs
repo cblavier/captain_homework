@@ -90,7 +90,7 @@ defmodule CaptainHomeworkWeb.SubjectSettingsLiveTest do
       modes: ["classic", "flashcard"],
       response_kind: "long_text",
       instruction_kind: "dynamic",
-      content_kind: "text",
+      content_kinds: ["text"],
       content_presence: "required",
       work_duration: "medium"
     }
@@ -198,7 +198,7 @@ defmodule CaptainHomeworkWeb.SubjectSettingsLiveTest do
 
     view
     |> form("#type-editor",
-      type: %{content_kind: "document", modes: ["classic", "flashcard"], subjects: ["svt"]}
+      type: %{content_kinds: ["document"], modes: ["classic", "flashcard"], subjects: ["svt"]}
     )
     |> render_change()
 

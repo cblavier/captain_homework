@@ -96,19 +96,21 @@ defmodule CaptainHomework.QuestionDefinitions do
 
   def formats(definitions), do: definitions |> Enum.map(&engine_format/1) |> Enum.uniq()
 
-  def engine_format(%{content_kind: "audio", response_kind: "short_text"}), do: "listening"
-  def engine_format(%{content_kind: "audio"}), do: nil
-
   def engine_format(type) do
-    case type.response_kind do
-      "recording" -> if(type.content_kind == "text", do: "pronunciation")
-      "ordering" -> "ordering"
-      "photo" -> "photo"
-      "short_text" -> "definition"
-      "single_choice" -> "mcq"
-      "cloze" -> "cloze"
-      "legends" -> "diagram"
-      "long_text" -> if(type.content_kind == "document", do: "reading", else: "long")
+    kinds = QuestionDefinition.content_kinds(type)
+
+    case {type.response_kind, kinds} do
+      {"short_text", ["audio"]} -> "listening"
+      {_, ["audio"]} -> nil
+      {"recording", kinds} -> if("text" in kinds, do: "pronunciation")
+      {"ordering", _} -> "ordering"
+      {"photo", _} -> "photo"
+      {"short_text", _} -> "definition"
+      {"single_choice", _} -> "mcq"
+      {"cloze", _} -> "cloze"
+      {"legends", _} -> "diagram"
+      {"long_text", ["document"]} -> "reading"
+      {"long_text", _} -> "long"
       _ -> nil
     end
   end
@@ -117,7 +119,9 @@ defmodule CaptainHomework.QuestionDefinitions do
     type
     |> Map.from_struct()
     |> Map.drop([:__meta__, :inserted_at, :updated_at, :deleted_at, :name_key])
-    |> Map.reject(fn {key, value} -> key == :ai_instructions and is_nil(value) end)
+    |> Map.reject(fn {key, value} ->
+      key in [:ai_instructions, :content_kinds] and is_nil(value)
+    end)
     |> Jason.encode!()
     |> Jason.decode!()
   end
@@ -149,8 +153,11 @@ defmodule CaptainHomework.QuestionDefinitions do
 
   def instructions(types, subject \\ nil) do
     Enum.map_join(types, "\n", fn t ->
-      "Type #{t.name} : format #{engine_format(t)}, consigne #{t.instruction_kind}#{if t.instruction_kind == "fixed", do: " : #{t.instruction}", else: ""}; contenu #{t.content_kind} #{t.content_presence}; durée de travail #{t.work_duration} (≈ #{CaptainHomework.WorkDuration.minutes(t.work_duration)} min). " <>
+      kinds = Enum.join(QuestionDefinition.content_kinds(t), ", ")
+
+      "Type #{t.name} : format #{engine_format(t)}, consigne #{t.instruction_kind}#{if t.instruction_kind == "fixed", do: " : #{t.instruction}", else: ""}; natures de contenu autorisées : #{kinds}; présence : #{t.content_presence}; durée de travail #{t.work_duration} (≈ #{CaptainHomework.WorkDuration.minutes(t.work_duration)} min). " <>
         "Une consigne dynamique doit devenir une demande précise adaptée au document, pas le libellé générique du type. " <>
+        "Utilise une ou plusieurs natures autorisées selon la question. Si la présence est obligatoire, au moins une doit être fournie. " <>
         "Un contenu requis peut être fourni par un document original lisible recadré : ne remplis pas text avec une paraphrase de l'image. " <>
         "Les aides de saisie et descriptions OCR internes ne sont pas le contenu à montrer. Ne révèle jamais la réponse attendue dans l’énoncé." <>
         if(t.ai_instructions,
@@ -174,6 +181,7 @@ defmodule CaptainHomework.QuestionDefinitions do
         example = indicative_example(value)
 
         value
+        |> Map.drop(if(is_list(value["content_kinds"]), do: ["content_kind"], else: []))
         |> then(fn type ->
           if type["instruction_kind"] == "dynamic",
             do: Map.delete(type, "instruction"),
@@ -197,10 +205,10 @@ defmodule CaptainHomework.QuestionDefinitions do
   defp indicative_example(type) do
     fields = if type["instruction_kind"] == "dynamic", do: ["prompt"], else: []
 
-    fields =
-      if type["content_presence"] != "none" and type["content_kind"] in ~w(text document),
-        do: [type["content_kind"] | fields],
-        else: fields
+    kinds =
+      if type["content_presence"] == "none", do: [], else: QuestionDefinition.content_kinds(type)
+
+    fields = Enum.filter(kinds, &(&1 in ~w(text document))) ++ fields
 
     (type["example"] || %{})
     |> Map.take(fields)

@@ -112,16 +112,18 @@ defmodule CaptainHomework.Exams.TypeContract do
   end
 
   defp content_message(question, contract) do
+    kinds = QuestionDefinition.content_kinds(contract)
+
     cond do
       contract["content_presence"] == "none" ->
         "Le type #{contract["name"]} ne permet pas de contenu supplémentaire."
 
-      contract["content_kind"] == "text" and not text?(question["text"]) and
+      kinds == ["text"] and not text?(question["text"]) and
           not text?(question["support_text"]) ->
         "Le texte à traiter est manquant pour le type #{contract["name"]} (champ text)."
 
       true ->
-        "Le contenu fourni ne correspond pas à la nature attendue pour le type #{contract["name"]} (#{contract["content_kind"]})."
+        "Le contenu fourni ne correspond pas aux natures autorisées pour le type #{contract["name"]} (#{Enum.join(kinds, ", ")})."
     end
   end
 
@@ -137,14 +139,17 @@ defmodule CaptainHomework.Exams.TypeContract do
     # Choices and ordering items belong to the response format; ordering items also supply its content.
     ordered_text = question["type"] == "ordering" and present_list?(question["options"])
     present = text or image or audio or ordered_text
+    kinds = QuestionDefinition.content_kinds(contract)
 
     expected =
-      case contract["content_kind"] do
-        "text" -> (text or ordered_text) and not image and not audio
-        "image" -> image and not audio
-        "document" -> (text or image) and not audio
-        "audio" -> Listening.valid_script?(question["audio_script"]) and not text and not image
-        _ -> false
+      if kinds == ["audio"] do
+        Listening.valid_script?(question["audio_script"]) and not text and not image
+      else
+        image_allowed? = "image" in kinds or "document" in kinds
+
+        not audio and (not image or image_allowed?) and
+          ((image and image_allowed?) or (text and "document" in kinds) or
+             ((text or ordered_text) and "text" in kinds))
       end
 
     case contract["content_presence"] do
@@ -158,24 +163,26 @@ defmodule CaptainHomework.Exams.TypeContract do
   @doc "Fields owned by the application, shared by schema generation and assembly."
   def constants(definition, phase, subject) do
     format = format(definition)
-    kind = definition["content_kind"]
+    kinds = QuestionDefinition.content_kinds(definition)
     absent? = definition["content_presence"] == "none"
+    document? = "document" in kinds and not absent?
+    images? = document? or ("image" in kinds and not absent?)
 
     %{}
     |> constant("options", [], format not in ~w(mcq ordering))
     |> constant("slots", [], format not in ~w(cloze diagram))
     |> constant("diagram", nil, format != "diagram")
-    |> constant("audio_script", nil, kind != "audio" or absent?)
-    |> constant("image_ids", [], kind not in ~w(image document) or absent?)
-    |> constant("image_regions", [], kind not in ~w(image document) or absent?)
+    |> constant("audio_script", nil, "audio" not in kinds or absent?)
+    |> constant("image_ids", [], not images?)
+    |> constant("image_regions", [], not images?)
     |> constant(
       "support_id",
       "",
-      kind != "document" or absent? or format in ~w(cloze diagram listening)
+      not document? or format in ~w(cloze diagram listening)
     )
-    |> constant("support_text", "", kind != "document" or absent?)
-    |> constant("support_title", "", kind != "document" or absent?)
-    |> constant("text", "", kind == "audio" or absent?)
+    |> constant("support_text", "", not document?)
+    |> constant("support_title", "", not document?)
+    |> constant("text", "", "audio" in kinds or absent?)
     |> constant("answer_basis", "knowledge", absent?)
     |> constant(
       if(phase == :spec, do: "task", else: "prompt"),
@@ -302,6 +309,9 @@ defmodule CaptainHomework.Exams.TypeContract do
       "listening" ->
         required_object(fields, "audio_script")
 
+      "pronunciation" ->
+        constrain(fields, "text", %{"pattern" => "\\S"})
+
       _ ->
         fields
     end
@@ -313,12 +323,10 @@ defmodule CaptainHomework.Exams.TypeContract do
 
   defp content_variants(fields, %{"content_presence" => "required"} = definition, frozen) do
     candidates =
-      case definition["content_kind"] do
-        "text" -> if(format(definition) == "ordering", do: ["options"], else: ["text"])
-        "image" -> if(format(definition) == "diagram", do: ["diagram"], else: ["image_ids"])
-        "audio" -> ["audio_script"]
-        "document" -> ["text", "image_ids", "support_id"]
-      end
+      definition
+      |> QuestionDefinition.content_kinds()
+      |> Enum.flat_map(&content_fields(&1, format(definition)))
+      |> Enum.uniq()
 
     if Enum.any?(candidates, &(frozen[&1] not in [nil, "", []])) do
       [object(fields)]
@@ -331,6 +339,13 @@ defmodule CaptainHomework.Exams.TypeContract do
   end
 
   defp content_variants(fields, _, _), do: [object(fields)]
+
+  defp content_fields("text", "ordering"), do: ["options"]
+  defp content_fields("text", _), do: ["text"]
+  defp content_fields("image", "diagram"), do: ["diagram"]
+  defp content_fields("image", _), do: ["image_ids"]
+  defp content_fields("audio", _), do: ["audio_script"]
+  defp content_fields("document", _), do: ["text", "image_ids", "support_id"]
 
   defp require_content(fields, key) when key in ~w(text support_id) do
     fields = constrain(fields, key, %{"pattern" => "\\S"})
@@ -374,7 +389,7 @@ defmodule CaptainHomework.Exams.TypeContract do
 
   defp format(definition) do
     QuestionDefinitions.engine_format(%{
-      content_kind: definition["content_kind"],
+      content_kinds: QuestionDefinition.content_kinds(definition),
       response_kind: definition["response_kind"]
     })
   end

@@ -482,8 +482,10 @@ defmodule CaptainHomework.AI.OpenAI do
         par l'application (listes vides, contenu absent, absence d'audio ou de diagramme notamment).
         Place le terme, la phrase ou les données à traiter dans text lorsque le contenu est text.
         Ne déplace pas une consigne reformulée dans text pour contourner la consigne fixe.
-        Contenu required : un contenu exploitable du genre indiqué est requis ; optional : il peut être
-        absent, mais doit respecter ce genre s'il existe ; none : aucun contenu supplémentaire.
+        Le catalogue indique les natures autorisées dans content_kinds ou, pour un choix unique,
+        dans content_kind. Une question peut combiner plusieurs natures autorisées.
+        Avec required, utilise au moins une nature autorisée. Avec optional, tu peux aussi laisser
+        le contenu vide. Avec none, laisse tous les champs de contenu vides.
         Avec contenu none, la question est autonome et knowledge : seules des sources de leçon
         peuvent justifier la réponse. Ne renvoie jamais à un document absent. Si nécessaire,
         choisis une autre notion enseignée dans le cours.
@@ -1763,7 +1765,7 @@ defmodule CaptainHomework.AI.OpenAI do
           "type_constraints",
           Map.take(
             question["type_contract"] || %{},
-            ~w(name instruction_kind instruction ai_instructions content_kind content_presence response_kind)
+            ~w(name instruction_kind instruction ai_instructions content_kind content_kinds content_presence response_kind)
           )
         )
         |> RepairContext.compact_support()

@@ -290,6 +290,33 @@ defmodule CaptainHomework.Exams.TypeContractTest do
     end
   end
 
+  test "a mixed type accepts any subset of allowed content and requires at least one" do
+    mixed = definition(%{"content_kinds" => ["text", "image"]})
+    ctx = context([mixed])
+
+    for attrs <- [
+          %{},
+          %{"text" => "", "image_ids" => ["image"]},
+          %{"image_ids" => ["image"]}
+        ] do
+      assert {:ok, _} = TypeContract.validate(question(attrs), ctx)
+    end
+
+    assert {:error, _} = TypeContract.validate(question(%{"text" => ""}), ctx)
+    assert {:error, _} = TypeContract.validate(question(%{"support_id" => "document"}), ctx)
+    assert {:error, _} = TypeContract.validate(question(%{"audio_script" => %{}}), ctx)
+
+    optional = context([Map.put(mixed, "content_presence", "optional")])
+    assert {:ok, _} = TypeContract.validate(question(%{"text" => ""}), optional)
+
+    assert %{"anyOf" => [text, image]} = TypeContract.schema(fields(), ctx)
+    assert text["properties"]["text"]["pattern"] == "\\S"
+    assert image["properties"]["image_ids"]["minItems"] == 1
+    assert Map.has_key?(text["properties"], "image_ids")
+    assert Map.has_key?(image["properties"], "text")
+    refute Map.has_key?(image["properties"], "support_id")
+  end
+
   test "content is checked after attaching shared supports" do
     ctx = %{
       context([definition(%{"content_kind" => "document"})])
@@ -309,6 +336,33 @@ defmodule CaptainHomework.Exams.TypeContractTest do
                question(%{"text" => "", "support_id" => "s1", "answer_basis" => "document"}),
                %{ctx | supports: []}
              )
+  end
+
+  test "a specification retains the text, shared document and illustration together" do
+    mixed = definition(%{"content_kinds" => ["text", "document", "image"]})
+
+    ctx = %{
+      context([mixed])
+      | supports: [
+          %{"id" => "s1", "text" => "Document lisible", "title" => "Document", "image_ids" => []}
+        ],
+        images: [%{id: "figure", content_type: "image/png"}]
+    }
+
+    assert {:ok, spec} =
+             ExerciseSpec.new(
+               question(%{
+                 "support_id" => "s1",
+                 "image_ids" => ["figure"],
+                 "answer_basis" => "document"
+               }),
+               ctx
+             )
+
+    assert spec.question["text"] == "Membrane"
+    assert spec.question["support_text"] == "Document lisible"
+    assert spec.question["image_ids"] == ["figure"]
+    assert :ok = ExerciseSpec.validate(spec, ctx)
   end
 
   test "mode subject and configured language substitutions are binding" do
